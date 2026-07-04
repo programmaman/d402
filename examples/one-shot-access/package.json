@@ -1,0 +1,22 @@
+{
+  "name": "@d402/example-one-shot-access",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "server": "tsx src/server.ts",
+    "client": "tsx src/client.ts",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@d402/sdk": "file:../..",
+    "dotenv": "^16.4.7",
+    "ethers": "^6.17.0",
+    "express": "^5.1.0"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.3",
+    "@types/node": "^26.0.1",
+    "tsx": "^4.22.4",
+    "typescript": "^6.0.3"
+  }
+}
