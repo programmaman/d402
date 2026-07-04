@@ -3,6 +3,7 @@ node_modules/
 dist/
 coverage/
 *.tsbuildinfo
+tsconfig.test.json
 .env
 .env.*
 !.env.example
