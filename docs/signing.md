@@ -24,7 +24,7 @@ const client = await createD402Client({
   provider,
   signer,
   policy: {
-    allowedChains: [8453],
+    allowedChains: [100],
     allowedPayees: ["0x2222222222222222222222222222222222222222"],
     allowedTokens: [null],
     maxAmount: "10000",
@@ -57,7 +57,7 @@ const client = await createD402Client({
   provider,
   signer,
   policy: {
-    allowedChains: [8453],
+    allowedChains: [100],
     allowedPayees: ["0x2222222222222222222222222222222222222222"],
     allowedTokens: [null],
     maxAmount: "10000",
@@ -79,7 +79,7 @@ or user-approved signer is allowed to pay for.
 
 ```ts
 policy: {
-  allowedChains: [8453],
+  allowedChains: [100],
   allowedPayees: ["0x2222222222222222222222222222222222222222"],
   allowedTokens: [null],
   maxAmount: "10000",

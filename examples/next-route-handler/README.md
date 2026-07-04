@@ -11,8 +11,8 @@ Next.js route handler.
 ## Environment
 
 ```sh
-RPC_URL=http://127.0.0.1:8545
-CHAIN_ID=1337
+RPC_URL=https://rpc.gnosischain.com
+CHAIN_ID=100
 PAYEE_ADDRESS=0x2222222222222222222222222222222222222222
 PAYER_PRIVATE_KEY=0x...
 NEXT_PUBLIC_BASE_URL=http://localhost:3000

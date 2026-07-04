@@ -47,7 +47,7 @@ export const GET = payable({
 
   // 2. Terms: price, recipient, timing, and business agreement.
   terms: {
-    chainId: 8453,
+    chainId: 100,
     payeeAddress: "0x2222222222222222222222222222222222222222",
     tokenAddress: null,
     netAmount: "10000",
@@ -95,7 +95,7 @@ const client = await createD402Client({
   signer,
   paymentConfirmations: 2,
   policy: {
-    allowedChains: [8453],
+    allowedChains: [100],
     allowedPayees: ["0x2222222222222222222222222222222222222222"],
     allowedTokens: [null],
     allowedResources: [/^https:\/\/api\.example\.com\/reports\/[^/]+$/],
@@ -139,7 +139,7 @@ Cache-Control: no-store
     "version": 1,
     "resource": "https://api.example.com/reports/123",
     "method": "GET",
-    "chainId": 8453,
+    "chainId": 100,
     "payeeAddress": "0x2222222222222222222222222222222222222222",
     "tokenAddress": null,
     "netAmount": "10000",
@@ -219,24 +219,4 @@ await actions.appealPayment(paymentAddress);
 - [API reference](docs/api.md): exported functions, options, and types by entry point
 - [Signing modes](docs/signing.md): browser wallets, services, agents, and guardrails
 - [Advanced server patterns](docs/advanced.md): resource binding, one-shot consumption, reuse, settlement jobs
-- [Testing and release checks](docs/testing.md): unit tests, e2e tests, Docker requirements, and packaging smoke checks
 - [Runnable examples](examples/README.md): Express, Next.js, and one-shot access examples
-
-## Development
-
-```sh
-npm run typecheck
-npm test
-npm run lint
-```
-
-The e2e suite is a separate package because it starts Docker containers and a
-local Hardhat chain:
-
-```sh
-cd e2e_tests
-npm run typecheck
-npm test
-```
-
-The e2e suite requires the `cartel-hardhat:test` Docker image.
