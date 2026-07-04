@@ -8,7 +8,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@d402/sdk": "file:../..",
+    "d402": "file:../..",
     "dotenv": "^16.4.7",
     "ethers": "^6.17.0",
     "next": "^15.5.0",

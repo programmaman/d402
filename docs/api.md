@@ -3,7 +3,7 @@
 This page summarizes the public package entry points. See the TypeScript types
 in `src/` for exact definitions.
 
-## `@d402/sdk/core`
+## `d402/core`
 
 Shared protocol primitives.
 
@@ -12,7 +12,7 @@ import {
   hashPaymentTerms,
   parsePaymentProof,
   parsePaymentRequest,
-} from "@d402/sdk/core";
+} from "d402/core";
 ```
 
 Exports:
@@ -32,7 +32,7 @@ Key types:
 - `DecimalString`
 - `PaymentAddress`
 
-## `@d402/sdk/client`
+## `d402/client`
 
 Paying client.
 
@@ -40,7 +40,7 @@ Paying client.
 import {
   createD402Client,
   D402PaymentAction,
-} from "@d402/sdk/client";
+} from "d402/client";
 ```
 
 ### `createD402Client(options)`
@@ -92,7 +92,7 @@ D402PaymentAction.Dispute
 Accepted responses may `KeepOpen` or `Settle`.
 Rejected responses may `KeepOpen`, `RequestRefund`, or `Dispute`.
 
-## `@d402/sdk/server`
+## `d402/server`
 
 Server-side payable routes and verification.
 
@@ -101,7 +101,7 @@ import {
   payable,
   createDPaymentsVerifier,
   paymentActions,
-} from "@d402/sdk/server";
+} from "d402/server";
 ```
 
 ### `payable(options)`
@@ -171,7 +171,7 @@ const verify: PaymentVerifier = async (input) => {
 };
 ```
 
-## `@d402/sdk/autosigner`
+## `d402/autosigner`
 
 The autosigner entry point currently exports no runtime API. It is reserved for
 future automatic payment flows with separate budget and custody guardrails.

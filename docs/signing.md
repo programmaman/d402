@@ -13,7 +13,7 @@ WalletConnect, and hardware wallets can prompt the user when
 
 ```ts
 import { BrowserProvider } from "ethers";
-import { createD402Client, D402PaymentAction } from "@d402/sdk/client";
+import { createD402Client, D402PaymentAction } from "d402/client";
 
 const provider = new BrowserProvider(window.ethereum);
 
@@ -48,7 +48,7 @@ transactions without wallet popups.
 
 ```ts
 import { JsonRpcProvider, Wallet } from "ethers";
-import { createD402Client, D402PaymentAction } from "@d402/sdk/client";
+import { createD402Client, D402PaymentAction } from "d402/client";
 
 const provider = new JsonRpcProvider(process.env.RPC_URL);
 const signer = new Wallet(process.env.PAYER_PRIVATE_KEY, provider);
@@ -113,7 +113,7 @@ const client = await createD402Client({
 Servers can also send dPayment action transactions with their own signer.
 
 ```ts
-import { paymentActions } from "@d402/sdk/server";
+import { paymentActions } from "d402/server";
 
 const actions = paymentActions({
   provider,

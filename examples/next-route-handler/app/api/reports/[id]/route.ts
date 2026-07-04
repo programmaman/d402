@@ -1,6 +1,6 @@
 import { JsonRpcProvider } from "ethers";
 
-import { payable } from "@d402/sdk/server";
+import { payable } from "d402/server";
 
 const provider = new JsonRpcProvider(requireEnv("RPC_URL"));
 const chainId = Number(requireEnv("CHAIN_ID"));

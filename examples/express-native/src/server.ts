@@ -3,7 +3,7 @@ import "dotenv/config";
 import express from "express";
 import { JsonRpcProvider } from "ethers";
 
-import { payable } from "@d402/sdk/server";
+import { payable } from "d402/server";
 
 const port = Number(process.env.PORT ?? "3000");
 const chainId = Number(requireEnv("CHAIN_ID"));

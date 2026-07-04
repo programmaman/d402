@@ -1,5 +1,5 @@
 {
-  "name": "@d402/sdk",
+  "name": "d402",
   "version": "0.1.0",
   "description": "HTTP 402 payment agreement SDK backed by on-chain state.",
   "type": "module",

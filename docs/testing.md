@@ -91,11 +91,11 @@ Install the generated tarball into a clean temporary project and verify these
 imports:
 
 ```ts
-import "@d402/sdk";
-import "@d402/sdk/core";
-import "@d402/sdk/client";
-import "@d402/sdk/server";
-import "@d402/sdk/autosigner";
+import "d402";
+import "d402/core";
+import "d402/client";
+import "d402/server";
+import "d402/autosigner";
 ```
 
 Also verify README examples against the current public API before a stable

@@ -2,7 +2,7 @@ import "dotenv/config";
 
 import { JsonRpcProvider, Wallet } from "ethers";
 
-import { createD402Client } from "@d402/sdk/client";
+import { createD402Client } from "d402/client";
 
 const baseUrl = process.env.NEXT_PUBLIC_BASE_URL ?? "http://localhost:3000";
 const chainId = Number(requireEnv("CHAIN_ID"));

@@ -8,15 +8,15 @@ server verification.
 
 The package is split by role:
 
-- `@d402/sdk/core` - shared request/proof parsing and terms hashing
-- `@d402/sdk/client` - paying client and payment-proof retry flow
-- `@d402/sdk/server` - payable routes, verification, and server-side actions
-- `@d402/sdk/autosigner` - reserved entry point for future unattended payment flows
+- `d402/core` - shared request/proof parsing and terms hashing
+- `d402/client` - paying client and payment-proof retry flow
+- `d402/server` - payable routes, verification, and server-side actions
+- `d402/autosigner` - reserved entry point for future unattended payment flows
 
 ## Install
 
 ```sh
-npm install @d402/sdk ethers
+npm install d402 ethers
 ```
 
 You also need an RPC provider for the target chain and dPayment contracts
@@ -30,7 +30,7 @@ the request includes a valid `D402-Payment-Proof` header.
 
 ```ts
 import { JsonRpcProvider } from "ethers";
-import { payable } from "@d402/sdk/server";
+import { payable } from "d402/server";
 
 const provider = new JsonRpcProvider(process.env.RPC_URL);
 
@@ -85,7 +85,7 @@ matches these limits.
 
 ```ts
 import { JsonRpcProvider, Wallet } from "ethers";
-import { createD402Client, D402PaymentAction } from "@d402/sdk/client";
+import { createD402Client, D402PaymentAction } from "d402/client";
 
 const provider = new JsonRpcProvider(process.env.RPC_URL);
 const signer = new Wallet(process.env.PAYER_PRIVATE_KEY, provider);
@@ -199,7 +199,7 @@ const client = await createD402Client({
 Servers can also settle or refund verified payment addresses:
 
 ```ts
-import { paymentActions } from "@d402/sdk/server";
+import { paymentActions } from "d402/server";
 
 const actions = paymentActions({
   provider,

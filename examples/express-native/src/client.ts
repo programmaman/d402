@@ -2,7 +2,7 @@ import "dotenv/config";
 
 import { JsonRpcProvider, Wallet } from "ethers";
 
-import { createD402Client, D402PaymentAction } from "@d402/sdk/client";
+import { createD402Client, D402PaymentAction } from "d402/client";
 
 const port = Number(process.env.PORT ?? "3000");
 const chainId = Number(requireEnv("CHAIN_ID"));
