@@ -77,6 +77,10 @@ expects it to match the URL being retried, so `resource: (request) =>
 request.url` is the safest default. Put internal product IDs, order IDs, or
 version labels in `agreement.id`.
 
+If the app wants settlement timing relative to the latest block instead of a
+fixed timestamp, set `paymentConfig.settlementWindow` and omit
+`settlementTimeUnixSec`. d402 will derive the settlement time from the chain.
+
 ## Client Quickstart
 
 Create a client with a provider, signer, and policy. The policy is the client's
@@ -111,9 +115,6 @@ const response = await client.fetch("https://api.example.com/reports/123");
 const body = await response.json();
 ```
 
-The client uses the pinned Quick Disputable Payment implementation. There is no
-factory override in the public API.
-
 The client flow is:
 
 1. Send the original request.
@@ -138,34 +139,50 @@ import { payable, paymentActions } from "d402/server";
 const provider = new JsonRpcProvider(process.env.RPC_URL);
 const payee = new Wallet(process.env.PAYEE_PRIVATE_KEY, provider);
 
-const payments = new Map<string, {
+type PaymentRecord = {
   paymentId: string;
-  paymentAddress: string;
-  payerAddress?: string;
-  state?: string;
-  settledAt?: Date;
-}>();
+  paymentAddress: `0x${string}`;
+  payerAddress?: `0x${string}`;
+  state: string;
+  settledAt: Date | null;
+};
+
+const paymentStore = {
+  // Store the payment record when the protected response is generated.
+  async upsert(record: PaymentRecord) {
+    // Replace with your DB client: Prisma, SQL, Drizzle, etc.
+  },
+  // Return payments that are ready to be settled by a background worker.
+  async listReadyForSettlement() {
+    return [] as PaymentRecord[];
+  },
+  // Mark the payment as settled after the on-chain action succeeds.
+  async markSettled(paymentId: string, settledAt: Date) {
+    // Replace with an UPDATE in your DB.
+  },
+};
 
 export const GET = payable({
   paymentConfig: {
     provider,
     resource: (request) => request.url,
+    settlementWindow: 3600,
   },
   terms: async (request) => ({
     chainId: 100,
     payeeAddress: payee.address,
     tokenAddress: null,
     netAmount: "10000",
-    settlementTimeUnixSec: String(Math.floor(Date.now() / 1000) + 3600),
     agreement: { id: "report-access:v1" },
     expiresAtUnixSec: Math.floor(Date.now() / 1000) + 300,
   }),
   handler: async (_request, context) => {
-    payments.set(context.paymentRequest.paymentId, {
+    await paymentStore.upsert({
       paymentId: context.paymentRequest.paymentId,
-      paymentAddress: context.payment?.paymentAddress ?? "",
-      payerAddress: context.payment?.payerAddress,
-      state: context.payment?.state,
+      paymentAddress: context.payment?.paymentAddress as `0x${string}`,
+      payerAddress: context.payment?.payerAddress as `0x${string}` | undefined,
+      state: context.payment?.state ?? "open",
+      settledAt: null,
     });
 
     return Response.json({
@@ -176,25 +193,28 @@ export const GET = payable({
 });
 
 async function settleReadyPayments() {
+  // Settle ready payments in a background job or queue worker.
   const actions = paymentActions({
     provider,
     signer: payee,
   });
 
-  for (const payment of payments.values()) {
-    if (payment.settledAt !== undefined) {
+  for (const payment of await paymentStore.listReadyForSettlement()) {
+    if (payment.settledAt !== null) {
       continue;
     }
 
-    await actions.settlePayment(payment.paymentAddress as `0x${string}`);
-    payment.settledAt = new Date();
+    await actions.settlePayment(payment.paymentAddress);
+    await paymentStore.markSettled(payment.paymentId, new Date());
   }
 }
 ```
 
 That pattern is the common one: the payment opens the gate, the server records
 the on-chain identifiers, and a later worker settles or refunds based on your
-business rules.
+business rules. When you use `settlementWindow`, the server derives the
+settlement time from the latest block and the settlement job can act once that
+window has passed.
 
 Clients can also be configured to auto-settle after they inspect the protected
 response, or to keep the payment open. That lets the protocol support
