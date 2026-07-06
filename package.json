@@ -77,6 +77,10 @@
     "ethers": "^6.17.0",
     "zod": "^4.4.3"
   },
+  "overrides": {
+    "@emnapi/core": "1.11.2",
+    "@emnapi/runtime": "1.11.2"
+  },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
     "@types/node": "^26.0.1",
