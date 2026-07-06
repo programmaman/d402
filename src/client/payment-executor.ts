@@ -14,8 +14,12 @@ import type {
   TransactionReceipt,
   TransactionRequest,
 } from "ethers";
+import { NonceManager } from "ethers";
 
 import type { Address, D402PaymentRequest, Hex32 } from "../core/index.js";
+import {
+  D402_QUICK_DISPUTABLE_PAYMENT,
+} from "../core/index.js";
 import {
   D402ConfigurationError,
   D402PaymentExecutionError,
@@ -37,15 +41,36 @@ export interface CreateDPaymentsExecutorOptions {
 export function createDPaymentsExecutor(
   options: CreateDPaymentsExecutorOptions,
 ): D402PaymentExecutor {
+  const signer = new NonceManager(options.signer);
+  const queuedOptions = { ...options, signer };
+  let txQueue: Promise<unknown> = Promise.resolve();
+
+  async function runInQueue<T>(operation: () => Promise<T>): Promise<T> {
+    const currentQueue = txQueue;
+    const broadcast = (async () => {
+      await currentQueue.catch(() => {});
+
+      try {
+        return await operation();
+      } catch (error) {
+        signer.reset();
+        throw error;
+      }
+    })();
+
+    txQueue = broadcast;
+    return broadcast;
+  }
+
   return {
     async createPayment(paymentRequest) {
-      return createDPaymentsPayment(options, paymentRequest);
+      return runInQueue(() => createDPaymentsPayment(queuedOptions, paymentRequest));
     },
     async settlePayment(payment) {
-      return sendPaymentAction(options, payment, "settle");
+      return runInQueue(() => sendPaymentAction(queuedOptions, payment, "settle"));
     },
     async disputePayment(payment) {
-      return raisePaymentDispute(options, payment);
+      return runInQueue(() => raisePaymentDispute(queuedOptions, payment));
     },
   };
 }
@@ -204,17 +229,15 @@ async function createDPayments(
 ): Promise<DPayments> {
   const network = await options.provider.getNetwork();
   const chainId = Number(network.chainId);
-
-  if (options.factoryAddress !== undefined) {
-    return new DPayments({
-      chainId,
-      factoryAddress: options.factoryAddress,
-      provider: options.provider,
-      walletAddress,
-    });
-  }
-
-  return DPayments.fromProvider(options.provider, walletAddress);
+  return new DPayments({
+    chainId,
+    ...(options.factoryAddress !== undefined
+      ? { factoryAddress: options.factoryAddress }
+      : {}),
+    provider: options.provider,
+    walletAddress,
+    impl: D402_QUICK_DISPUTABLE_PAYMENT
+  });
 }
 
 async function sendPreparedTx(

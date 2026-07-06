@@ -5,6 +5,20 @@
   "type": "module",
   "license": "Apache-2.0",
   "sideEffects": false,
+  "keywords": [
+    "http-payments",
+    "402-payment-required",
+    "d402",
+    "x402",
+    "micropayments",
+    "agent-payments",
+    "machine-payments",
+    "programmable-payments",
+    "escrow",
+    "settlement",
+    "payment-proofs",
+    "refunds"
+  ],
   "engines": {
     "node": ">=20"
   },
