@@ -174,7 +174,7 @@ and lower-level contract workflows.
 ## Settlement And Refund Actions
 
 If the app needs lower-level lifecycle actions outside d402's proof
-verification path, call the dPayment SDK directly.
+verification path, call the dPayment SDK directly from the server side.
 
 ```ts
 import { DPayments } from "@rakelabs/dpayments-sdk";
@@ -197,7 +197,7 @@ const response = await signer.sendTransaction({
 await response.wait();
 ```
 
-Refund before settlement if your app cannot fulfill the paid request.
+Refund before settlement if the server cannot fulfill the paid request.
 
 ```ts
 const tx = payment.voluntaryRefund(walletAddress);

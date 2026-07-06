@@ -34,7 +34,6 @@ const client = await createD402Client({
     requireAgreementHash: true,
   },
   onAccepted: D402PaymentAction.KeepOpen,
-  onRejected: D402PaymentAction.Dispute,
 });
 
 const response = await client.fetch("/api/reports/123");
@@ -66,7 +65,6 @@ const client = await createD402Client({
     maxSettlementWindowSec: 3600,
   },
   onAccepted: D402PaymentAction.Settle,
-  onRejected: D402PaymentAction.RequestRefund,
 });
 
 const response = await client.fetch("https://api.example.com/reports/123");
@@ -96,15 +94,15 @@ The client creates a dPayment when it accepts a 402 payment request.
 For ERC-20 payments, the executor may send an approval transaction before the
 create-payment transaction.
 
-After the paid request returns, `onAccepted` and `onRejected` decide whether the
-client keeps the payment open, settles it, disputes it, or requests a refund.
+After the paid request returns, `onAccepted` decides whether the client keeps
+the payment open or settles it after the response is received. Refunds and
+other recovery actions are handled on the server side.
 
 ```ts
 const client = await createD402Client({
   provider,
   signer,
   onAccepted: D402PaymentAction.Settle,
-  onRejected: D402PaymentAction.Dispute,
 });
 ```
 

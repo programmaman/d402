@@ -3,6 +3,18 @@
 This page summarizes the public package entry points. See the TypeScript types
 in `src/` for exact definitions.
 
+## Client vs Server
+
+d402 splits responsibility cleanly:
+
+- client: evaluate the 402, create the payment, retry with proof, then keep the
+  payment open or settle after the response
+- server: verify the proof, persist the payment record, and later settle,
+  refund, or handle evidence/appeals from the server signer
+
+That split matters because the client does not own recovery logic for a
+rejected response. Recovery is a server concern.
+
 ## `d402/core`
 
 Shared protocol primitives.
@@ -36,6 +48,16 @@ Key types:
 
 Paying client.
 
+Client responsibility:
+
+- evaluate a 402 payment request against local policy
+- create the payment transaction
+- retry the original request with a proof
+- keep the payment open or settle it after the protected response is received
+
+The client does not own server-side lifecycle recovery. Refund handling and
+other post-response recovery flows belong to the server side.
+
 ```ts
 import {
   createD402Client,
@@ -54,11 +76,11 @@ Important options:
 - `fetch`: optional fetch implementation. Defaults to global `fetch`.
 - `proofHeaderName`: optional proof header override. Defaults to `D402-Payment-Proof`.
 - `paymentConfirmations`: confirmations to wait after payment creation.
-- `actionConfirmations`: confirmations to wait for settle/dispute/refund actions.
+- `actionConfirmations`: confirmations to wait for settle actions.
 - `policy`: local spending policy.
 - `onResponse`: validates the protected response before action handling.
 - `onAccepted`: action after accepted protected response.
-- `onRejected`: action after rejected protected response.
+- `onRejected`: advanced hook for custom app behavior after a rejected response.
 - `executor`: custom payment executor for tests or alternate payment creation.
 
 The client always uses the pinned Quick Disputable Payment implementation.
@@ -82,21 +104,26 @@ interface D402ClientPolicy {
 Policy is checked before payment creation. Use it for both user-approved and
 unattended signers.
 
-### Payment Actions
+### Client Actions
 
 ```ts
 D402PaymentAction.KeepOpen
 D402PaymentAction.Settle
-D402PaymentAction.RequestRefund
-D402PaymentAction.Dispute
 ```
 
 Accepted responses may `KeepOpen` or `Settle`.
-Rejected responses may `KeepOpen`, `RequestRefund`, or `Dispute`.
+Rejected responses are typically kept open. If your app needs recovery after a
+rejected response, handle that on the server side.
 
 ## `d402/server`
 
 Server-side payable routes and verification.
+
+Server responsibility:
+
+- verify payment proofs and on-chain state
+- persist payment records for later settlement or refund handling
+- run settlement, refund, evidence, or appeal actions with a server signer
 
 ```ts
 import {

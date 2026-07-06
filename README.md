@@ -105,7 +105,6 @@ const client = await createD402Client({
     requireAgreementHash: true,
   },
   onAccepted: D402PaymentAction.KeepOpen,
-  onRejected: D402PaymentAction.RequestRefund,
 });
 
 const response = await client.fetch("https://api.example.com/reports/123");
@@ -125,6 +124,82 @@ The client flow is:
 5. Create a dPayment.
 6. Retry the same request with `D402-Payment-Proof`.
 7. Run response validation and optional payment action handling.
+
+## A Realistic Integration
+
+In a real app, the server keeps a payment record for later settlement or refund
+handling, and the client either keeps the payment open or settles it after the
+response comes back.
+
+```ts
+import { JsonRpcProvider, Wallet } from "ethers";
+import { payable, paymentActions } from "d402/server";
+
+const provider = new JsonRpcProvider(process.env.RPC_URL);
+const payee = new Wallet(process.env.PAYEE_PRIVATE_KEY, provider);
+
+const payments = new Map<string, {
+  paymentId: string;
+  paymentAddress: string;
+  payerAddress?: string;
+  state?: string;
+  settledAt?: Date;
+}>();
+
+export const GET = payable({
+  paymentConfig: {
+    provider,
+    resource: (request) => request.url,
+  },
+  terms: async (request) => ({
+    chainId: 100,
+    payeeAddress: payee.address,
+    tokenAddress: null,
+    netAmount: "10000",
+    settlementTimeUnixSec: String(Math.floor(Date.now() / 1000) + 3600),
+    agreement: { id: "report-access:v1" },
+    expiresAtUnixSec: Math.floor(Date.now() / 1000) + 300,
+  }),
+  handler: async (_request, context) => {
+    payments.set(context.paymentRequest.paymentId, {
+      paymentId: context.paymentRequest.paymentId,
+      paymentAddress: context.payment?.paymentAddress ?? "",
+      payerAddress: context.payment?.payerAddress,
+      state: context.payment?.state,
+    });
+
+    return Response.json({
+      report: "123",
+      data: "ready",
+    });
+  },
+});
+
+async function settleReadyPayments() {
+  const actions = paymentActions({
+    provider,
+    signer: payee,
+  });
+
+  for (const payment of payments.values()) {
+    if (payment.settledAt !== undefined) {
+      continue;
+    }
+
+    await actions.settlePayment(payment.paymentAddress as `0x${string}`);
+    payment.settledAt = new Date();
+  }
+}
+```
+
+That pattern is the common one: the payment opens the gate, the server records
+the on-chain identifiers, and a later worker settles or refunds based on your
+business rules.
+
+Clients can also be configured to auto-settle after they inspect the protected
+response, or to keep the payment open. That lets the protocol support
+negotiation-style flows instead of only one-shot payment-and-finish
+interactions. Refunds are handled on the server side.
 
 ## Wire Format
 
@@ -176,14 +251,14 @@ See [docs/protocol.md](docs/protocol.md) for the field-level protocol details.
 ## Payment Actions
 
 By default the client keeps successful payments open. You can configure action
-handling after the protected response returns:
+handling after the protected response returns to settle the payment after the
+response is received:
 
 ```ts
 const client = await createD402Client({
   provider,
   signer,
   onAccepted: D402PaymentAction.Settle,
-  onRejected: D402PaymentAction.Dispute,
   onResponse: {
     async validate({ response }) {
       if (!response.ok) {
