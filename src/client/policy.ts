@@ -1,20 +1,17 @@
-import type { AbstractProvider } from "ethers";
-
 import type { D402PaymentRequest } from "../core/index.js";
 import { D402PolicyViolationError } from "./errors.js";
 import type { D402ClientPolicy } from "./types.js";
 
-export async function validatePaymentPolicy(input: {
+export function validatePaymentPolicy(input: {
   paymentRequest: D402PaymentRequest;
-  provider: AbstractProvider;
+  connectedChainId: number;
   policy: D402ClientPolicy;
-}): Promise<void> {
-  const { paymentRequest, provider, policy } = input;
-  const network = await provider.getNetwork();
+}): void {
+  const { paymentRequest, connectedChainId, policy } = input;
 
-  if (Number(network.chainId) !== paymentRequest.chainId) {
+  if (connectedChainId !== paymentRequest.chainId) {
     throw new D402PolicyViolationError(
-      "Payment request chain does not match connected provider chain.",
+      `Connected provider chain ${connectedChainId} does not match payment request chain ${paymentRequest.chainId}.`,
     );
   }
 
@@ -22,40 +19,52 @@ export async function validatePaymentPolicy(input: {
     policy.allowedChains !== undefined &&
     !policy.allowedChains.includes(paymentRequest.chainId)
   ) {
-    throw new D402PolicyViolationError("Payment request chain is not allowed.");
+    throw new D402PolicyViolationError(
+      `Payment request chain is not allowed by client policy: ${paymentRequest.chainId}.`,
+    );
   }
 
   if (
     policy.allowedPayees !== undefined &&
     !includesAddress(policy.allowedPayees, paymentRequest.payeeAddress)
   ) {
-    throw new D402PolicyViolationError("Payment payee is not allowed.");
+    throw new D402PolicyViolationError(
+      `Payment payee is not allowed by client policy: ${paymentRequest.payeeAddress}.`,
+    );
   }
 
   if (
     policy.allowedTokens !== undefined &&
     !includesToken(policy.allowedTokens, paymentRequest.tokenAddress)
   ) {
-    throw new D402PolicyViolationError("Payment token is not allowed.");
+    throw new D402PolicyViolationError(
+      `Payment token is not allowed by client policy: ${paymentRequest.tokenAddress ?? "null"}.`,
+    );
   }
 
   if (
     policy.allowedResources !== undefined &&
     !matchesAllowedResource(policy.allowedResources, paymentRequest.resource)
   ) {
-    throw new D402PolicyViolationError("Payment resource is not allowed.");
+    throw new D402PolicyViolationError(
+      `Payment resource is not allowed by client policy: ${paymentRequest.resource}.`,
+    );
   }
 
   if (
     policy.maxAmount !== undefined &&
     BigInt(paymentRequest.netAmount) > BigInt(policy.maxAmount)
   ) {
-    throw new D402PolicyViolationError("Payment amount exceeds client policy.");
+    throw new D402PolicyViolationError(
+      `Payment amount exceeds client policy: ${paymentRequest.netAmount} > ${policy.maxAmount}.`,
+    );
   }
 
   const now = Math.floor(Date.now() / 1000);
   if (paymentRequest.expiresAtUnixSec <= now) {
-    throw new D402PolicyViolationError("Payment request is expired.");
+    throw new D402PolicyViolationError(
+      `Payment request is expired: expiresAtUnixSec=${paymentRequest.expiresAtUnixSec}, now=${now}.`,
+    );
   }
 
   if (
@@ -63,7 +72,7 @@ export async function validatePaymentPolicy(input: {
     paymentRequest.expiresAtUnixSec > now + policy.maxExpiryWindowSec
   ) {
     throw new D402PolicyViolationError(
-      "Payment request expiry is too far in the future.",
+      `Payment request expiry is too far in the future: expiresAtUnixSec=${paymentRequest.expiresAtUnixSec}, maxExpiryWindowSec=${policy.maxExpiryWindowSec}.`,
     );
   }
 
@@ -73,7 +82,7 @@ export async function validatePaymentPolicy(input: {
       BigInt(now + policy.maxSettlementWindowSec)
   ) {
     throw new D402PolicyViolationError(
-      "Payment settlement window exceeds client policy.",
+      `Payment settlement window exceeds client policy: settlementTimeUnixSec=${paymentRequest.settlementTimeUnixSec}, maxSettlementWindowSec=${policy.maxSettlementWindowSec}.`,
     );
   }
 

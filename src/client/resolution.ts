@@ -26,7 +26,7 @@ export async function resolvePaymentAfterAcceptance(input: {
 
     if (input.executor.settlePayment === undefined) {
       throw new D402ConfigurationError(
-        "onAccepted is set to settle, but executor.settlePayment is not configured.",
+        "onAccepted is set to settle, but executor.settlePayment is not configured. Provide an executor with settlePayment or keep the payment open.",
       );
     }
 
@@ -45,7 +45,7 @@ export async function resolvePaymentAfterAcceptance(input: {
   if (onRejected === D402PaymentAction.RequestRefund) {
     if (input.executor.requestRefund === undefined) {
       throw new D402ConfigurationError(
-        "onRejected is set to request-refund, but executor.requestRefund is not configured.",
+        "onRejected is set to request-refund, but executor.requestRefund is not configured. Provide an executor with requestRefund or keep the payment open.",
       );
     }
 
@@ -62,7 +62,7 @@ export async function resolvePaymentAfterAcceptance(input: {
 
   if (input.executor.disputePayment === undefined) {
     throw new D402ConfigurationError(
-      "onRejected is set to dispute, but executor.disputePayment is not configured.",
+      "onRejected is set to dispute, but executor.disputePayment is not configured. Provide an executor with disputePayment or keep the payment open.",
     );
   }
 

@@ -17,7 +17,9 @@ export function payable<Req extends Request = Request>(
   options: PayableRouteConfig<Req>,
 ): (request: Req) => Promise<Response> {
   const verifier = options.verify ?? createDPaymentsVerifier(options.paymentConfig);
-  const latestBlockCacheTtlMs = resolveLatestBlockCacheTtlMs(options.paymentConfig.cache);
+  const cacheSetting = options.paymentConfig.cache
+    ?? (options.paymentConfig.settlementWindow !== undefined ? true : undefined);
+  const latestBlockCacheTtlMs = resolveLatestBlockCacheTtlMs(cacheSetting);
   const latestBlockCache =
     latestBlockCacheTtlMs === null
       ? null

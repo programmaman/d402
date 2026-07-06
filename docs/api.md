@@ -51,7 +51,6 @@ Important options:
 
 - `provider`: ethers provider used for chain/policy validation.
 - `signer`: ethers signer used to create dPayment transactions.
-- `factoryAddress`: optional dPayment factory override.
 - `fetch`: optional fetch implementation. Defaults to global `fetch`.
 - `proofHeaderName`: optional proof header override. Defaults to `D402-Payment-Proof`.
 - `paymentConfirmations`: confirmations to wait after payment creation.
@@ -61,6 +60,9 @@ Important options:
 - `onAccepted`: action after accepted protected response.
 - `onRejected`: action after rejected protected response.
 - `executor`: custom payment executor for tests or alternate payment creation.
+
+The client always uses the pinned Quick Disputable Payment implementation.
+There is no factory override in the public API.
 
 ### Client Policy
 

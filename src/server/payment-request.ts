@@ -44,12 +44,14 @@ function completeTermsFromRequest(
   const resolvedResource = resource ?? partialTerms.resource;
 
   if (resolvedResource === undefined) {
-    throw new Error("resource must be provided by paymentConfig.resource or terms");
+    throw new Error(
+      "resource must be provided by paymentConfig.resource or terms.resource so the server can build a payment request",
+    );
   }
 
   if (settlementTimeUnixSec === undefined) {
     throw new Error(
-      "settlementTimeUnixSec must be provided by paymentConfig or terms",
+      "settlementTimeUnixSec must be provided by paymentConfig.settlementWindow, paymentConfig.settlementTimeUnixSec, or terms.settlementTimeUnixSec",
     );
   }
 

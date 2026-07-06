@@ -13,6 +13,7 @@ import {
   withPaymentProofHeader,
 } from "./request.js";
 import { resolvePaymentAfterAcceptance } from "./resolution.js";
+import { getConnectedChainId } from "../runtime/chain.js";
 import type {
   CreateD402ClientOptions,
   D402Client,
@@ -29,6 +30,9 @@ export function createD402Client(
   const fetchImpl = resolveFetch(options.fetch);
   const proofHeaderName = options.proofHeaderName ?? D402_PAYMENT_PROOF_HEADER;
   const provider = resolveProvider(options);
+  const connectedChainIdPromise = options.policy !== undefined
+    ? getConnectedChainId(provider)
+    : null;
   const executor = options.executor ?? createDefaultExecutor(options, provider);
   const onResponse = resolveResponseValidator(options.onResponse);
   const onAccepted = options.onAccepted ?? D402DefaultPaymentActions.OnAccepted;
@@ -51,9 +55,12 @@ export function createD402Client(
       });
 
       if (options.policy !== undefined) {
-        await validatePaymentPolicy({
+        const connectedChainId = await (
+          connectedChainIdPromise ?? getConnectedChainId(provider)
+        );
+        validatePaymentPolicy({
           paymentRequest,
-          provider,
+          connectedChainId,
           policy: options.policy,
         });
       }
@@ -93,7 +100,7 @@ function resolveFetch(
 
   if (resolved === undefined) {
     throw new D402ConfigurationError(
-      "createD402Client requires a fetch implementation.",
+      "createD402Client requires a fetch implementation. Pass fetch explicitly when global fetch is unavailable.",
     );
   }
 
@@ -111,7 +118,7 @@ function resolveProvider(options: CreateD402ClientOptions): AbstractProvider {
 
   if (provider === null || provider === undefined) {
     throw new D402ConfigurationError(
-      "createD402Client requires a provider, signer.provider, or executor with provider-backed policy validation.",
+      "createD402Client requires a provider or signer.provider when policy validation is enabled.",
     );
   }
 
@@ -124,16 +131,13 @@ function createDefaultExecutor(
 ) {
   if (options.signer === undefined) {
     throw new D402ConfigurationError(
-      "createD402Client requires signer when executor is not provided.",
+      "createD402Client requires signer when executor is not provided and the client needs to create payments.",
     );
   }
 
   const executorOptions = {
     signer: options.signer,
     provider,
-    ...(options.factoryAddress !== undefined
-      ? { factoryAddress: options.factoryAddress }
-      : {}),
     ...(options.paymentConfirmations !== undefined
       ? { paymentConfirmations: options.paymentConfirmations }
       : {}),

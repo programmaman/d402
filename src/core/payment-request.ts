@@ -19,10 +19,10 @@ export function parsePaymentRequest(request: unknown): D402PaymentRequest {
   const computedTermsHash = hashNormalizedPaymentTerms(parsedTerms);
 
   if (parsed.termsHash !== computedTermsHash) {
-    throw new Error(`termsHash mismatch: expected ${computedTermsHash}`);
+    throw new Error(`termsHash mismatch: got ${parsed.termsHash}`);
   }
   if (parsed.paymentId !== computedTermsHash) {
-    throw new Error("paymentId must equal termsHash");
+    throw new Error(`paymentId must equal termsHash: got ${parsed.paymentId}`);
   }
 
   return {

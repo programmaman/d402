@@ -112,6 +112,9 @@ const response = await client.fetch("https://api.example.com/reports/123");
 const body = await response.json();
 ```
 
+The client uses the pinned Quick Disputable Payment implementation. There is no
+factory override in the public API.
+
 The client flow is:
 
 1. Send the original request.

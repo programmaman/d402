@@ -1,8 +1,9 @@
-import { DPayments } from "@rakelabs/dpayments-sdk";
 import type { PreparedTx } from "@rakelabs/dpayments-sdk";
 import type { Signer, TransactionReceipt, TransactionRequest } from "ethers";
 
 import type { Hex32, PaymentAddress } from "../core/index.js";
+import { D402_DEFAULT_CONFIRMATIONS } from "../runtime/defaults.js";
+import { createPinnedDPayments } from "../runtime/dpayments.js";
 import type {
   PaymentActionResult,
   PaymentAppealResult,
@@ -12,7 +13,9 @@ import type {
 
 export function paymentActions(config: PaymentConfig): PaymentActions {
   if (config.signer === undefined) {
-    throw new Error("paymentConfig.signer is required for payment actions.");
+    throw new Error(
+      "paymentConfig.signer is required for payment actions so the server can broadcast settlement, refund, evidence, or appeal transactions.",
+    );
   }
   const actionConfig = {
     ...config,
@@ -46,7 +49,7 @@ async function sendPaymentAction(
     paymentAddress,
     walletAddress,
   });
-  const dpayments = await DPayments.fromProvider(config.provider, walletAddress);
+  const dpayments = await createQuickDPayments(config.provider, walletAddress);
   const dPayment = dpayments.dPayment(paymentAddress);
   const tx = action === "settle"
     ? dPayment.settle(walletAddress)
@@ -54,7 +57,7 @@ async function sendPaymentAction(
   const receipt = await sendPreparedTx(
     config.signer,
     tx,
-    config.actionConfirmations ?? 0,
+    config.actionConfirmations ?? D402_DEFAULT_CONFIRMATIONS,
   );
   console.log("[server] payment action confirmed", {
     action,
@@ -77,13 +80,13 @@ async function sendEvidenceAction(
     walletAddress,
     evidenceUri,
   });
-  const dpayments = await DPayments.fromProvider(config.provider, walletAddress);
+  const dpayments = await createQuickDPayments(config.provider, walletAddress);
   const dPayment = dpayments.dPayment(paymentAddress);
   const tx = dPayment.submitEvidence(evidenceUri, walletAddress);
   const receipt = await sendPreparedTx(
     config.signer,
     tx,
-    config.actionConfirmations ?? 0,
+    config.actionConfirmations ?? D402_DEFAULT_CONFIRMATIONS,
   );
   console.log("[server] evidence submission confirmed", {
     paymentAddress,
@@ -103,7 +106,7 @@ async function sendAppealAction(
     paymentAddress,
     walletAddress,
   });
-  const dpayments = await DPayments.fromProvider(config.provider, walletAddress);
+  const dpayments = await createQuickDPayments(config.provider, walletAddress);
   const dPayment = dpayments.dPayment(paymentAddress);
   const prepared = await dPayment.prepareAppeal(
     "0x",
@@ -112,7 +115,7 @@ async function sendAppealAction(
   const receipt = await sendPreparedTx(
     config.signer,
     prepared.tx,
-    config.actionConfirmations ?? 0,
+    config.actionConfirmations ?? D402_DEFAULT_CONFIRMATIONS,
   );
   console.log("[server] appeal confirmed", {
     paymentAddress,
@@ -138,7 +141,9 @@ async function sendPreparedTx(
   const receipt = await response.wait(confirmations);
 
   if (receipt === null || receipt.status !== 1) {
-    throw new Error("DPayments action transaction failed.");
+    throw new Error(
+      "DPayments action transaction failed after broadcast or was not mined successfully.",
+    );
   }
 
   return receipt;
@@ -151,4 +156,14 @@ function toTransactionRequest(tx: PreparedTx): TransactionRequest {
     value: BigInt(tx.value),
     chainId: tx.chainId,
   };
+}
+
+async function createQuickDPayments(
+  provider: PaymentConfig["provider"],
+  walletAddress: string,
+): ReturnType<typeof createPinnedDPayments> {
+  return createPinnedDPayments({
+    provider,
+    walletAddress,
+  });
 }

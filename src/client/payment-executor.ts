@@ -1,8 +1,8 @@
 import {
-  DPayments,
   PaymentEvents,
   ZERO_ADDRESS,
 } from "@rakelabs/dpayments-sdk";
+import type { DPayments } from "@rakelabs/dpayments-sdk";
 import type {
   EvmLog,
   PaymentCreatedEvent,
@@ -18,12 +18,11 @@ import { NonceManager } from "ethers";
 
 import type { Address, D402PaymentRequest, Hex32 } from "../core/index.js";
 import {
-  D402_QUICK_DISPUTABLE_PAYMENT,
-} from "../core/index.js";
-import {
   D402ConfigurationError,
   D402PaymentExecutionError,
 } from "./errors.js";
+import { D402_DEFAULT_CONFIRMATIONS } from "../runtime/defaults.js";
+import { createPinnedDPayments } from "../runtime/dpayments.js";
 import type {
   D402CreatedPayment,
   D402PaymentActionResult,
@@ -33,7 +32,6 @@ import type {
 export interface CreateDPaymentsExecutorOptions {
   signer: Signer;
   provider: AbstractProvider;
-  factoryAddress?: string;
   paymentConfirmations?: number;
   resolutionConfirmations?: number;
 }
@@ -110,14 +108,14 @@ async function createDPaymentsPayment(
       await sendPreparedTx(
         options.signer,
         prepared.approveTx,
-        options.paymentConfirmations ?? 0,
+        options.paymentConfirmations ?? D402_DEFAULT_CONFIRMATIONS,
       );
     }
 
     const receipt = await sendPreparedTx(
       options.signer,
       createTx,
-      options.paymentConfirmations ?? 0,
+      options.paymentConfirmations ?? D402_DEFAULT_CONFIRMATIONS,
     );
     const paymentAddress = extractPaymentAddressFromReceipt(
       receipt,
@@ -158,7 +156,7 @@ async function sendPaymentAction(
     const receipt = await sendPreparedTx(
       options.signer,
       tx,
-      options.resolutionConfirmations ?? 0,
+      options.resolutionConfirmations ?? D402_DEFAULT_CONFIRMATIONS,
     );
     console.log("[client] payment action confirmed", {
       action,
@@ -205,7 +203,7 @@ async function raisePaymentDispute(
     const receipt = await sendPreparedTx(
       options.signer,
       prepared.tx,
-      options.resolutionConfirmations ?? 0,
+      options.resolutionConfirmations ?? D402_DEFAULT_CONFIRMATIONS,
     );
     console.log("[client] payment dispute confirmed", {
       paymentId: payment.paymentId,
@@ -227,16 +225,9 @@ async function createDPayments(
   options: CreateDPaymentsExecutorOptions,
   walletAddress: string,
 ): Promise<DPayments> {
-  const network = await options.provider.getNetwork();
-  const chainId = Number(network.chainId);
-  return new DPayments({
-    chainId,
-    ...(options.factoryAddress !== undefined
-      ? { factoryAddress: options.factoryAddress }
-      : {}),
+  return createPinnedDPayments({
     provider: options.provider,
     walletAddress,
-    impl: D402_QUICK_DISPUTABLE_PAYMENT
   });
 }
 

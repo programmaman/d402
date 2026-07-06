@@ -1,5 +1,5 @@
 import {
-  getFactoryAddress,
+  FACTORY_ADDRESS,
   PaymentEvents,
   PaymentReader,
   PaymentState,
@@ -109,10 +109,6 @@ async function verifyChain(
     return { ok: false, reason: "wrong-chain" };
   }
 
-  if (getFactoryAddress(paymentRequest.chainId) === undefined) {
-    return { ok: false, reason: "unsupported-chain" };
-  }
-
   return { ok: true };
 }
 
@@ -188,12 +184,7 @@ function verifyCreatedEvent(
     return { ok: false, reason: "payment-id-mismatch" };
   }
 
-  const factoryAddress = getFactoryAddress(paymentRequest.chainId);
-  if (factoryAddress === undefined) {
-    return { ok: false, reason: "unsupported-chain" };
-  }
-
-  if (!sameAddress(event.logAddress, factoryAddress)) {
+  if (!sameAddress(event.logAddress, FACTORY_ADDRESS)) {
     return { ok: false, reason: "wrong-factory" };
   }
 

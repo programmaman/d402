@@ -41,7 +41,7 @@ async function resolveSettlementTimeUnixSec(
     paymentConfig.settlementTimeUnixSec !== undefined
   ) {
     throw new Error(
-      "paymentConfig.settlementWindow and paymentConfig.settlementTimeUnixSec cannot both be set",
+      "paymentConfig.settlementWindow and paymentConfig.settlementTimeUnixSec cannot both be set; choose one source of settlement timing",
     );
   }
 
@@ -50,7 +50,7 @@ async function resolveSettlementTimeUnixSec(
     partialTerms.settlementTimeUnixSec !== undefined
   ) {
     throw new Error(
-      "paymentConfig.settlementWindow and terms.settlementTimeUnixSec cannot both be set",
+      "paymentConfig.settlementWindow and terms.settlementTimeUnixSec cannot both be set; choose one source of settlement timing",
     );
   }
 
@@ -59,7 +59,7 @@ async function resolveSettlementTimeUnixSec(
     partialTerms.settlementTimeUnixSec !== undefined
   ) {
     throw new Error(
-      "paymentConfig.settlementTimeUnixSec and terms.settlementTimeUnixSec cannot both be set",
+      "paymentConfig.settlementTimeUnixSec and terms.settlementTimeUnixSec cannot both be set; choose one source of settlement timing",
     );
   }
 
@@ -69,7 +69,9 @@ async function resolveSettlementTimeUnixSec(
       : await getLatestBlockTimestamp(paymentConfig.provider);
 
     if (latestBlockTimestamp === null) {
-      throw new Error("unable to read latest block for settlementWindow");
+      throw new Error(
+        "unable to read latest block while deriving settlementTimeUnixSec from paymentConfig.settlementWindow",
+      );
     }
 
     return String(
@@ -85,7 +87,7 @@ async function resolveSettlementTimeUnixSec(
 
   if (partialTerms.settlementTimeUnixSec === undefined) {
     throw new Error(
-      "settlementTimeUnixSec must be provided by paymentConfig or terms",
+      "settlementTimeUnixSec must be provided by paymentConfig.settlementWindow, paymentConfig.settlementTimeUnixSec, or terms.settlementTimeUnixSec",
     );
   }
 

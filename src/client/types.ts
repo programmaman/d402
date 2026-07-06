@@ -9,7 +9,6 @@ export interface D402Client {
 export interface CreateD402ClientOptions {
   signer?: Signer;
   provider?: AbstractProvider;
-  factoryAddress?: string;
   fetch?: typeof globalThis.fetch;
   proofHeaderName?: string;
   paymentConfirmations?: number;

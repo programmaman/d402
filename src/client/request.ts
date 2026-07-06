@@ -20,7 +20,7 @@ export function prepareReusableRequest(
     };
   } catch {
     throw new D402RequestReplayError(
-      "Request body cannot be safely replayed for d402 payment retry.",
+      "Request body cannot be safely replayed for a d402 payment retry. Use a buffered body or disable automatic replay for this request.",
     );
   }
 }
@@ -32,7 +32,7 @@ export async function parsePaymentRequiredResponse(
 
   if (!contentType.toLowerCase().includes("application/d402+json")) {
     throw new D402PaymentRequestParseError(
-      "402 response is not a d402 payment request.",
+      "402 response is not a d402 payment request. Expected Content-Type application/d402+json.",
     );
   }
 
@@ -40,7 +40,7 @@ export async function parsePaymentRequiredResponse(
     return parsePaymentRequest(parsePaymentRequiredResponseBody(await response.json()));
   } catch (cause) {
     throw new D402PaymentRequestParseError(
-      "Could not parse d402 payment request.",
+      "Could not parse d402 payment request body.",
       { cause },
     );
   }
@@ -65,13 +65,13 @@ export function validatePaymentRequestBinding(input: {
     paymentRequest.method !== request.method.toUpperCase()
   ) {
     throw new D402PaymentRequestParseError(
-      "Payment request method does not match original request.",
+      `Payment request method does not match original request: got ${request.method.toUpperCase()}.`,
     );
   }
 
   if (paymentRequest.resource !== request.url) {
     throw new D402PaymentRequestParseError(
-      "Payment request resource does not match original request.",
+      `Payment request resource does not match original request: got ${request.url}.`,
     );
   }
 }
@@ -82,7 +82,7 @@ export function assertNoExistingProof(
 ): void {
   if (request.headers.has(proofHeaderName)) {
     throw new D402RequestReplayError(
-      "Request already contains a d402 payment proof header.",
+      `Request already contains a d402 payment proof header (${proofHeaderName}); the client will not replay a request that already carries a proof.`,
     );
   }
 }
