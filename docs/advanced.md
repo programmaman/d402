@@ -4,6 +4,11 @@ d402 verifies HTTP payment proofs and gives the app a verified payment context.
 Your app owns access policy, storage, scheduling, retries, and any chain reads
 beyond proof verification.
 
+That boundary is intentional. d402 proves that a payment matching the request
+was created and is currently usable. Your app still decides what entitlement
+that payment unlocks, whether it is one-shot or reusable, how fulfillment is
+stored, and what recovery path to use if fulfillment later fails.
+
 ## Resource Binding
 
 Set `paymentConfig.resource` to the URL or resource string the client is paying
@@ -87,6 +92,12 @@ const route = payable({
 The insert must be atomic. Two simultaneous requests with the same proof should
 not both pass.
 
+The important thing to persist is the verified payment identity, not the payer
+address by itself. A key built from `chainId`, `paymentId`, `paymentAddress`,
+and `txHash` is what prevents the same payment proof from unlocking the route
+twice. `payerAddress` is optional metadata for app policy, audits, or account
+binding.
+
 ## Reusable Access
 
 Do not add a consumption store when reuse is the product behavior.
@@ -99,6 +110,8 @@ Good fits:
 - Pay once, access many times
 
 d402 should verify the payment. Your app should decide whether reuse is allowed.
+That decision can depend on any application rule you want: account ownership,
+SKU, order state, agreement metadata, quotas, or server-side entitlements.
 
 ## Limited Reuse
 
@@ -210,7 +223,8 @@ const response = await signer.sendTransaction({
 await response.wait();
 ```
 
-The d402 server action helper also exposes common lifecycle actions:
+The d402 server action helper also exposes common server-side lifecycle actions
+for workers and recovery flows:
 
 ```ts
 const actions = paymentActions({ provider, signer });

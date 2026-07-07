@@ -23,7 +23,7 @@ You also need an RPC provider for the target chain and dPayment contracts
 available on that chain. Native-token payments use `tokenAddress: null`; ERC-20
 payments use the ERC-20 token address.
 
-## Server Quickstart
+## Protect A Route And Return A Paid Response
 
 Wrap a route with `payable`. The route returns `402 application/d402+json` until
 the request includes a valid `D402-Payment-Proof` header.
@@ -81,7 +81,7 @@ If the app wants settlement timing relative to the latest block instead of a
 fixed timestamp, set `paymentConfig.settlementWindow` and omit
 `settlementTimeUnixSec`. d402 will derive the settlement time from the chain.
 
-## Client Quickstart
+## Pay The 402 And Retry
 
 Create a client with a provider, signer, and policy. The policy is the client's
 safety check: payment creation happens only after the server's payment request
@@ -115,7 +115,7 @@ const response = await client.fetch("https://api.example.com/reports/123");
 const body = await response.json();
 ```
 
-The client flow is:
+The happy path is:
 
 1. Send the original request.
 2. If the response is not `402`, return it unchanged.
@@ -124,9 +124,9 @@ The client flow is:
    and agreement policy.
 5. Create a dPayment.
 6. Retry the same request with `D402-Payment-Proof`.
-7. Run response validation and optional payment action handling.
+7. Return the protected response.
 
-## A Realistic Integration
+## Store Payment Metadata And Settle Later
 
 In a real app, the server keeps a payment record for later settlement or refund
 handling, and the client either keeps the payment open or settles it after the
@@ -216,10 +216,58 @@ business rules. When you use `settlementWindow`, the server derives the
 settlement time from the latest block and the settlement job can act once that
 window has passed.
 
+d402 handles the payment handshake and verification. The app still owns the
+business layer around that verified payment: what it buys, whether it is
+reusable, how it is stored, and what later settlement or refund behavior should
+look like.
+
 Clients can also be configured to auto-settle after they inspect the protected
 response, or to keep the payment open. That lets the protocol support
 negotiation-style flows instead of only one-shot payment-and-finish
 interactions. Refunds are handled on the server side.
+
+## Add Custom Validation Or Refund Logic
+
+Start with the happy path. Add these hooks only when the app needs extra policy
+or recovery behavior.
+
+Use `onResponse` when the client must inspect the protected response before
+auto-settling a payment.
+
+```ts
+const client = await createD402Client({
+  provider,
+  signer,
+  onAccepted: D402PaymentAction.Settle,
+  onResponse: {
+    async validate({ response }) {
+      if (!response.ok) {
+        return { accepted: false, reason: `HTTP ${response.status}` };
+      }
+
+      const body = await response.clone().json();
+      return body.fulfilled === true
+        ? { accepted: true }
+        : { accepted: false, reason: "server did not fulfill request" };
+    },
+  },
+});
+```
+
+Use `paymentActions()` on the server side when a worker or recovery path needs
+to settle, refund, submit evidence, or appeal a verified payment.
+
+```ts
+import { paymentActions } from "d402/server";
+
+const actions = paymentActions({
+  provider,
+  signer: payeeSigner,
+  actionConfirmations: 2,
+});
+
+await actions.refundPayment(paymentAddress);
+```
 
 ## Wire Format
 
@@ -267,49 +315,6 @@ D402-Payment-Proof: <base64url-json-proof>
 ```
 
 See [docs/protocol.md](docs/protocol.md) for the field-level protocol details.
-
-## Payment Actions
-
-By default the client keeps successful payments open. You can configure action
-handling after the protected response returns to settle the payment after the
-response is received:
-
-```ts
-const client = await createD402Client({
-  provider,
-  signer,
-  onAccepted: D402PaymentAction.Settle,
-  onResponse: {
-    async validate({ response }) {
-      if (!response.ok) {
-        return { accepted: false, reason: `HTTP ${response.status}` };
-      }
-
-      const body = await response.clone().json();
-      return body.fulfilled === true
-        ? { accepted: true }
-        : { accepted: false, reason: "server did not fulfill request" };
-    },
-  },
-});
-```
-
-Servers can also settle or refund verified payment addresses:
-
-```ts
-import { paymentActions } from "d402/server";
-
-const actions = paymentActions({
-  provider,
-  signer: payeeSigner,
-  actionConfirmations: 2,
-});
-
-await actions.settlePayment(paymentAddress);
-await actions.refundPayment(paymentAddress);
-await actions.submitEvidence(paymentAddress, "ipfs://QmEvidence");
-await actions.appealPayment(paymentAddress);
-```
 
 ## Documentation
 

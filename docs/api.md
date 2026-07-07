@@ -15,6 +15,11 @@ d402 splits responsibility cleanly:
 That split matters because the client does not own recovery logic for a
 rejected response. Recovery is a server concern.
 
+d402 handles the payment handshake and on-chain verification. Your app still
+owns the business decision after verification: what was purchased, whether the
+payment can be reused, how fulfillment is recorded, and when settlement or
+refund should happen.
+
 ## `d402/core`
 
 Shared protocol primitives.
@@ -78,13 +83,10 @@ Important options:
 - `paymentConfirmations`: confirmations to wait after payment creation.
 - `actionConfirmations`: confirmations to wait for settle actions.
 - `policy`: local spending policy.
-- `onResponse`: validates the protected response before action handling.
+- `onResponse`: advanced post-response validator used before auto-settle handling.
 - `onAccepted`: action after accepted protected response.
-- `onRejected`: advanced hook for custom app behavior after a rejected response.
+- `onRejected`: escape hatch for unusual client-side behavior after a rejected response.
 - `executor`: custom payment executor for tests or alternate payment creation.
-
-The client always uses the pinned Quick Disputable Payment implementation.
-There is no factory override in the public API.
 
 ### Client Policy
 
@@ -113,7 +115,8 @@ D402PaymentAction.Settle
 
 Accepted responses may `KeepOpen` or `Settle`.
 Rejected responses are typically kept open. If your app needs recovery after a
-rejected response, handle that on the server side.
+rejected response, handle that on the server side. `onRejected` is an escape
+hatch, not a primary application flow.
 
 ## `d402/server`
 
@@ -166,7 +169,7 @@ dPayment events, reads live payment state, and checks the request/proof match.
 
 ### `paymentActions(options)`
 
-Creates server-side action helpers:
+Creates server-side lifecycle action helpers for settlement and recovery jobs:
 
 ```ts
 const actions = paymentActions({ provider, signer });
