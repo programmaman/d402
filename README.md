@@ -1,6 +1,7 @@
 # d402 SDK
 
 d402 is an HTTP 402 payment protocol backed by dPayment on-chain state.
+It supports EVM deployments on Gnosis and Ethereum.
 Servers publish payment terms in a `402 application/d402+json` response. Clients
 decide whether the terms are acceptable, create a dPayment, retry the
 request with a payment proof header, and receive the protected response after
@@ -20,8 +21,8 @@ npm install d402 ethers
 ```
 
 You also need an RPC provider for the target chain and dPayment contracts
-available on that chain. Native-token payments use `tokenAddress: null`; ERC-20
-payments use the ERC-20 token address.
+available on that chain. d402 currently supports Gnosis and Ethereum. Native-token
+payments use `tokenAddress: null`; ERC-20 payments use the ERC-20 token address.
 
 ## Protect A Route And Return A Paid Response
 
