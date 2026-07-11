@@ -4,6 +4,13 @@ All notable public changes to d402 are documented here.
 
 ## Unreleased
 
+### Added
+
+- Added facilitator support so servers can facilitate payment transactions on
+  behalf of clients.
+
+## 0.1.4
+
 ### Payment reliability
 
 - Normalized the default client payment and server verification threshold to
