@@ -14,6 +14,7 @@ import type {
   PaymentVerifier,
   VerifiedPayment,
 } from "./types.js";
+import { D402_DEFAULT_CONFIRMATIONS } from "../runtime/defaults.js";
 
 export interface VerifyPaymentInput<Req = Request> {
   request: Req;
@@ -47,7 +48,8 @@ export function createDPaymentsVerifier(
 ): PaymentVerifier {
   const reader = new PaymentReader(options.provider);
   const events = new PaymentEvents();
-  const minConfirmations = options.minConfirmations ?? 0;
+  const minConfirmations =
+    options.minConfirmations ?? D402_DEFAULT_CONFIRMATIONS;
 
   return async function verifyDPaymentsPayment({
     paymentRequest,

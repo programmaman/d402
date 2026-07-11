@@ -78,6 +78,12 @@ expects it to match the URL being retried, so `resource: (request) =>
 request.url` is the safest default. Put internal product IDs, order IDs, or
 version labels in `agreement.id`.
 
+Payment creation and server verification default to three block confirmations.
+The server may return `402` with an insufficient-confirmations reason until the
+payment reaches that threshold. Set `paymentConfig.minConfirmations` or the
+client confirmation options explicitly when a different finality policy is
+appropriate.
+
 If the app wants settlement timing relative to the latest block instead of a
 fixed timestamp, set `paymentConfig.settlementWindow` and omit
 `settlementTimeUnixSec`. d402 will derive the settlement time from the chain.
