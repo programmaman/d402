@@ -14,9 +14,9 @@ All notable public changes to d402 are documented here.
 ### Payment reliability
 
 - Normalized the default client payment and server verification threshold to
-  three block confirmations.
+  one included block.
 - Applications that omit `paymentConfig.minConfirmations` may now receive a
-  temporary `402` response until the payment reaches three confirmations.
+  temporary `402` response until the payment is included on-chain.
 
 ## 0.1.3
 

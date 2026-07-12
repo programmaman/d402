@@ -1,1 +1,1 @@
-export const D402_DEFAULT_CONFIRMATIONS = 3;
+export const D402_DEFAULT_CONFIRMATIONS = 1;
