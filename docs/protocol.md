@@ -107,6 +107,24 @@ The server checks that:
 - the live payment state is usable
 - the configured confirmation count is met
 
+## Evidence
+
+For the complete dispute lifecycle and responsibility boundaries, see
+[Disputes](disputes.md).
+
+Evidence storage is outside the d402 core protocol. Applications that need to
+submit dispute evidence should use
+[`@rakelabs/evidence-publisher`](https://www.npmjs.com/package/@rakelabs/evidence-publisher)
+or provide an equivalent evidence-storage integration. The publisher produces
+the evidence manifest and a content-addressed URI; d402 submits that URI
+on-chain through `paymentActions().submitEvidence(paymentAddress, evidenceUri)`.
+
+This keeps IPFS and pinning-provider concerns out of the payment SDK while
+allowing applications to publish evidence before submitting its URI. Until a
+canonical d402 evidence-manifest schema is finalized, applications should
+include their payment and resource binding in the published evidence content
+and retain the returned publication metadata alongside the payment record.
+
 ## Failure Reasons
 
 Common `reason.code` values:

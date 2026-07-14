@@ -70,6 +70,11 @@ export function createDPaymentsExecutor(
     async disputePayment(payment) {
       return runInQueue(() => raisePaymentDispute(queuedOptions, payment));
     },
+    async submitEvidence(payment, evidenceUri) {
+      return runInQueue(() =>
+        submitPaymentEvidence(queuedOptions, payment, evidenceUri),
+      );
+    },
   };
 }
 
@@ -221,6 +226,49 @@ async function raisePaymentDispute(
   }
 }
 
+async function submitPaymentEvidence(
+  options: CreateDPaymentsExecutorOptions,
+  payment: D402CreatedPayment,
+  evidenceUri: string,
+): Promise<D402PaymentActionResult> {
+  if (evidenceUri.trim().length === 0) {
+    throw new D402PaymentExecutionError("Evidence URI must not be empty.");
+  }
+
+  try {
+    const walletAddress = await options.signer.getAddress();
+    logPaymentActionStart("submit-evidence", payment, walletAddress);
+    const dpayments = await createDPayments(options, walletAddress);
+    const dPayment = dpayments.dPayment(payment.paymentAddress);
+    const tx = dPayment.submitEvidence(evidenceUri, walletAddress);
+    const receipt = await sendPreparedTx(
+      options.signer,
+      tx,
+      options.resolutionConfirmations ?? D402_DEFAULT_CONFIRMATIONS,
+    );
+
+    console.log("[client] payment evidence submission confirmed", {
+      paymentId: payment.paymentId,
+      paymentAddress: payment.paymentAddress,
+      walletAddress,
+      evidenceUri,
+      txHash: receipt.hash,
+    });
+
+    return { txHash: receipt.hash as Hex32 };
+  } catch (cause) {
+    logPaymentActionFailure("submit-evidence", payment, cause);
+    if (cause instanceof D402PaymentExecutionError) {
+      throw cause;
+    }
+
+    throw new D402PaymentExecutionError(
+      "Could not submit payment evidence.",
+      { cause },
+    );
+  }
+}
+
 async function createDPayments(
   options: CreateDPaymentsExecutorOptions,
   walletAddress: string,
@@ -311,7 +359,7 @@ function unreachable(value: never): never {
 }
 
 function logPaymentActionStart(
-  action: "settle" | "dispute",
+  action: "settle" | "dispute" | "submit-evidence",
   payment: D402CreatedPayment,
   walletAddress: string,
 ): void {
@@ -324,7 +372,7 @@ function logPaymentActionStart(
 }
 
 function logPaymentActionFailure(
-  action: "settle" | "dispute",
+  action: "settle" | "dispute" | "submit-evidence",
   payment: D402CreatedPayment,
   cause: unknown,
 ): void {

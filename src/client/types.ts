@@ -53,6 +53,10 @@ export interface D402PaymentExecutor {
     payment: D402CreatedPayment,
     reason: string,
   ) => Promise<D402PaymentActionResult>;
+  submitEvidence?: (
+    payment: D402CreatedPayment,
+    evidenceUri: string,
+  ) => Promise<D402PaymentActionResult>;
 }
 
 export type D402ResponseDecision =

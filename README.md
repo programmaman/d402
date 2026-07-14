@@ -275,6 +275,34 @@ const actions = paymentActions({
 await actions.refundPayment(paymentAddress);
 ```
 
+### Publish Evidence
+
+d402 does not own evidence storage or IPFS pinning. Use the companion
+[`@rakelabs/evidence-publisher`](https://www.npmjs.com/package/@rakelabs/evidence-publisher)
+package to create and publish an evidence manifest, then submit the resulting
+URI through `paymentActions().submitEvidence()`:
+
+```ts
+import { createEvidencePublisher } from "@rakelabs/evidence-publisher";
+
+const publisher = await createEvidencePublisher();
+const evidence = await publisher.publish({
+  title: `d402 evidence for ${paymentId}`,
+  description: "Service was not delivered for the protected resource.",
+  attachment: {
+    bytes: evidenceBytes,
+    fileName: "evidence.json",
+    mediaType: "application/json",
+    fileTypeExtension: "json",
+  },
+});
+
+await actions.submitEvidence(paymentAddress, evidence.document.uri);
+```
+
+The publisher handles evidence packaging and storage. d402 remains storage
+agnostic and handles the payment and on-chain evidence-submission boundary.
+
 ## Wire Format
 
 Servers return d402 payment terms with a structured JSON media type:
@@ -321,10 +349,13 @@ D402-Payment-Proof: <base64url-json-proof>
 ```
 
 See [docs/protocol.md](docs/protocol.md) for the field-level protocol details.
+See [docs/disputes.md](docs/disputes.md) for the dispute lifecycle, evidence
+flow, appeals, and resolution responsibilities.
 
 ## Documentation
 
 - [Protocol](docs/protocol.md): payment request/proof format, status codes, and failure reasons
+- [Disputes](docs/disputes.md): dispute lifecycle, evidence, appeals, and resolution outcomes
 - [API reference](docs/api.md): exported functions, options, and types by entry point
 - [Signing modes](docs/signing.md): browser wallets, services, agents, and guardrails
 - [Advanced server patterns](docs/advanced.md): resource binding, one-shot consumption, reuse, settlement jobs
