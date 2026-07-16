@@ -7,6 +7,7 @@ import {
 } from "@rakelabs/dpayments-sdk";
 import type { AbstractProvider } from "ethers";
 import type { EvmLog, PaymentCreatedEvent, PaymentInfo } from "@rakelabs/dpayments-sdk";
+import type { MulticallConfig } from "@rakelabs/dpayments-sdk";
 import type { D402PaymentProof, D402PaymentRequest } from "../core/index.js";
 import type {
   PaymentState as D402PaymentState,
@@ -14,7 +15,9 @@ import type {
   PaymentVerifier,
   VerifiedPayment,
 } from "./types.js";
+import { getConnectedChainId } from "../runtime/chain.js";
 import { D402_DEFAULT_CONFIRMATIONS } from "../runtime/defaults.js";
+import { getDPaymentsMulticallConfig } from "../runtime/multicall.js";
 
 export interface VerifyPaymentInput<Req = Request> {
   request: Req;
@@ -41,28 +44,59 @@ export async function verifyPayment<Req>(
 export interface DPaymentsVerifierOptions {
   provider: AbstractProvider;
   minConfirmations?: number;
+  /** Trusted private-network or test-chain Multicall3 deployment. */
+  multicall?: MulticallConfig;
 }
 
 export function createDPaymentsVerifier(
   options: DPaymentsVerifierOptions,
 ): PaymentVerifier {
-  const reader = new PaymentReader(options.provider);
   const events = new PaymentEvents();
   const minConfirmations =
     options.minConfirmations ?? D402_DEFAULT_CONFIRMATIONS;
+  let connectedChainId: Promise<number> | undefined;
+  let reader: Promise<PaymentReader> | undefined;
+
+  function getVerifierChainId(): Promise<number> {
+    connectedChainId ??= getConnectedChainId(options.provider);
+    return connectedChainId;
+  }
+
+  function getVerifierReader(): Promise<PaymentReader> {
+    reader ??= getVerifierChainId().then((chainId) =>
+      new PaymentReader(
+        options.provider,
+        options.multicall ?? getDPaymentsMulticallConfig(chainId),
+      ),
+    );
+    return reader;
+  }
 
   return async function verifyDPaymentsPayment({
     paymentRequest,
     proof,
   }): Promise<PaymentVerificationResult> {
-    const chainResult = await verifyChain(paymentRequest, options.provider);
+    const receiptPromise = readTransactionReceipt(
+      options.provider,
+      proof.txHash,
+    );
+
+    const chainResult = await verifyChain(
+      paymentRequest,
+      getVerifierChainId(),
+    );
     if (!chainResult.ok) {
       return chainResult;
     }
 
+    const paymentInfoPromise = getVerifierReader().then((reader) =>
+      readPaymentInfo(reader, proof.paymentAddress),
+    );
+
     const createdEventResult = await verifyPaymentCreatedEvent({
       paymentRequest,
       proof,
+      receiptPromise,
       provider: options.provider,
       events,
       minConfirmations,
@@ -71,7 +105,7 @@ export function createDPaymentsVerifier(
       return createdEventResult;
     }
 
-    const paymentInfoResult = await readPaymentInfo(reader, proof.paymentAddress);
+    const paymentInfoResult = await paymentInfoPromise;
     if (!paymentInfoResult.ok) {
       return paymentInfoResult;
     }
@@ -98,25 +132,54 @@ function verifyProofMatchesRequest(
 
 async function verifyChain(
   paymentRequest: D402PaymentRequest,
-  provider: AbstractProvider,
+  connectedChainId: Promise<number>,
 ): Promise<PaymentVerificationResult> {
-  let network: Awaited<ReturnType<AbstractProvider["getNetwork"]>>;
+  let chainId: number;
   try {
-    network = await provider.getNetwork();
+    chainId = await connectedChainId;
   } catch (cause) {
     return { ok: false, reason: "provider-error", cause };
   }
 
-  if (Number(network.chainId) !== paymentRequest.chainId) {
+  if (chainId !== paymentRequest.chainId) {
     return { ok: false, reason: "wrong-chain" };
   }
 
   return { ok: true };
 }
 
+type TransactionReceipt = NonNullable<
+  Awaited<ReturnType<AbstractProvider["getTransactionReceipt"]>>
+>;
+
+type TransactionReceiptResult =
+  | { ok: true; receipt: TransactionReceipt }
+  | {
+      ok: false;
+      reason: "onchain-payment-not-found" | "provider-error";
+      cause?: unknown;
+    };
+
+async function readTransactionReceipt(
+  provider: AbstractProvider,
+  txHash: string,
+): Promise<TransactionReceiptResult> {
+  try {
+    const receipt = await provider.getTransactionReceipt(txHash);
+    if (receipt === null) {
+      return { ok: false, reason: "onchain-payment-not-found" };
+    }
+
+    return { ok: true, receipt };
+  } catch (cause) {
+    return { ok: false, reason: "provider-error", cause };
+  }
+}
+
 async function verifyPaymentCreatedEvent(input: {
   paymentRequest: D402PaymentRequest;
   proof: D402PaymentProof;
+  receiptPromise: Promise<TransactionReceiptResult>;
   provider: AbstractProvider;
   events: PaymentEvents;
   minConfirmations: number;
@@ -124,23 +187,23 @@ async function verifyPaymentCreatedEvent(input: {
   | { ok: true; confirmations?: number }
   | Extract<PaymentVerificationResult, { ok: false }>
 > {
-  let receipt: Awaited<ReturnType<AbstractProvider["getTransactionReceipt"]>>;
-  try {
-    receipt = await input.provider.getTransactionReceipt(input.proof.txHash);
-  } catch (cause) {
-    return { ok: false, reason: "provider-error", cause };
+  const receiptResult = await input.receiptPromise;
+  if (!receiptResult.ok) {
+    return receiptResult;
   }
 
-  if (receipt === null) {
-    return { ok: false, reason: "onchain-payment-not-found" };
-  }
+  const { receipt } = receiptResult;
 
   if (receipt.status !== 1) {
     return { ok: false, reason: "failed-transaction" };
   }
 
   let confirmations: number | undefined;
-  if (input.minConfirmations > 0) {
+  if (input.minConfirmations === 1) {
+    // A non-null receipt proves inclusion, which is one confirmation under
+    // this verifier's convention. No block-head lookup is needed.
+    confirmations = 1;
+  } else if (input.minConfirmations > 1) {
     let blockNumber: number;
     try {
       blockNumber = await input.provider.getBlockNumber();
@@ -225,12 +288,12 @@ async function readPaymentInfo(
   paymentAddress: string,
 ): Promise<
   | { ok: true; paymentInfo: PaymentInfo }
-  | { ok: false; reason: "onchain-payment-not-found" }
+  | { ok: false; reason: "provider-error"; cause: unknown }
 > {
   try {
     return { ok: true, paymentInfo: await reader.readPayment(paymentAddress) };
-  } catch {
-    return { ok: false, reason: "onchain-payment-not-found" };
+  } catch (cause) {
+    return { ok: false, reason: "provider-error", cause };
   }
 }
 
