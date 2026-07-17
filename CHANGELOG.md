@@ -2,7 +2,7 @@
 
 All notable public changes to d402 are documented here.
 
-## Unreleased
+## 0.1.5
 
 ### Added
 
@@ -17,6 +17,26 @@ All notable public changes to d402 are documented here.
 - Server verification authenticates `payerAddress` against the trusted
   `PaymentCreated.creator` event and reads only the payment's live `state()` on
   the normal access path.
+
+### Performance
+
+- Reduced normal verification RPC work by replacing full payment snapshot reads
+  with a live state read after the creation event has been authenticated.
+- Added provider- and chain-scoped reuse of connected chain metadata and SDK
+  readers, plus in-flight deduplication for identical payment-state reads.
+- Pruned receipt logs by factory address, event topic, payment ID, payer, and
+  payee before decoding, with early exit after the matching creation event is
+  found.
+- Moved independent server resource resolution to run concurrently with
+  settlement-term resolution while preserving deterministic settlement-error
+  precedence.
+- Shortened the client signer queue to preparation-free nonce assignment and
+  transaction broadcast; confirmation waits now proceed outside the queue while
+  ERC-20 approval-to-creation ordering remains enforced.
+- Deduplicated concurrent identical payment-creation requests so they share one
+  preparation and broadcast operation.
+- Reduced request replay overhead by reusing the initial request and retaining
+  only the retry clone.
 
 ## 0.1.4
 
