@@ -27,12 +27,30 @@ export function payable<Req extends Request = Request>(
 
   return async function handlePayableRequest(request: Req): Promise<Response> {
     const terms = await resolvePayableTerms(request, options.terms);
-    const resolvedTerms = await resolveSettlementTerms(
+    const settlementPromise = resolveSettlementTerms(
       options.paymentConfig,
       terms,
       latestBlockCache,
     );
-    const resource = await resolvePaymentResource(request, options.paymentConfig);
+    const resourcePromise = resolvePaymentResource(
+      request,
+      options.paymentConfig,
+    );
+    const [settlementResult, resourceResult] = await Promise.allSettled([
+      settlementPromise,
+      resourcePromise,
+    ]);
+
+    if (settlementResult.status === "rejected") {
+      throw settlementResult.reason;
+    }
+
+    if (resourceResult.status === "rejected") {
+      throw resourceResult.reason;
+    }
+
+    const resolvedTerms = settlementResult.value;
+    const resource = resourceResult.value;
     const paymentRequest = buildServerPaymentRequest({
       request,
       terms: resolvedTerms,

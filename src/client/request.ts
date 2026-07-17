@@ -15,7 +15,7 @@ export function prepareReusableRequest(
 
   try {
     return {
-      initial: request.clone(),
+      initial: request,
       retry: request.clone(),
     };
   } catch {
