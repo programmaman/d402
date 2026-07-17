@@ -6,7 +6,7 @@ import {
   ZERO_ADDRESS,
 } from "@rakelabs/dpayments-sdk";
 import type { AbstractProvider } from "ethers";
-import type { EvmLog, PaymentCreatedEvent } from "@rakelabs/dpayments-sdk";
+import type { PaymentCreatedEvent } from "@rakelabs/dpayments-sdk";
 import type { MulticallConfig } from "@rakelabs/dpayments-sdk";
 import type { D402PaymentProof, D402PaymentRequest } from "../core/index.js";
 import type {
@@ -18,6 +18,7 @@ import type {
 import { getConnectedChainId } from "../runtime/chain.js";
 import { D402_DEFAULT_CONFIRMATIONS } from "../runtime/defaults.js";
 import { getDPaymentsMulticallConfig } from "../runtime/multicall.js";
+import { findPaymentCreatedEvent } from "../runtime/payment-events.js";
 
 export interface VerifyPaymentInput<Req = Request> {
   request: Req;
@@ -231,9 +232,14 @@ async function verifyPaymentCreatedEvent(input: {
     }
   }
 
-  const createdEvent = receipt.logs
-    .map((log) => input.events.tryDecodePaymentCreated(log as EvmLog))
-    .find((event): event is PaymentCreatedEvent => event !== undefined);
+  const createdEvent = findPaymentCreatedEvent({
+    logs: receipt.logs,
+    factoryAddress: FACTORY_ADDRESS,
+    paymentId: input.paymentRequest.paymentId,
+    creator: input.proof.payerAddress,
+    payee: input.paymentRequest.payeeAddress,
+    decoder: input.events,
+  });
 
   if (createdEvent === undefined) {
     return { ok: false, reason: "missing-created-event" };
