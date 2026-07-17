@@ -45,6 +45,10 @@ export function createDPaymentsExecutor(
   const signer = new NonceManager(options.signer);
   const queuedOptions = { ...options, signer };
   let broadcastQueue: Promise<unknown> = Promise.resolve();
+  const inFlightCreates = new Map<
+    string,
+    Promise<D402CreatedPayment>
+  >();
 
   async function broadcastInQueue<T>(
     operation: () => Promise<T>,
@@ -67,11 +71,27 @@ export function createDPaymentsExecutor(
 
   return {
     async createPayment(paymentRequest) {
-      return createDPaymentsPayment(
+      const key = paymentCreationKey(paymentRequest);
+      const existing = inFlightCreates.get(key);
+      if (existing !== undefined) {
+        return existing;
+      }
+
+      const pending = createDPaymentsPayment(
         queuedOptions,
         paymentRequest,
         broadcastInQueue,
       );
+      inFlightCreates.set(key, pending);
+
+      const cleanup = () => {
+        if (inFlightCreates.get(key) === pending) {
+          inFlightCreates.delete(key);
+        }
+      };
+
+      void pending.then(cleanup, cleanup);
+      return pending;
     },
     async settlePayment(payment) {
       return sendPaymentAction(
@@ -102,6 +122,18 @@ export function createDPaymentsExecutor(
 type BroadcastInQueue = <T>(
   operation: () => Promise<T>,
 ) => Promise<T>;
+
+function paymentCreationKey(
+  paymentRequest: D402PaymentRequest,
+): string {
+  return [
+    paymentRequest.paymentId.toLowerCase(),
+    paymentRequest.tokenAddress?.toLowerCase() ?? "native",
+    paymentRequest.payeeAddress.toLowerCase(),
+    paymentRequest.netAmount,
+    paymentRequest.settlementTimeUnixSec,
+  ].join(":");
+}
 
 type PreparedDpaymentSdkResult =
   | Awaited<ReturnType<DPayments["factory"]["prepareCreateEthPayment"]>>
