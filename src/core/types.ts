@@ -29,7 +29,8 @@ export interface D402PaymentProof {
   paymentId: Hex32;
   paymentAddress: PaymentAddress;
   txHash: Hex32;
-  payerAddress?: Address;
+  /** Must match `PaymentCreated.creator` from the trusted factory receipt. */
+  payerAddress: Address;
 }
 
 export type D402PaymentTerms = Omit<D402PaymentRequest, "termsHash" | "paymentId">;

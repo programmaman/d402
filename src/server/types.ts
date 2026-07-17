@@ -79,7 +79,7 @@ export interface VerifiedPayment {
   paymentId: D402PaymentRequest["paymentId"];
   paymentAddress: PaymentAddress;
   txHash: D402PaymentProof["txHash"];
-  payerAddress?: D402PaymentProof["payerAddress"];
+  payerAddress: D402PaymentProof["payerAddress"];
   state: PaymentState;
   confirmations?: number;
 }

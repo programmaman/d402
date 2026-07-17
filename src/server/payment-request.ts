@@ -31,7 +31,13 @@ export function buildPaymentRequest(input: D402PaymentTerms): D402PaymentRequest
 export function buildServerPaymentRequest(
   input: BuildServerPaymentRequestInput,
 ): D402PaymentRequest {
-  return buildPaymentRequest(completeTermsFromRequest(input.request, input.terms, input.resource));
+  const completeTerms = completeTermsFromRequest(
+    input.request,
+    input.terms,
+    input.resource,
+  );
+
+  return buildPaymentRequest(completeTerms);
 }
 
 function completeTermsFromRequest(
@@ -55,7 +61,7 @@ function completeTermsFromRequest(
     );
   }
 
-  return normalizePaymentTerms({
+  return {
     version: partialTerms.version ?? D402_VERSION,
     resource: resolvedResource,
     method: partialTerms.method ?? request.method,
@@ -66,7 +72,7 @@ function completeTermsFromRequest(
     settlementTimeUnixSec,
     agreement: terms.agreement,
     expiresAtUnixSec: terms.expiresAtUnixSec,
-  });
+  };
 }
 
 function normalizePaymentTerms(input: D402PaymentTerms): D402PaymentTerms {

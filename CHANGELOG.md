@@ -9,6 +9,15 @@ All notable public changes to d402 are documented here.
 - Added facilitator support so servers can facilitate payment transactions on
   behalf of clients.
 
+### Changed
+
+- **Breaking:** `payerAddress` is now required in payment proofs, created
+  payment results, and verified payment results. Payer-less proofs are rejected
+  as invalid before any RPC verification begins.
+- Server verification authenticates `payerAddress` against the trusted
+  `PaymentCreated.creator` event and reads only the payment's live `state()` on
+  the normal access path.
+
 ## 0.1.4
 
 ### Payment reliability

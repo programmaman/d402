@@ -87,6 +87,6 @@ export const paymentProofSchema = z
     paymentId: hex32Schema,
     paymentAddress: addressSchema,
     txHash: hex32Schema,
-    payerAddress: addressSchema.optional(),
+    payerAddress: addressSchema,
   })
   .strict();

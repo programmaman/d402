@@ -94,9 +94,14 @@ interface D402PaymentProof {
   paymentId: `0x${string}`;
   paymentAddress: `0x${string}`;
   txHash: `0x${string}`;
-  payerAddress?: `0x${string}`;
+  payerAddress: `0x${string}`;
 }
 ```
+
+`payerAddress` is required. It is the account recorded as `creator` by the
+trusted factory's `PaymentCreated` event. The value supplied by the client is
+not trusted on its own: the server accepts it only after the receipt event's
+`creator` matches it.
 
 The server checks that:
 

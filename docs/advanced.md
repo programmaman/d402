@@ -95,8 +95,9 @@ not both pass.
 The important thing to persist is the verified payment identity, not the payer
 address by itself. A key built from `chainId`, `paymentId`, `paymentAddress`,
 and `txHash` is what prevents the same payment proof from unlocking the route
-twice. `payerAddress` is optional metadata for app policy, audits, or account
-binding.
+twice. `payerAddress` is required proof data and is authenticated against the
+trusted factory event. Applications can use the verified value for app policy,
+audits, or account binding.
 
 ## Reusable Access
 

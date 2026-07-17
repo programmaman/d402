@@ -6,7 +6,7 @@ import {
   ZERO_ADDRESS,
 } from "@rakelabs/dpayments-sdk";
 import type { AbstractProvider } from "ethers";
-import type { EvmLog, PaymentCreatedEvent, PaymentInfo } from "@rakelabs/dpayments-sdk";
+import type { EvmLog, PaymentCreatedEvent } from "@rakelabs/dpayments-sdk";
 import type { MulticallConfig } from "@rakelabs/dpayments-sdk";
 import type { D402PaymentProof, D402PaymentRequest } from "../core/index.js";
 import type {
@@ -56,6 +56,10 @@ export function createDPaymentsVerifier(
     options.minConfirmations ?? D402_DEFAULT_CONFIRMATIONS;
   let connectedChainId: Promise<number> | undefined;
   let reader: Promise<PaymentReader> | undefined;
+  const inFlightPaymentStateReads = new Map<
+    string,
+    Promise<PaymentStateReadResult>
+  >();
 
   function getVerifierChainId(): Promise<number> {
     connectedChainId ??= getConnectedChainId(options.provider);
@@ -89,8 +93,14 @@ export function createDPaymentsVerifier(
       return chainResult;
     }
 
-    const paymentInfoPromise = getVerifierReader().then((reader) =>
-      readPaymentInfo(reader, proof.paymentAddress),
+    // Immutable payment data is authenticated by PaymentCreated below. The
+    // only live contract value needed for access is the current state.
+    const paymentStatePromise = getVerifierReader().then((reader) =>
+      readPaymentStateOnce(
+        reader,
+        proof.paymentAddress,
+        inFlightPaymentStateReads,
+      ),
     );
 
     const createdEventResult = await verifyPaymentCreatedEvent({
@@ -105,15 +115,15 @@ export function createDPaymentsVerifier(
       return createdEventResult;
     }
 
-    const paymentInfoResult = await paymentInfoPromise;
-    if (!paymentInfoResult.ok) {
-      return paymentInfoResult;
+    const paymentStateResult = await paymentStatePromise;
+    if (!paymentStateResult.ok) {
+      return paymentStateResult;
     }
 
-    return verifyPaymentInfo(
+    return verifyPaymentState(
       paymentRequest,
       proof,
-      paymentInfoResult.paymentInfo,
+      paymentStateResult.state,
       createdEventResult.confirmations,
     );
   };
@@ -147,6 +157,10 @@ async function verifyChain(
 
   return { ok: true };
 }
+
+type PaymentStateReadResult =
+  | { ok: true; state: PaymentState }
+  | { ok: false; reason: "provider-error"; cause: unknown };
 
 type TransactionReceipt = NonNullable<
   Awaited<ReturnType<AbstractProvider["getTransactionReceipt"]>>
@@ -273,64 +287,65 @@ function verifyCreatedEvent(
     return { ok: false, reason: "wrong-settlement-time" };
   }
 
-  if (
-    proof.payerAddress !== undefined &&
-    !sameAddress(event.creator, proof.payerAddress)
-  ) {
+  if (!sameAddress(event.creator, proof.payerAddress)) {
     return { ok: false, reason: "wrong-payer" };
   }
 
   return { ok: true };
 }
 
-async function readPaymentInfo(
+function readPaymentStateOnce(
+  reader: PaymentReader,
+  paymentAddress: string,
+  inFlightPaymentStateReads: Map<string, Promise<PaymentStateReadResult>>,
+): Promise<PaymentStateReadResult> {
+  const key = paymentAddress.toLowerCase();
+  const existing = inFlightPaymentStateReads.get(key);
+
+  if (existing !== undefined) {
+    return existing;
+  }
+
+  const pending = readPaymentState(reader, paymentAddress);
+  inFlightPaymentStateReads.set(key, pending);
+
+  void pending.then(
+    () => {
+      if (inFlightPaymentStateReads.get(key) === pending) {
+        inFlightPaymentStateReads.delete(key);
+      }
+    },
+    () => {
+      if (inFlightPaymentStateReads.get(key) === pending) {
+        inFlightPaymentStateReads.delete(key);
+      }
+    },
+  );
+
+  return pending;
+}
+
+async function readPaymentState(
   reader: PaymentReader,
   paymentAddress: string,
 ): Promise<
-  | { ok: true; paymentInfo: PaymentInfo }
+  | { ok: true; state: PaymentState }
   | { ok: false; reason: "provider-error"; cause: unknown }
 > {
   try {
-    return { ok: true, paymentInfo: await reader.readPayment(paymentAddress) };
+    return { ok: true, state: await reader.readPayment.state(paymentAddress) };
   } catch (cause) {
     return { ok: false, reason: "provider-error", cause };
   }
 }
 
-function verifyPaymentInfo(
+function verifyPaymentState(
   paymentRequest: D402PaymentRequest,
   proof: D402PaymentProof,
-  paymentInfo: PaymentInfo,
+  paymentState: PaymentState,
   confirmations?: number,
 ): PaymentVerificationResult {
-  if (!sameAddress(paymentInfo.paymentAddress, proof.paymentAddress)) {
-    return { ok: false, reason: "wrong-payment-address" };
-  }
-
-  if (!sameAddress(paymentInfo.payee, paymentRequest.payeeAddress)) {
-    return { ok: false, reason: "wrong-payee" };
-  }
-
-  if (!sameAddress(paymentInfo.token, tokenAddressForChain(paymentRequest.tokenAddress))) {
-    return { ok: false, reason: "wrong-token" };
-  }
-
-  if (paymentInfo.amount < BigInt(paymentRequest.netAmount)) {
-    return { ok: false, reason: "wrong-amount" };
-  }
-
-  if (paymentInfo.settlementTime !== BigInt(paymentRequest.settlementTimeUnixSec)) {
-    return { ok: false, reason: "wrong-settlement-time" };
-  }
-
-  if (
-    proof.payerAddress !== undefined &&
-    !sameAddress(paymentInfo.payer, proof.payerAddress)
-  ) {
-    return { ok: false, reason: "wrong-payer" };
-  }
-
-  const state = toD402PaymentState(paymentInfo.state);
+  const state = toD402PaymentState(paymentState);
   if (!isUsableForAccess(state)) {
     return {
       ok: false,
@@ -343,7 +358,6 @@ function verifyPaymentInfo(
     payment: buildVerifiedPayment(
       paymentRequest,
       proof,
-      paymentInfo,
       state,
       confirmations,
     ),
@@ -353,7 +367,6 @@ function verifyPaymentInfo(
 function buildVerifiedPayment(
   paymentRequest: D402PaymentRequest,
   proof: D402PaymentProof,
-  paymentInfo: PaymentInfo,
   state: D402PaymentState,
   confirmations?: number,
 ): VerifiedPayment {
@@ -361,25 +374,10 @@ function buildVerifiedPayment(
     paymentId: paymentRequest.paymentId,
     paymentAddress: proof.paymentAddress,
     txHash: proof.txHash,
-    ...resolvePayerAddress(proof, paymentInfo),
+    payerAddress: proof.payerAddress,
     state,
     ...(confirmations !== undefined ? { confirmations } : {}),
   };
-}
-
-function resolvePayerAddress(
-  proof: D402PaymentProof,
-  paymentInfo: PaymentInfo,
-): Pick<VerifiedPayment, "payerAddress"> | Record<string, never> {
-  if (proof.payerAddress !== undefined) {
-    return { payerAddress: proof.payerAddress };
-  }
-
-  if (!sameAddress(paymentInfo.payer, ZERO_ADDRESS)) {
-    return { payerAddress: paymentInfo.payer as VerifiedPayment["payerAddress"] };
-  }
-
-  return {};
 }
 
 function toD402PaymentState(state: PaymentState): D402PaymentState {

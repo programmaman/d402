@@ -7,7 +7,7 @@ export interface BuildPaymentProofInput {
   paymentId: Hex32;
   paymentAddress: Address;
   txHash: Hex32;
-  payerAddress?: Address;
+  payerAddress: Address;
 }
 
 export function buildPaymentProof(input: BuildPaymentProofInput): D402PaymentProof {

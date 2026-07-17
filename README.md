@@ -148,7 +148,7 @@ const payee = new Wallet(process.env.PAYEE_PRIVATE_KEY, provider);
 type PaymentRecord = {
   paymentId: string;
   paymentAddress: `0x${string}`;
-  payerAddress?: `0x${string}`;
+  payerAddress: `0x${string}`;
   state: string;
   settledAt: Date | null;
 };
@@ -186,7 +186,7 @@ export const GET = payable({
     await paymentStore.upsert({
       paymentId: context.paymentRequest.paymentId,
       paymentAddress: context.payment?.paymentAddress as `0x${string}`,
-      payerAddress: context.payment?.payerAddress as `0x${string}` | undefined,
+      payerAddress: context.payment?.payerAddress as `0x${string}`,
       state: context.payment?.state ?? "open",
       settledAt: null,
     });

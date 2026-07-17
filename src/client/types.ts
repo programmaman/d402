@@ -35,7 +35,7 @@ export interface D402CreatedPayment {
   paymentId: Hex32;
   paymentAddress: Address;
   txHash: Hex32;
-  payerAddress?: Address;
+  payerAddress: Address;
 }
 
 export interface D402PaymentActionResult {

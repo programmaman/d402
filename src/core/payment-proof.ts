@@ -9,6 +9,6 @@ export function parsePaymentProof(proof: unknown): D402PaymentProof {
     paymentId: parsed.paymentId,
     paymentAddress: parsed.paymentAddress,
     txHash: parsed.txHash,
-    ...(parsed.payerAddress !== undefined ? { payerAddress: parsed.payerAddress } : {}),
+    payerAddress: parsed.payerAddress,
   };
 }
