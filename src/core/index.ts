@@ -7,6 +7,7 @@ export {
 export type {
   Address,
   D402Agreement,
+  D402BlockReference,
   D402PaymentProof,
   D402PaymentRequest,
   D402PaymentTerms,

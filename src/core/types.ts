@@ -3,6 +3,17 @@ export type Address = `0x${string}`;
 export type PaymentAddress = Address;
 export type DecimalString = `${bigint}`;
 
+/**
+ * Immutable block header fields used to reproduce protocol calculations.
+ *
+ * The containing payment terms identify the chain.
+ */
+export interface D402BlockReference {
+  blockNumber: number;
+  blockHash: Hex32;
+  blockTimestampUnixSec: DecimalString;
+}
+
 export interface D402Agreement {
   id: string;
   hash?: Hex32;

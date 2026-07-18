@@ -14,6 +14,10 @@ The package is split by role:
 - `d402/server` - payable routes, verification, and server-side actions
 - `d402/autosigner` - reserved entry point for future unattended payment flows
 
+See [why d402 is better suited for payment-gated HTTP resources than x402 or
+Visa Trusted Agent Protocol](docs/comparisons.md) for the protocol comparison
+and threat-model analysis.
+
 ## Install
 
 ```sh
@@ -359,4 +363,5 @@ flow, appeals, and resolution responsibilities.
 - [API reference](docs/api.md): exported functions, options, and types by entry point
 - [Signing modes](docs/signing.md): browser wallets, services, agents, and guardrails
 - [Advanced server patterns](docs/advanced.md): resource binding, one-shot consumption, reuse, settlement jobs
+- [Protocol comparisons](docs/comparisons.md): d402 compared with x402 and Visa Trusted Agent Protocol
 - [Runnable examples](examples/README.md): Express, Next.js, and one-shot access examples
