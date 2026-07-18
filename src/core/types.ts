@@ -35,13 +35,18 @@ export interface D402PaymentRequest {
   paymentId: Hex32;
 }
 
-export interface D402PaymentProof {
+export interface DPaymentProof {
   version: 1;
   paymentId: Hex32;
   paymentAddress: PaymentAddress;
   txHash: Hex32;
   /** Must match `PaymentCreated.creator` from the trusted factory receipt. */
   payerAddress: Address;
+}
+
+export interface D402PaymentProof {
+  dPaymentProof: DPaymentProof;
+  settlementReference?: D402BlockReference;
 }
 
 export type D402PaymentTerms = Omit<D402PaymentRequest, "termsHash" | "paymentId">;

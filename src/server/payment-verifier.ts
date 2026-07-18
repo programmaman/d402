@@ -8,7 +8,7 @@ import {
 import type { AbstractProvider } from "ethers";
 import type { PaymentCreatedEvent } from "@rakelabs/dpayments-sdk";
 import type { MulticallConfig } from "@rakelabs/dpayments-sdk";
-import type { D402PaymentProof, D402PaymentRequest } from "../core/index.js";
+import type { DPaymentProof, D402PaymentRequest } from "../core/index.js";
 import type {
   PaymentState as D402PaymentState,
   PaymentVerificationResult,
@@ -23,7 +23,7 @@ import { findPaymentCreatedEvent } from "../runtime/payment-events.js";
 export interface VerifyPaymentInput<Req = Request> {
   request: Req;
   paymentRequest: D402PaymentRequest;
-  proof: D402PaymentProof;
+  proof: DPaymentProof;
   verifier: PaymentVerifier<Req>;
 }
 
@@ -132,7 +132,7 @@ export function createDPaymentsVerifier(
 
 function verifyProofMatchesRequest(
   paymentRequest: D402PaymentRequest,
-  proof: D402PaymentProof,
+  proof: DPaymentProof,
 ): PaymentVerificationResult {
   if (proof.paymentId !== paymentRequest.paymentId) {
     return { ok: false, reason: "payment-id-mismatch" };
@@ -193,7 +193,7 @@ async function readTransactionReceipt(
 
 async function verifyPaymentCreatedEvent(input: {
   paymentRequest: D402PaymentRequest;
-  proof: D402PaymentProof;
+  proof: DPaymentProof;
   receiptPromise: Promise<TransactionReceiptResult>;
   provider: AbstractProvider;
   events: PaymentEvents;
@@ -262,7 +262,7 @@ async function verifyPaymentCreatedEvent(input: {
 
 function verifyCreatedEvent(
   paymentRequest: D402PaymentRequest,
-  proof: D402PaymentProof,
+  proof: DPaymentProof,
   event: PaymentCreatedEvent,
 ): PaymentVerificationResult {
   if (!sameHex(event.paymentId, paymentRequest.paymentId)) {
@@ -347,7 +347,7 @@ async function readPaymentState(
 
 function verifyPaymentState(
   paymentRequest: D402PaymentRequest,
-  proof: D402PaymentProof,
+  proof: DPaymentProof,
   paymentState: PaymentState,
   confirmations?: number,
 ): PaymentVerificationResult {
@@ -372,7 +372,7 @@ function verifyPaymentState(
 
 function buildVerifiedPayment(
   paymentRequest: D402PaymentRequest,
-  proof: D402PaymentProof,
+  proof: DPaymentProof,
   state: D402PaymentState,
   confirmations?: number,
 ): VerifiedPayment {

@@ -1,5 +1,6 @@
 import type {
-  D402PaymentProof,
+  DPaymentProof,
+  D402BlockReference,
   D402PaymentRequest,
   D402PaymentTerms,
   PaymentAddress,
@@ -78,14 +79,14 @@ export type PaymentState = "funded" | "settled" | "disputed" | "resolved";
 export interface VerifiedPayment {
   paymentId: D402PaymentRequest["paymentId"];
   paymentAddress: PaymentAddress;
-  txHash: D402PaymentProof["txHash"];
-  payerAddress: D402PaymentProof["payerAddress"];
+  txHash: DPaymentProof["txHash"];
+  payerAddress: DPaymentProof["payerAddress"];
   state: PaymentState;
   confirmations?: number;
 }
 
 export interface PaymentActionResult {
-  txHash: D402PaymentProof["txHash"];
+  txHash: DPaymentProof["txHash"];
 }
 
 export interface PaymentAppealPeriod {
@@ -122,7 +123,7 @@ export type PaymentVerificationResult =
 export interface PaymentVerifierInput<Req = Request> {
   request: Req;
   paymentRequest: D402PaymentRequest;
-  proof: D402PaymentProof;
+  proof: DPaymentProof;
 }
 
 export type PaymentVerifier<Req = Request> = (
@@ -131,7 +132,7 @@ export type PaymentVerifier<Req = Request> = (
 
 export interface PayableContext {
   paymentRequest: D402PaymentRequest;
-  proof: D402PaymentProof;
+  proof: DPaymentProof;
   verification: Extract<PaymentVerificationResult, { ok: true }>;
   payment?: VerifiedPayment;
 }
@@ -143,16 +144,31 @@ export type PayableHandler<Req = Request, Res = Response> = (
 
 export interface PaymentRequiredResponseInit {
   paymentRequest: D402PaymentRequest;
+  settlementReference?: D402BlockReference;
   reason: PaymentRequiredReason;
 }
 
 export interface PaymentRequiredResponseBody {
   paymentRequest: D402PaymentRequest;
+  settlementReference?: D402BlockReference;
   reason: PaymentRequiredReason;
 }
 
 export type PaymentRequiredResponseBuilder = (
   init: PaymentRequiredResponseInit,
+) => Response;
+
+export interface PaymentVerificationErrorResponseInit {
+  status: 422 | 425 | 503 | 504;
+  reason: PaymentRequiredReason;
+}
+
+export interface PaymentVerificationErrorResponseBody {
+  reason: PaymentRequiredReason;
+}
+
+export type PaymentVerificationErrorResponseBuilder = (
+  init: PaymentVerificationErrorResponseInit,
 ) => Response;
 
 export interface PayableRouteConfig<Req = Request, Res = Response> {
@@ -162,4 +178,5 @@ export interface PayableRouteConfig<Req = Request, Res = Response> {
   verify?: PaymentVerifier<Req>;
   proofHeaderName?: string;
   buildPaymentRequiredResponse?: PaymentRequiredResponseBuilder;
+  buildPaymentVerificationErrorResponse?: PaymentVerificationErrorResponseBuilder;
 }

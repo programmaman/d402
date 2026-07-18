@@ -3,7 +3,7 @@ import type { AbstractProvider } from "ethers";
 import { D402_PAYMENT_PROOF_HEADER } from "../server/constants.js";
 import { D402ConfigurationError } from "./errors.js";
 import { createDPaymentsExecutor } from "./payment-executor.js";
-import { buildPaymentProof, encodePaymentProof } from "./payment-proof.js";
+import { buildDPaymentProof, encodeD402PaymentProof } from "./payment-proof.js";
 import { validatePaymentPolicy } from "./policy.js";
 import {
   assertNoExistingProof,
@@ -48,7 +48,8 @@ export function createD402Client(
         return unpaidResponse;
       }
 
-      const paymentRequest = await parsePaymentRequiredResponse(unpaidResponse);
+      const challenge = await parsePaymentRequiredResponse(unpaidResponse);
+      const paymentRequest = challenge.paymentRequest;
       validatePaymentRequestBinding({
         paymentRequest,
         request: prepared.retry,
@@ -66,11 +67,16 @@ export function createD402Client(
       }
 
       const payment = await executor.createPayment(paymentRequest);
-      const proof = buildPaymentProof(payment);
+      const dPaymentProof = buildDPaymentProof(payment);
       const paidRequest = withPaymentProofHeader(
         prepared.retry,
         proofHeaderName,
-        encodePaymentProof(proof),
+        encodeD402PaymentProof({
+          dPaymentProof,
+          ...(challenge.settlementReference !== undefined
+            ? { settlementReference: challenge.settlementReference }
+            : {}),
+        }),
       );
 
       const paidResponse = await fetchImpl(paidRequest);

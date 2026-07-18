@@ -1,7 +1,12 @@
 import { Buffer } from "node:buffer";
 
-import { parsePaymentProof } from "../core/index.js";
-import type { Address, D402PaymentProof, Hex32 } from "../core/types.js";
+import { parseD402PaymentProof, parseDPaymentProof } from "../core/index.js";
+import type {
+  Address,
+  D402PaymentProof,
+  DPaymentProof,
+  Hex32,
+} from "../core/types.js";
 
 export interface BuildPaymentProofInput {
   paymentId: Hex32;
@@ -10,14 +15,23 @@ export interface BuildPaymentProofInput {
   payerAddress: Address;
 }
 
-export function buildPaymentProof(input: BuildPaymentProofInput): D402PaymentProof {
-  return parsePaymentProof({
+export function buildDPaymentProof(input: BuildPaymentProofInput): DPaymentProof {
+  return parseDPaymentProof({
     version: 1,
     ...input,
   });
 }
 
-export function encodePaymentProof(proof: D402PaymentProof): string {
-  const normalized = parsePaymentProof(proof);
+export function encodeD402PaymentProof(proof: D402PaymentProof): string {
+  const normalized = parseD402PaymentProof(proof);
+  return Buffer.from(JSON.stringify(normalized), "utf8").toString("base64url");
+}
+
+/** @deprecated Use buildDPaymentProof. */
+export const buildPaymentProof = buildDPaymentProof;
+
+/** @deprecated Use encodeD402PaymentProof. */
+export function encodePaymentProof(proof: DPaymentProof): string {
+  const normalized = parseDPaymentProof(proof);
   return Buffer.from(JSON.stringify(normalized), "utf8").toString("base64url");
 }

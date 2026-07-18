@@ -10,6 +10,9 @@ export function buildPaymentRequiredResponse(
 ): Response {
   return new Response(JSON.stringify({
     paymentRequest: init.paymentRequest,
+    ...(init.settlementReference !== undefined
+      ? { settlementReference: init.settlementReference }
+      : {}),
     reason: init.reason,
   }), {
     status: 402,

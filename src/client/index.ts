@@ -1,7 +1,12 @@
 export { createD402Client } from "./fetch.js";
 export { createDPaymentsExecutor } from "./payment-executor.js";
 export { acceptSuccessfulResponse } from "./acceptance.js";
-export { buildPaymentProof, encodePaymentProof } from "./payment-proof.js";
+export {
+  buildDPaymentProof,
+  encodeD402PaymentProof,
+  buildPaymentProof,
+  encodePaymentProof,
+} from "./payment-proof.js";
 export {
   D402ClientError,
   D402ConfigurationError,

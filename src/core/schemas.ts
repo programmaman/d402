@@ -81,7 +81,15 @@ export const paymentRequestSchema = termsHashInputSchema
   })
   .strict();
 
-export const paymentProofSchema = z
+export const blockReferenceSchema = z
+  .object({
+    blockNumber: z.number().int().nonnegative().safe(),
+    blockHash: hex32Schema,
+    blockTimestampUnixSec: decimalStringSchema,
+  })
+  .strict();
+
+export const dPaymentProofSchema = z
   .object({
     version: z.literal(D402_VERSION),
     paymentId: hex32Schema,
@@ -90,3 +98,12 @@ export const paymentProofSchema = z
     payerAddress: addressSchema,
   })
   .strict();
+
+export const d402PaymentProofSchema = z
+  .object({
+    dPaymentProof: dPaymentProofSchema,
+    settlementReference: blockReferenceSchema.optional(),
+  })
+  .strict();
+
+export const paymentProofSchema = dPaymentProofSchema;

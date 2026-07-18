@@ -1,10 +1,15 @@
-import type {D402PaymentRequest} from "../core/index.js";
-import {parsePaymentRequest} from "../core/index.js";
+import type { D402BlockReference, D402PaymentRequest } from "../core/index.js";
+import { blockReferenceSchema, parsePaymentRequest } from "../core/index.js";
 import {D402PaymentRequestParseError, D402RequestReplayError} from "./errors.js";
 
 export interface PreparedD402Request {
   initial: Request;
   retry: Request;
+}
+
+export interface D402PaymentChallenge {
+  paymentRequest: D402PaymentRequest;
+  settlementReference?: D402BlockReference;
 }
 
 export function prepareReusableRequest(
@@ -27,7 +32,7 @@ export function prepareReusableRequest(
 
 export async function parsePaymentRequiredResponse(
   response: Response,
-): Promise<D402PaymentRequest> {
+): Promise<D402PaymentChallenge> {
   const contentType = response.headers.get("Content-Type") ?? "";
 
   if (!contentType.toLowerCase().includes("application/d402+json")) {
@@ -37,21 +42,27 @@ export async function parsePaymentRequiredResponse(
   }
 
   try {
-    return parsePaymentRequest(parsePaymentRequiredResponseBody(await response.json()));
+    const body: unknown = await response.json();
+    if (typeof body !== "object" || body === null || Array.isArray(body)) {
+      throw new Error("402 response body must be an object");
+    }
+
+    const record = body as Record<string, unknown>;
+    const paymentRequest = parsePaymentRequest(record.paymentRequest);
+    const settlementReference = record.settlementReference === undefined
+      ? undefined
+      : blockReferenceSchema.parse(record.settlementReference);
+
+    return {
+      paymentRequest,
+      ...(settlementReference !== undefined ? { settlementReference } : {}),
+    };
   } catch (cause) {
     throw new D402PaymentRequestParseError(
       "Could not parse d402 payment request body.",
       { cause },
     );
   }
-}
-
-function parsePaymentRequiredResponseBody(value: unknown): unknown {
-  if (typeof value !== "object" || value === null || Array.isArray(value)) {
-    return value;
-  }
-
-  return (value as Record<string, unknown>).paymentRequest;
 }
 
 export function validatePaymentRequestBinding(input: {
