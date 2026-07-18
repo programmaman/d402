@@ -98,13 +98,15 @@ interface D402ClientPolicy {
   allowedTokens?: Array<Address | null>;
   allowedResources?: Array<string | RegExp>;
   maxExpiryWindowSec?: number;
-  maxSettlementWindowSec?: number;
+  minSettlementWindowSec?: number;
   requireAgreementHash?: boolean;
 }
 ```
 
 Policy is checked before payment creation. Use it for both user-approved and
-unattended signers.
+unattended signers. `minSettlementWindowSec` rejects terms whose absolute
+settlement time is too close to the current time; it is an optional payer-side
+safety policy, not a protocol requirement.
 
 ### Client Actions
 

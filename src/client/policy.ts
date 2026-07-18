@@ -9,6 +9,8 @@ export function validatePaymentPolicy(input: {
 }): void {
   const { paymentRequest, connectedChainId, policy } = input;
 
+  validatePolicyConfiguration(policy);
+
   if (connectedChainId !== paymentRequest.chainId) {
     throw new D402PolicyViolationError(
       `Connected provider chain ${connectedChainId} does not match payment request chain ${paymentRequest.chainId}.`,
@@ -77,12 +79,12 @@ export function validatePaymentPolicy(input: {
   }
 
   if (
-    policy.maxSettlementWindowSec !== undefined &&
-    BigInt(paymentRequest.settlementTimeUnixSec) >
-      BigInt(now + policy.maxSettlementWindowSec)
+    policy.minSettlementWindowSec !== undefined &&
+    BigInt(paymentRequest.settlementTimeUnixSec) <
+      BigInt(now + policy.minSettlementWindowSec)
   ) {
     throw new D402PolicyViolationError(
-      `Payment settlement window exceeds client policy: settlementTimeUnixSec=${paymentRequest.settlementTimeUnixSec}, maxSettlementWindowSec=${policy.maxSettlementWindowSec}.`,
+      `Payment settlement time is too soon: settlementTimeUnixSec=${paymentRequest.settlementTimeUnixSec}, minSettlementWindowSec=${policy.minSettlementWindowSec}.`,
     );
   }
 
@@ -92,6 +94,18 @@ export function validatePaymentPolicy(input: {
   ) {
     throw new D402PolicyViolationError(
       "Payment agreement hash is required by client policy.",
+    );
+  }
+}
+
+function validatePolicyConfiguration(policy: D402ClientPolicy): void {
+  if (
+    policy.minSettlementWindowSec !== undefined &&
+    (!Number.isSafeInteger(policy.minSettlementWindowSec) ||
+      policy.minSettlementWindowSec < 0)
+  ) {
+    throw new D402PolicyViolationError(
+      `minSettlementWindowSec must be a non-negative safe integer, got ${policy.minSettlementWindowSec}.`,
     );
   }
 }

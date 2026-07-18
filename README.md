@@ -115,7 +115,7 @@ const client = await createD402Client({
     allowedResources: [/^https:\/\/api\.example\.com\/reports\/[^/]+$/],
     maxAmount: "10000",
     maxExpiryWindowSec: 300,
-    maxSettlementWindowSec: 3600,
+    minSettlementWindowSec: 60,
     requireAgreementHash: true,
   },
   onAccepted: D402PaymentAction.KeepOpen,

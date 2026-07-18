@@ -30,7 +30,7 @@ const client = await createD402Client({
     maxAmount: "10000",
     allowedResources: [/^https:\/\/api\.example\.com\/reports\/[^/]+$/],
     maxExpiryWindowSec: 300,
-    maxSettlementWindowSec: 3600,
+    minSettlementWindowSec: 60,
     requireAgreementHash: true,
   },
   onAccepted: D402PaymentAction.KeepOpen,
@@ -62,7 +62,6 @@ const client = await createD402Client({
     maxAmount: "10000",
     allowedResources: ["https://api.example.com/reports/123"],
     maxExpiryWindowSec: 300,
-    maxSettlementWindowSec: 3600,
   },
   onAccepted: D402PaymentAction.Settle,
 });
@@ -83,7 +82,7 @@ policy: {
   maxAmount: "10000",
   allowedResources: [/^https:\/\/api\.example\.com\/reports\/[^/]+$/],
   maxExpiryWindowSec: 300,
-  maxSettlementWindowSec: 3600,
+  minSettlementWindowSec: 60,
   requireAgreementHash: true,
 }
 ```

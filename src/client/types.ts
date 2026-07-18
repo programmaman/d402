@@ -27,7 +27,7 @@ export interface D402ClientPolicy {
   allowedTokens?: Array<Address | null>;
   allowedResources?: Array<string | RegExp>;
   maxExpiryWindowSec?: number;
-  maxSettlementWindowSec?: number;
+  minSettlementWindowSec?: number;
   requireAgreementHash?: boolean;
 }
 
