@@ -2,12 +2,61 @@
 
 All notable public changes to d402 are documented here.
 
+## 0.2.0
+
+### Payment flow
+
+- Settlement-window payments remain stable when payment is delayed, retried, or
+  interrupted by a temporary service outage.
+- Settlement timing is based on the payment terms and the authenticated chain
+  information associated with the payment, so a newer block does not silently
+  change an existing payment.
+- Clients can submit a complete payment proof on the first request when using
+  ordinary `fetch()` or another compatible client.
+- The automatic client continues to own challenge handling, payment creation,
+  and its single paid retry. It does not automatically create another payment
+  after a failed paid response.
+- Challenge expiration now controls whether payment terms are offered; it does
+  not invalidate an authenticated on-chain payment.
+- Payment challenges and payment-verification failures are now separate
+  responses. Only requests without a proof receive a payable `402` challenge.
+- Proof-bearing failures use non-payable responses: `422` for permanent
+  rejection, `425` while payment confirmation is pending, `503` for temporary
+  provider unavailability, and `504` for provider timeouts.
+- Callers may retry a pending or temporary failure with the same proof.
+- Agreement IDs are documented as agreement-instance identifiers. Applications
+  can include a request or order ID when each payment should be unique.
+
+### API
+
+- Unified confirmation configuration under `confirmations`.
+- Payment resources default to the incoming request URL.
+- The complete `D402PaymentProof` format is now the public proof format, with
+  an optional settlement reference for window-based payments.
+- `encodeD402PaymentProof`, `parseDPaymentProof`, and
+  `parseD402PaymentProof` are the canonical proof APIs.
+- Updated the public protocol version to `2`.
+- Removed obsolete client settlement-window and confirmation option names.
+
+### Reliability
+
+- Payment verification remains valid across server restarts, replica changes,
+  delayed retries, and blockchain reorgs, etc.
+- Fixed-time payments do not require settlement-reference lookups.
+- Window-based payments can continue when the referenced block is temporarily
+  unavailable, provided the authenticated payment supplies sufficient chain
+  evidence.
+
+### Upgrade note
+
+- Upgrade d402 clients and servers together before using this release in
+  production.
+- Applications using custom proof handling should switch from legacy flat proof
+  payloads to the complete `D402PaymentProof` format.
+- Applications should use `agreement.id` for a stable agreement instance ID;
+  d402 does not generate a default agreement nonce.
+
 ## 0.1.5
-
-### Added
-
-- Added facilitator support so servers can facilitate payment transactions on
-  behalf of clients.
 
 ### Changed
 

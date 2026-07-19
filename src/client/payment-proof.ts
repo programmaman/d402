@@ -17,7 +17,7 @@ export interface BuildPaymentProofInput {
 
 export function buildDPaymentProof(input: BuildPaymentProofInput): DPaymentProof {
   return parseDPaymentProof({
-    version: 1,
+    version: 2,
     ...input,
   });
 }

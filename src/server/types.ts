@@ -28,7 +28,7 @@ export interface PayableTerms {
   netAmount: D402PaymentTerms["netAmount"];
   agreement: D402PaymentTerms["agreement"];
   expiresAtUnixSec: number;
-  version?: 1;
+  version?: 2;
   method?: string;
   resource?: string;
   settlementTimeUnixSec?: D402PaymentTerms["settlementTimeUnixSec"];

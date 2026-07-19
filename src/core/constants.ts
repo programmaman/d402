@@ -1,4 +1,4 @@
-export const D402_VERSION = 1;
+export const D402_VERSION = 2;
 
 export const D402_QUICK_DISPUTABLE_PAYMENT = {
 

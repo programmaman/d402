@@ -92,11 +92,18 @@ Decoded proof shape:
 
 ```ts
 interface D402PaymentProof {
-  version: 2;
-  paymentId: `0x${string}`;
-  paymentAddress: `0x${string}`;
-  txHash: `0x${string}`;
-  payerAddress: `0x${string}`;
+  dPaymentProof: {
+    version: 2;
+    paymentId: `0x${string}`;
+    paymentAddress: `0x${string}`;
+    txHash: `0x${string}`;
+    payerAddress: `0x${string}`;
+  };
+  settlementReference?: {
+    blockNumber: number;
+    blockHash: `0x${string}`;
+    blockTimestampUnixSec: `${bigint}`;
+  };
 }
 ```
 

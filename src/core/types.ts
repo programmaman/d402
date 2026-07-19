@@ -21,7 +21,7 @@ export interface D402Agreement {
 }
 
 export interface D402PaymentRequest {
-  version: 1;
+  version: 2;
   resource: string;
   method?: string;
   chainId: number;
@@ -36,7 +36,7 @@ export interface D402PaymentRequest {
 }
 
 export interface DPaymentProof {
-  version: 1;
+  version: 2;
   paymentId: Hex32;
   paymentAddress: PaymentAddress;
   txHash: Hex32;
