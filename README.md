@@ -28,10 +28,11 @@ You also need an RPC provider for the target chain and dPayment contracts
 available on that chain. d402 currently supports Gnosis and Ethereum. Native-token
 payments use `tokenAddress: null`; ERC-20 payments use the ERC-20 token address.
 
-## Protect A Route And Return A Paid Response
+## Protect An Order Payment Route
 
-Wrap a route with `payable`. The route returns `402 application/d402+json` until
-the request includes a valid `D402-Payment-Proof` header.
+Wrap an existing business route with `payable`. This example charges for an
+order that already has a durable business ID, so the same terms can be
+reconstructed when the client retries after paying.
 
 ```ts
 import { JsonRpcProvider } from "ethers";
@@ -39,30 +40,45 @@ import { payable } from "d402/server";
 
 const provider = new JsonRpcProvider(process.env.RPC_URL);
 
-export const GET = payable({
+export const POST = payable({
   // 1. Payment config: chain access and the resource being purchased.
   paymentConfig: {
     provider,
     confirmations: 2,
   },
 
-  // 2. Terms: price, recipient, timing, and business agreement.
-  terms: {
-    chainId: 100,
-    payeeAddress: "0x2222222222222222222222222222222222222222",
-    tokenAddress: null,
-    netAmount: "10000",
-    settlementTimeUnixSec: String(Math.floor(Date.now() / 1000) + 3600),
-    agreement: {
-      id: "report-access:v1:request-123",
-      hash: "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-      uri: "ipfs://agreement",
-    },
-    expiresAtUnixSec: Math.floor(Date.now() / 1000) + 300,
+  // 2. Terms: load the same order on the initial request and paid retry.
+  terms: async (request) => {
+    const orderId = new URL(request.url).pathname.split("/").at(-2)!;
+    const order = await db.orders.get(orderId);
+
+    if (!order || order.status !== "awaiting_payment") {
+      throw new Error("Order is not payable");
+    }
+
+    return {
+      chainId: 100,
+      payeeAddress: "0x2222222222222222222222222222222222222222",
+      tokenAddress: null,
+      netAmount: order.totalWei,
+      settlementTimeUnixSec: order.settlementTimeUnixSec,
+      agreement: {
+        id: `order:${order.id}`,
+        hash: "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        uri: "ipfs://agreement",
+      },
+      expiresAtUnixSec: Math.floor(Date.now() / 1000) + 300,
+    };
   },
 
   // 3. Handler: your protected code. It runs after proof verification.
-  handler: async (_request, context) => {
+  handler: async (request, context) => {
+    const orderId = new URL(request.url).pathname.split("/").at(-2)!;
+    await db.orders.markPaidIfUnpaid(
+      orderId,
+      context.payment?.paymentAddress,
+    );
+
     return Response.json({
       ok: true,
       paymentId: context.paymentRequest.paymentId,
@@ -78,11 +94,11 @@ URL being retried. Configure `paymentConfig.resource` only when the payment is
 for a different stable resource identifier. Put internal product IDs, order
 IDs, or version labels in `agreement.id`.
 
-`agreement.id` identifies the agreement instance being paid for. Use a
-request-specific value when each request or order must have a distinct payment,
-for example `report-access:v1:${requestId}`. Static IDs are appropriate when
-reusing the same agreement is intentional. d402 does not generate a default
-agreement nonce.
+`agreement.id` identifies the agreement instance being paid for. For commerce
+routes, use the existing business identity, such as `order:${orderId}` or
+`subscription:${subscriptionId}`. The application can decide whether that
+payment is reusable or should mark the order as paid after verification. d402
+does not generate a default agreement nonce.
 
 Payment creation and server verification default to one included block.
 The server may return `402` with an insufficient-confirmations reason until the
