@@ -11,8 +11,9 @@ stored, and what recovery path to use if fulfillment later fails.
 
 ## Resource Binding
 
-Set `paymentConfig.resource` to the URL or resource string the client is paying
-for. d402 does not infer it automatically.
+The payment resource defaults to the incoming request URL. Set
+`paymentConfig.resource` only when the payment is for another stable URL or
+resource identifier.
 
 Use a string when the same payment terms protect one stable URL.
 
@@ -27,16 +28,14 @@ const route = payable({
 });
 ```
 
-Use a function when the resource depends on the incoming request.
+Configure an explicit resource when the payment represents something other
+than the literal request URL.
 
 ```ts
 const route = payable({
   paymentConfig: {
     provider,
-    resource: (request) => {
-      const url = new URL(request.url);
-      return url.href;
-    },
+    resource: "report:monthly:123",
   },
   terms: {
     chainId: 100,
@@ -44,17 +43,18 @@ const route = payable({
     tokenAddress: null,
     netAmount: "10000",
     settlementTimeUnixSec: "4102444800",
-    agreement: { id: "report-access:v1" },
+    agreement: { id: "report-access:v1:request-123" },
     expiresAtUnixSec: 4102444800,
   },
   handler,
 });
 ```
 
-The current client requires the payment request resource to match the URL it
-retries. Use a stable public URL pattern and constrain it with client policy. If
-your app needs host-independent product IDs, order IDs, or entitlement IDs, put
-that metadata in `agreement.id`.
+The client requires the payment request resource to match the URL it retries.
+Use a stable public URL pattern and constrain it with client policy. If each
+request needs a distinct payment identity, put a stable request or order ID in
+`agreement.id`, such as `report-access:v1:${requestId}`. d402 does not generate
+a default agreement nonce.
 
 ## One-Shot Consumption
 

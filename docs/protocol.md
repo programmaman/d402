@@ -39,7 +39,7 @@ can still parse it.
 
 ```ts
 interface D402PaymentRequest {
-  version: 1;
+  version: 2;
   resource: string;
   method?: string;
   chainId: number;
@@ -60,7 +60,7 @@ interface D402PaymentRequest {
 
 Fields:
 
-- `version`: current protocol version, `1`.
+- `version`: current protocol version, `2`.
 - `resource`: canonical identity of the protected operation or asset.
 - `method`: optional HTTP method binding. When present, the client requires it
   to match the retried request method.
@@ -69,14 +69,16 @@ Fields:
 - `tokenAddress`: ERC-20 token address, or `null` for native token payments.
 - `netAmount`: amount paid to the payee, as a decimal integer string.
 - `settlementTimeUnixSec`: earliest settlement time, as Unix seconds.
-- `agreement`: app-level business agreement identifier and optional content hash/URI.
+- `agreement`: app-level agreement instance identifier and optional content hash/URI.
 - `expiresAtUnixSec`: payment request expiry, as Unix seconds.
 - `termsHash`: deterministic hash of the payment terms.
 - `paymentId`: equal to `termsHash`; used as the dPayment ID.
 
 `paymentId` is deterministic. Identical payment terms produce identical payment
 IDs. Include distinct `resource` or `agreement.id` metadata when each order,
-session, or purchase needs a unique payment.
+session, or purchase needs a unique payment. For request-specific agreements,
+the integrator should provide a stable identifier such as
+`report-access:v1:${requestId}`. d402 does not generate a default nonce.
 
 ## Payment Proof
 
@@ -90,7 +92,7 @@ Decoded proof shape:
 
 ```ts
 interface D402PaymentProof {
-  version: 1;
+  version: 2;
   paymentId: `0x${string}`;
   paymentAddress: `0x${string}`;
   txHash: `0x${string}`;

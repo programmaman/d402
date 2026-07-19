@@ -27,7 +27,8 @@ Shared protocol primitives.
 ```ts
 import {
   hashPaymentTerms,
-  parsePaymentProof,
+  parseDPaymentProof,
+  parseD402PaymentProof,
   parsePaymentRequest,
 } from "d402/core";
 ```
@@ -36,7 +37,8 @@ Exports:
 
 - `hashPaymentTerms(terms)`: returns the deterministic `termsHash`.
 - `parsePaymentRequest(value)`: validates and normalizes wire payment requests.
-- `parsePaymentProof(value)`: validates and normalizes decoded payment proofs.
+- `parseDPaymentProof(value)`: validates and normalizes an underlying dPayment proof.
+- `parseD402PaymentProof(value)`: validates and normalizes a complete d402 payment proof.
 
 Key types:
 
@@ -80,8 +82,7 @@ Important options:
 - `signer`: ethers signer used to create dPayment transactions.
 - `fetch`: optional fetch implementation. Defaults to global `fetch`.
 - `proofHeaderName`: optional proof header override. Defaults to `D402-Payment-Proof`.
-- `paymentConfirmations`: confirmations to wait after payment creation.
-- `actionConfirmations`: confirmations to wait for settle actions.
+- `confirmations`: confirmation depth used for payment creation and server actions.
 - `policy`: local spending policy.
 - `onResponse`: advanced post-response validator used before auto-settle handling.
 - `onAccepted`: action after accepted protected response.
@@ -148,8 +149,8 @@ Wraps a request handler and returns a function that either:
 Important options:
 
 - `paymentConfig.provider`: ethers provider used for verification.
-- `paymentConfig.resource`: string or function that returns the URL/resource being purchased.
-- `paymentConfig.minConfirmations`: required payment transaction confirmations.
+- `paymentConfig.resource`: optional string or function that returns the resource being purchased. Defaults to the incoming request URL.
+- `paymentConfig.confirmations`: required payment transaction confirmations.
 - `paymentConfig.settlementWindow`: derive settlement time from latest block timestamp.
 - `paymentConfig.settlementTimeUnixSec`: explicit settlement time.
 - `paymentConfig.cache`: latest-block cache for settlement-window derivation.
@@ -159,10 +160,9 @@ Important options:
 - `proofHeaderName`: optional proof header override.
 - `buildPaymentRequiredResponse`: optional 402 response builder.
 
-`paymentConfig.resource` should be set for payable routes. The current client
-expects it to match the request URL it retries, so `resource: (request) =>
-request.url` is the clearest default. If terms do not include a resource and
-`paymentConfig.resource` is missing, request construction fails.
+The resource defaults to the incoming request URL and must match the URL the
+client retries. Configure `paymentConfig.resource` only when the payment is
+for another stable resource identifier.
 
 ### `createDPaymentsVerifier(options)`
 
@@ -188,7 +188,7 @@ Use a custom verifier to add app policy such as one-shot consumption,
 account binding, or allowlists.
 
 ```ts
-const baseVerifier = createDPaymentsVerifier({ provider, minConfirmations: 2 });
+const baseVerifier = createDPaymentsVerifier({ provider, confirmations: 2 });
 
 const verify: PaymentVerifier = async (input) => {
   const result = await baseVerifier(input);
@@ -196,7 +196,7 @@ const verify: PaymentVerifier = async (input) => {
     return result;
   }
 
-  const consumed = await db.payments.wasConsumed(input.proof.paymentAddress);
+  const consumed = await db.payments.wasConsumed(input.dPaymentProof.paymentAddress);
   if (consumed) {
     return { ok: false, reason: "payment-already-consumed" };
   }

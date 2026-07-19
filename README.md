@@ -43,11 +43,7 @@ export const GET = payable({
   // 1. Payment config: chain access and the resource being purchased.
   paymentConfig: {
     provider,
-    minConfirmations: 2,
-    resource(request) {
-      const url = new URL(request.url);
-      return url.href;
-    },
+    confirmations: 2,
   },
 
   // 2. Terms: price, recipient, timing, and business agreement.
@@ -58,7 +54,7 @@ export const GET = payable({
     netAmount: "10000",
     settlementTimeUnixSec: String(Math.floor(Date.now() / 1000) + 3600),
     agreement: {
-      id: "report-access:v1",
+      id: "report-access:v1:request-123",
       hash: "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
       uri: "ipfs://agreement",
     },
@@ -77,15 +73,21 @@ export const GET = payable({
 });
 ```
 
-`paymentConfig.resource` is what the client is paying for. The current client
-expects it to match the URL being retried, so `resource: (request) =>
-request.url` is the safest default. Put internal product IDs, order IDs, or
-version labels in `agreement.id`.
+The payment resource defaults to the incoming request URL and must match the
+URL being retried. Configure `paymentConfig.resource` only when the payment is
+for a different stable resource identifier. Put internal product IDs, order
+IDs, or version labels in `agreement.id`.
+
+`agreement.id` identifies the agreement instance being paid for. Use a
+request-specific value when each request or order must have a distinct payment,
+for example `report-access:v1:${requestId}`. Static IDs are appropriate when
+reusing the same agreement is intentional. d402 does not generate a default
+agreement nonce.
 
 Payment creation and server verification default to one included block.
 The server may return `402` with an insufficient-confirmations reason until the
-payment reaches that threshold. Set `paymentConfig.minConfirmations` or the
-client confirmation options explicitly when stronger finality is appropriate.
+payment reaches that threshold. Set `confirmations` explicitly when stronger
+finality is appropriate.
 
 If the app wants settlement timing relative to the latest block instead of a
 fixed timestamp, set `paymentConfig.settlementWindow` and omit
@@ -107,7 +109,7 @@ const signer = new Wallet(process.env.PAYER_PRIVATE_KEY, provider);
 const client = await createD402Client({
   provider,
   signer,
-  paymentConfirmations: 2,
+  confirmations: 2,
   policy: {
     allowedChains: [100],
     allowedPayees: ["0x2222222222222222222222222222222222222222"],
@@ -175,15 +177,15 @@ const paymentStore = {
 export const GET = payable({
   paymentConfig: {
     provider,
-    resource: (request) => request.url,
     settlementWindow: 3600,
+    confirmations: 2,
   },
   terms: async (request) => ({
     chainId: 100,
     payeeAddress: payee.address,
     tokenAddress: null,
     netAmount: "10000",
-    agreement: { id: "report-access:v1" },
+    agreement: { id: "report-access:v1:request-123" },
     expiresAtUnixSec: Math.floor(Date.now() / 1000) + 300,
   }),
   handler: async (_request, context) => {
@@ -273,7 +275,7 @@ import { paymentActions } from "d402/server";
 const actions = paymentActions({
   provider,
   signer: payeeSigner,
-  actionConfirmations: 2,
+  confirmations: 2,
 });
 
 await actions.refundPayment(paymentAddress);
@@ -320,7 +322,7 @@ Cache-Control: no-store
 ```json
 {
   "paymentRequest": {
-    "version": 1,
+    "version": 2,
     "resource": "https://api.example.com/reports/123",
     "method": "GET",
     "chainId": 100,

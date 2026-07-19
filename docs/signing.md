@@ -115,7 +115,7 @@ import { paymentActions } from "d402/server";
 const actions = paymentActions({
   provider,
   signer,
-  actionConfirmations: 2,
+  confirmations: 2,
 });
 
 await actions.settlePayment(paymentAddress);
