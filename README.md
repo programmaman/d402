@@ -30,7 +30,7 @@ payments use `tokenAddress: null`; ERC-20 payments use the ERC-20 token address.
 
 ## Protect An Order Payment Route
 
-Wrap an existing business route with `payable`. This example charges for an
+Wrap `POST /orders/:orderId/pay` with `payable`. This example charges for an
 order that already has a durable business ID, so the same terms can be
 reconstructed when the client retries after paying.
 
@@ -41,16 +41,14 @@ import { payable } from "d402/server";
 const provider = new JsonRpcProvider(process.env.RPC_URL);
 
 export const POST = payable({
-  // 1. Payment config: chain access and the resource being purchased.
   paymentConfig: {
     provider,
     confirmations: 2,
   },
 
-  // 2. Terms: load the same order on the initial request and paid retry.
+  // Resolves whichever /orders/:orderId/pay route was requested.
   terms: async (request) => {
-    const orderId = new URL(request.url).pathname.split("/").at(-2)!;
-    const order = await db.orders.get(orderId);
+    const order = await orders.findByPaymentUrl(request.url);
 
     if (!order || order.status !== "awaiting_payment") {
       throw new Error("Order is not payable");
@@ -64,18 +62,15 @@ export const POST = payable({
       settlementTimeUnixSec: order.settlementTimeUnixSec,
       agreement: {
         id: `order:${order.id}`,
-        hash: "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-        uri: "ipfs://agreement",
       },
       expiresAtUnixSec: Math.floor(Date.now() / 1000) + 300,
     };
   },
 
-  // 3. Handler: your protected code. It runs after proof verification.
-  handler: async (request, context) => {
-    const orderId = new URL(request.url).pathname.split("/").at(-2)!;
-    await db.orders.markPaidIfUnpaid(
-      orderId,
+  // Runs only after d402 verifies the on-chain payment.
+  handler: async (_request, context) => {
+    await orders.markPaidIfUnpaid(
+      context.paymentRequest.agreement.id,
       context.payment?.paymentAddress,
     );
 
@@ -96,9 +91,10 @@ IDs, or version labels in `agreement.id`.
 
 `agreement.id` identifies the agreement instance being paid for. For commerce
 routes, use the existing business identity, such as `order:${orderId}` or
-`subscription:${subscriptionId}`. The application can decide whether that
-payment is reusable or should mark the order as paid after verification. d402
-does not generate a default agreement nonce.
+`subscription:${subscriptionId}`. For APIs, derive it from the protected
+resource, such as `report-access:v1:${reportId}`. The application can decide
+whether that payment is reusable or should mark the resource as fulfilled after
+verification. d402 does not generate a default agreement nonce.
 
 Payment creation and server verification default to one included block.
 The server may return `402` with an insufficient-confirmations reason until the
@@ -109,11 +105,11 @@ If the app wants settlement timing relative to the latest block instead of a
 fixed timestamp, set `paymentConfig.settlementWindow` and omit
 `settlementTimeUnixSec`. d402 will derive the settlement time from the chain.
 
-## Pay The 402 And Retry
+## Pay a Protected API Resource
 
-Create a client with a provider, signer, and policy. The policy is the client's
-safety check: payment creation happens only after the server's payment request
-matches these limits.
+The same client pays reports, data, and other protected API resources. The
+policy is the client's safety check: payment creation happens only after the
+server's payment request matches these limits.
 
 ```ts
 import { JsonRpcProvider, Wallet } from "ethers";
@@ -143,6 +139,9 @@ const response = await client.fetch("https://api.example.com/reports/123");
 const body = await response.json();
 ```
 
+The same client call works for any report URL; the server decides the price and
+agreement from the requested resource.
+
 The happy path is:
 
 1. Send the original request.
@@ -159,6 +158,8 @@ The happy path is:
 In a real app, the server keeps a payment record for later settlement or refund
 handling, and the client either keeps the payment open or settles it after the
 response comes back.
+
+This route protects every report in `/reports/:id`, not just one fixed report.
 
 ```ts
 import { JsonRpcProvider, Wallet } from "ethers";
@@ -196,15 +197,29 @@ export const GET = payable({
     settlementWindow: 3600,
     confirmations: 2,
   },
-  terms: async (request) => ({
-    chainId: 100,
-    payeeAddress: payee.address,
-    tokenAddress: null,
-    netAmount: "10000",
-    agreement: { id: "report-access:v1:request-123" },
-    expiresAtUnixSec: Math.floor(Date.now() / 1000) + 300,
-  }),
-  handler: async (_request, context) => {
+  terms: async (request) => {
+    const report = await reports.findByUrl(request.url);
+
+    if (!report) {
+      throw new Error("Report not found");
+    }
+
+    return {
+      chainId: 100,
+      payeeAddress: payee.address,
+      tokenAddress: null,
+      netAmount: report.priceWei,
+      agreement: { id: `report-access:v1:${report.id}` },
+      expiresAtUnixSec: Math.floor(Date.now() / 1000) + 300,
+    };
+  },
+  handler: async (request, context) => {
+    const report = await reports.findByUrl(request.url);
+
+    if (!report) {
+      throw new Error("Report not found");
+    }
+
     await paymentStore.upsert({
       paymentId: context.paymentRequest.paymentId,
       paymentAddress: context.payment?.paymentAddress as `0x${string}`,
@@ -214,8 +229,8 @@ export const GET = payable({
     });
 
     return Response.json({
-      report: "123",
-      data: "ready",
+      report: report.id,
+      data: report.data,
     });
   },
 });
@@ -329,6 +344,8 @@ agnostic and handles the payment and on-chain evidence-submission boundary.
 
 Servers return d402 payment terms with a structured JSON media type:
 
+For example, a report API can describe one protected report request like this:
+
 ```http
 HTTP/1.1 402 Payment Required
 Content-Type: application/d402+json
@@ -347,7 +364,7 @@ Cache-Control: no-store
     "netAmount": "10000",
     "settlementTimeUnixSec": "4102444800",
     "agreement": {
-      "id": "report-access:v1:request-123",
+      "id": "report-access:v1:123",
       "hash": "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
       "uri": "ipfs://agreement"
     },
