@@ -57,7 +57,7 @@ async function sendPaymentAction(
   const receipt = await sendPreparedTx(
     config.signer,
     tx,
-    config.actionConfirmations ?? D402_DEFAULT_CONFIRMATIONS,
+    config.confirmations ?? D402_DEFAULT_CONFIRMATIONS,
   );
   console.log("[server] payment action confirmed", {
     action,
@@ -86,7 +86,7 @@ async function sendEvidenceAction(
   const receipt = await sendPreparedTx(
     config.signer,
     tx,
-    config.actionConfirmations ?? D402_DEFAULT_CONFIRMATIONS,
+    config.confirmations ?? D402_DEFAULT_CONFIRMATIONS,
   );
   console.log("[server] evidence submission confirmed", {
     paymentAddress,
@@ -115,7 +115,7 @@ async function sendAppealAction(
   const receipt = await sendPreparedTx(
     config.signer,
     prepared.tx,
-    config.actionConfirmations ?? D402_DEFAULT_CONFIRMATIONS,
+    config.confirmations ?? D402_DEFAULT_CONFIRMATIONS,
   );
   console.log("[server] appeal confirmed", {
     paymentAddress,

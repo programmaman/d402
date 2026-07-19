@@ -25,7 +25,7 @@ export async function resolveChallengeSettlementTerms(
   terms: ResolvedPayableTerms;
   settlementReference?: D402BlockReference;
 }> {
-  validateTimingConfiguration(paymentConfig, terms);
+  validateSettlementTimingConfiguration(paymentConfig, terms);
 
   if (paymentConfig.settlementWindow !== undefined) {
     const lookup = referenceCache
@@ -47,6 +47,7 @@ export async function resolveChallengeSettlementTerms(
   return { terms: withSettlementTime(terms, fixedSettlementTime(paymentConfig, terms)) };
 }
 
+
 export type ProofSettlementResult =
   | {
       ok: true;
@@ -61,7 +62,7 @@ export function resolveProofSettlementTerms(
   terms: PayableTerms,
   suppliedReference?: D402BlockReference,
 ): ProofSettlementResult {
-  validateTimingConfiguration(paymentConfig, terms);
+  validateSettlementTimingConfiguration(paymentConfig, terms);
 
   if (paymentConfig.settlementWindow !== undefined) {
     if (suppliedReference === undefined) {
@@ -91,7 +92,7 @@ export async function resolveSettlementTerms(
   terms: PayableTerms,
   latestBlockCache: LatestBlockTimestampCache | null,
 ): Promise<ResolvedPayableTerms> {
-  validateTimingConfiguration(paymentConfig, terms);
+  validateSettlementTimingConfiguration(paymentConfig, terms);
   if (paymentConfig.settlementWindow !== undefined && latestBlockCache !== null) {
     const timestamp = await latestBlockCache.get(paymentConfig.provider);
     if (timestamp === null) {
@@ -101,23 +102,6 @@ export async function resolveSettlementTerms(
   }
   const result = await resolveChallengeSettlementTerms(paymentConfig, terms, null);
   return result.terms;
-}
-
-function validateTimingConfiguration(config: SettlementConfig, terms: PayableTerms): void {
-  const termTime = (terms as Partial<Pick<PayableTerms, "settlementTimeUnixSec">>)
-    .settlementTimeUnixSec;
-  if (config.settlementWindow !== undefined && config.settlementTimeUnixSec !== undefined) {
-    throw new Error("paymentConfig.settlementWindow and paymentConfig.settlementTimeUnixSec cannot both be set; choose one source of settlement timing");
-  }
-  if (config.settlementWindow !== undefined && termTime !== undefined) {
-    throw new Error("paymentConfig.settlementWindow and terms.settlementTimeUnixSec cannot both be set; choose one source of settlement timing");
-  }
-  if (config.settlementTimeUnixSec !== undefined && termTime !== undefined) {
-    throw new Error("paymentConfig.settlementTimeUnixSec and terms.settlementTimeUnixSec cannot both be set; choose one source of settlement timing");
-  }
-  if (config.settlementWindow !== undefined && (!Number.isInteger(config.settlementWindow) || config.settlementWindow < 0)) {
-    throw new Error("paymentConfig.settlementWindow must be a non-negative integer");
-  }
 }
 
 function fixedSettlementTime(
@@ -159,5 +143,24 @@ async function readLatestReference(provider: AbstractProvider): Promise<
     };
   } catch (cause) {
     return { ok: false, cause };
+  }
+}
+export function validateSettlementTimingConfiguration(
+  config: SettlementConfig,
+  terms: PayableTerms,
+): void {
+  const termTime = (terms as Partial<Pick<PayableTerms, "settlementTimeUnixSec">>)
+    .settlementTimeUnixSec;
+  if (config.settlementWindow !== undefined && config.settlementTimeUnixSec !== undefined) {
+    throw new Error("paymentConfig.settlementWindow and paymentConfig.settlementTimeUnixSec cannot both be set; choose one source of settlement timing");
+  }
+  if (config.settlementWindow !== undefined && termTime !== undefined) {
+    throw new Error("paymentConfig.settlementWindow and terms.settlementTimeUnixSec cannot both be set; choose one source of settlement timing");
+  }
+  if (config.settlementTimeUnixSec !== undefined && termTime !== undefined) {
+    throw new Error("paymentConfig.settlementTimeUnixSec and terms.settlementTimeUnixSec cannot both be set; choose one source of settlement timing");
+  }
+  if (config.settlementWindow !== undefined && (!Number.isInteger(config.settlementWindow) || config.settlementWindow < 0)) {
+    throw new Error("paymentConfig.settlementWindow must be a non-negative integer");
   }
 }

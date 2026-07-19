@@ -15,17 +15,24 @@ export interface PaymentConfig<Req = Request> {
   provider: AbstractProvider;
   signer?: Signer;
   resource?: PaymentResourceResolver<Req>;
-  minConfirmations?: number;
-  actionConfirmations?: number;
+  confirmations?: number;
   settlementWindow?: number;
   settlementTimeUnixSec?: number;
   cache?: boolean | number;
 }
 
-export type PayableTerms =
-  | D402PaymentTerms
-  | (Omit<D402PaymentTerms, "version" | "resource" | "method" | "settlementTimeUnixSec"> &
-      Partial<Pick<D402PaymentTerms, "settlementTimeUnixSec">>);
+export interface PayableTerms {
+  chainId: number;
+  payeeAddress: D402PaymentTerms["payeeAddress"];
+  tokenAddress: D402PaymentTerms["tokenAddress"];
+  netAmount: D402PaymentTerms["netAmount"];
+  agreement: D402PaymentTerms["agreement"];
+  expiresAtUnixSec: number;
+  version?: 1;
+  method?: string;
+  resource?: string;
+  settlementTimeUnixSec?: D402PaymentTerms["settlementTimeUnixSec"];
+}
 
 export type PayableTermsResolver<Req = Request> =
   | PayableTerms
@@ -34,7 +41,11 @@ export type PayableTermsResolver<Req = Request> =
 export type D402PaymentVerificationFailureReason =
   | "missing-proof"
   | "invalid-proof"
-  | "payment-request-expired"
+  | "missing-settlement-reference"
+  | "reference-block-mismatch"
+  | "reference-settlement-out-of-bounds"
+  | "reference-provider-error"
+  | "provider-timeout"
   | "payment-id-mismatch"
   | "onchain-payment-not-found"
   | "onchain-payment-mismatch"
@@ -59,7 +70,7 @@ export type PaymentVerificationFailureReason =
   | D402PaymentVerificationFailureReason
   | (string & {});
 
-export type PaymentRequiredReasonCode = PaymentVerificationFailureReason;
+export type PaymentRequiredReasonCode = "missing-proof";
 
 export type PaymentRequiredReasonCategory =
   | "proof"
@@ -123,7 +134,8 @@ export type PaymentVerificationResult =
 export interface PaymentVerifierInput<Req = Request> {
   request: Req;
   paymentRequest: D402PaymentRequest;
-  proof: DPaymentProof;
+  dPaymentProof: DPaymentProof;
+  settlementReference?: D402BlockReference;
 }
 
 export type PaymentVerifier<Req = Request> = (
@@ -132,9 +144,10 @@ export type PaymentVerifier<Req = Request> = (
 
 export interface PayableContext {
   paymentRequest: D402PaymentRequest;
-  proof: DPaymentProof;
+  dPaymentProof: DPaymentProof;
   verification: Extract<PaymentVerificationResult, { ok: true }>;
   payment?: VerifiedPayment;
+  settlementReference?: D402BlockReference;
 }
 
 export type PayableHandler<Req = Request, Res = Response> = (
@@ -160,11 +173,17 @@ export type PaymentRequiredResponseBuilder = (
 
 export interface PaymentVerificationErrorResponseInit {
   status: 422 | 425 | 503 | 504;
-  reason: PaymentRequiredReason;
+  reason: PaymentVerificationErrorReason;
 }
 
 export interface PaymentVerificationErrorResponseBody {
-  reason: PaymentRequiredReason;
+  reason: PaymentVerificationErrorReason;
+}
+
+export interface PaymentVerificationErrorReason {
+  code: PaymentVerificationFailureReason;
+  retryable: boolean;
+  message?: string;
 }
 
 export type PaymentVerificationErrorResponseBuilder = (

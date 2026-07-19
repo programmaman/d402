@@ -35,8 +35,7 @@ import type {
 export interface CreateDPaymentsExecutorOptions {
   signer: Signer;
   provider: AbstractProvider;
-  paymentConfirmations?: number;
-  resolutionConfirmations?: number;
+  confirmations?: number;
 }
 
 export function createDPaymentsExecutor(
@@ -163,7 +162,7 @@ async function createDPaymentsPayment(
 ): Promise<D402CreatedPayment> {
   try {
     const preparedPayment = await preparePayment(options, paymentRequest);
-    const confirmations = options.paymentConfirmations ??
+    const confirmations = options.confirmations ??
       D402_DEFAULT_CONFIRMATIONS;
 
     if ("approvalTx" in preparedPayment) {
@@ -275,7 +274,7 @@ async function sendPaymentAction(
     );
     const receipt = await waitForSuccessfulReceipt(
       response,
-      options.resolutionConfirmations ?? D402_DEFAULT_CONFIRMATIONS,
+      options.confirmations ?? D402_DEFAULT_CONFIRMATIONS,
     );
     console.log("[client] payment action confirmed", {
       action,
@@ -325,7 +324,7 @@ async function raisePaymentDispute(
     );
     const receipt = await waitForSuccessfulReceipt(
       response,
-      options.resolutionConfirmations ?? D402_DEFAULT_CONFIRMATIONS,
+      options.confirmations ?? D402_DEFAULT_CONFIRMATIONS,
     );
     console.log("[client] payment dispute confirmed", {
       paymentId: payment.paymentId,
@@ -364,7 +363,7 @@ async function submitPaymentEvidence(
     );
     const receipt = await waitForSuccessfulReceipt(
       response,
-      options.resolutionConfirmations ?? D402_DEFAULT_CONFIRMATIONS,
+      options.confirmations ?? D402_DEFAULT_CONFIRMATIONS,
     );
 
     console.log("[client] payment evidence submission confirmed", {

@@ -23,6 +23,3 @@ export function parseD402PaymentProof(proof: unknown): D402PaymentProof {
       : {}),
   };
 }
-
-/** @deprecated Use parseDPaymentProof for the underlying payment proof. */
-export const parsePaymentProof = parseDPaymentProof;

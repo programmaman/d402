@@ -47,11 +47,11 @@ function completeTermsFromRequest(
 ): D402PaymentTerms {
   const partialTerms = terms as Partial<D402PaymentTerms>;
   const settlementTimeUnixSec = partialTerms.settlementTimeUnixSec;
-  const resolvedResource = resource ?? partialTerms.resource;
+  const resolvedResource = resource ?? partialTerms.resource ?? request.url;
 
   if (resolvedResource === undefined) {
     throw new Error(
-      "resource must be provided by paymentConfig.resource or terms.resource so the server can build a payment request",
+      "resource must be provided by paymentConfig.resource, terms.resource, or the incoming request URL so the server can build a payment request",
     );
   }
 

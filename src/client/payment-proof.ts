@@ -26,12 +26,3 @@ export function encodeD402PaymentProof(proof: D402PaymentProof): string {
   const normalized = parseD402PaymentProof(proof);
   return Buffer.from(JSON.stringify(normalized), "utf8").toString("base64url");
 }
-
-/** @deprecated Use buildDPaymentProof. */
-export const buildPaymentProof = buildDPaymentProof;
-
-/** @deprecated Use encodeD402PaymentProof. */
-export function encodePaymentProof(proof: DPaymentProof): string {
-  const normalized = parseDPaymentProof(proof);
-  return Buffer.from(JSON.stringify(normalized), "utf8").toString("base64url");
-}

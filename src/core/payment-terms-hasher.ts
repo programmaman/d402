@@ -5,7 +5,12 @@ import { termsHashInputSchema } from "./schemas.js";
 import type { D402PaymentTerms, Hex32 } from "./types.js";
 
 export function hashNormalizedPaymentTerms(input: D402PaymentTerms): Hex32 {
-  const canonical = canonicalize(input);
+  // Challenge expiration controls whether the server should issue a 402;
+  // it is not part of the payment identity. Excluding it keeps the payment
+  // ID stable when a proof-bearing retry reconstructs terms later.
+  const { expiresAtUnixSec, ...paymentIdentity } = input;
+  void expiresAtUnixSec;
+  const canonical = canonicalize(paymentIdentity);
   if (canonical === undefined) {
     throw new Error("canonicalize returned no output");
   }

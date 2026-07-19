@@ -4,8 +4,6 @@ export { acceptSuccessfulResponse } from "./acceptance.js";
 export {
   buildDPaymentProof,
   encodeD402PaymentProof,
-  buildPaymentProof,
-  encodePaymentProof,
 } from "./payment-proof.js";
 export {
   D402ClientError,

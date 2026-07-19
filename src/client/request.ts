@@ -1,5 +1,6 @@
 import type { D402BlockReference, D402PaymentRequest } from "../core/index.js";
-import { blockReferenceSchema, parsePaymentRequest } from "../core/index.js";
+import { parsePaymentRequest } from "../core/index.js";
+import { blockReferenceSchema } from "../core/schemas.js";
 import {D402PaymentRequestParseError, D402RequestReplayError} from "./errors.js";
 
 export interface PreparedD402Request {
@@ -7,7 +8,7 @@ export interface PreparedD402Request {
   retry: Request;
 }
 
-export interface D402PaymentChallenge {
+interface D402PaymentChallenge {
   paymentRequest: D402PaymentRequest;
   settlementReference?: D402BlockReference;
 }

@@ -144,11 +144,8 @@ function createDefaultExecutor(
   const executorOptions = {
     signer: options.signer,
     provider,
-    ...(options.paymentConfirmations !== undefined
-      ? { paymentConfirmations: options.paymentConfirmations }
-      : {}),
-    ...(options.actionConfirmations !== undefined
-      ? { resolutionConfirmations: options.actionConfirmations }
+    ...(options.confirmations !== undefined
+      ? { confirmations: options.confirmations }
       : {}),
   };
 

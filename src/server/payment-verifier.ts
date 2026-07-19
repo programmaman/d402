@@ -8,7 +8,11 @@ import {
 import type { AbstractProvider } from "ethers";
 import type { PaymentCreatedEvent } from "@rakelabs/dpayments-sdk";
 import type { MulticallConfig } from "@rakelabs/dpayments-sdk";
-import type { DPaymentProof, D402PaymentRequest } from "../core/index.js";
+import type {
+  D402BlockReference,
+  DPaymentProof,
+  D402PaymentRequest,
+} from "../core/index.js";
 import type {
   PaymentState as D402PaymentState,
   PaymentVerificationResult,
@@ -23,14 +27,15 @@ import { findPaymentCreatedEvent } from "../runtime/payment-events.js";
 export interface VerifyPaymentInput<Req = Request> {
   request: Req;
   paymentRequest: D402PaymentRequest;
-  proof: DPaymentProof;
+  dPaymentProof: DPaymentProof;
+  settlementReference?: D402BlockReference;
   verifier: PaymentVerifier<Req>;
 }
 
 export async function verifyPayment<Req>(
   input: VerifyPaymentInput<Req>,
 ): Promise<PaymentVerificationResult> {
-  const localResult = verifyProofMatchesRequest(input.paymentRequest, input.proof);
+  const localResult = verifyProofMatchesRequest(input.paymentRequest, input.dPaymentProof);
   if (!localResult.ok) {
     return localResult;
   }
@@ -38,13 +43,17 @@ export async function verifyPayment<Req>(
   return input.verifier({
     request: input.request,
     paymentRequest: input.paymentRequest,
-    proof: input.proof,
+    dPaymentProof: input.dPaymentProof,
+    ...(input.settlementReference !== undefined
+      ? { settlementReference: input.settlementReference }
+      : {}),
   });
 }
 
 export interface DPaymentsVerifierOptions {
   provider: AbstractProvider;
-  minConfirmations?: number;
+  confirmations?: number;
+  settlementWindow?: number;
   /** Trusted private-network or test-chain Multicall3 deployment. */
   multicall?: MulticallConfig;
 }
@@ -53,8 +62,7 @@ export function createDPaymentsVerifier(
   options: DPaymentsVerifierOptions,
 ): PaymentVerifier {
   const events = new PaymentEvents();
-  const minConfirmations =
-    options.minConfirmations ?? D402_DEFAULT_CONFIRMATIONS;
+  const confirmations = options.confirmations ?? D402_DEFAULT_CONFIRMATIONS;
   let connectedChainId: Promise<number> | undefined;
   let reader: Promise<PaymentReader> | undefined;
   const inFlightPaymentStateReads = new Map<
@@ -77,15 +85,9 @@ export function createDPaymentsVerifier(
     return reader;
   }
 
-  return async function verifyDPaymentsPayment({
-    paymentRequest,
-    proof,
-  }): Promise<PaymentVerificationResult> {
-    const receiptPromise = readTransactionReceipt(
-      options.provider,
-      proof.txHash,
-    );
-
+  return async function verifyDPaymentsPayment(input): Promise<PaymentVerificationResult> {
+    const { paymentRequest } = input;
+    const proof = input.dPaymentProof;
     const chainResult = await verifyChain(
       paymentRequest,
       getVerifierChainId(),
@@ -94,29 +96,48 @@ export function createDPaymentsVerifier(
       return chainResult;
     }
 
-    // Immutable payment data is authenticated by PaymentCreated below. The
-    // only live contract value needed for access is the current state.
-    const paymentStatePromise = getVerifierReader().then((reader) =>
+    const receiptResult = await readTransactionReceipt(
+      options.provider,
+      proof.txHash,
+    );
+    if (!receiptResult.ok) return receiptResult;
+
+    const createdEventResult = await verifyPaymentCreatedEvent({
+      paymentRequest,
+      dPaymentProof: proof,
+      receipt: receiptResult.receipt,
+      provider: options.provider,
+      events,
+      confirmations,
+    });
+    if (!createdEventResult.ok) {
+      return createdEventResult;
+    }
+
+    const settlementResult = await verifySettlementPolicy({
+      paymentRequest,
+      dPaymentProof: proof,
+      ...(input.settlementReference !== undefined
+        ? { settlementReference: input.settlementReference }
+        : {}),
+      receipt: createdEventResult.receipt,
+      createdEvent: createdEventResult.createdEvent,
+      provider: options.provider,
+      ...(options.settlementWindow !== undefined
+        ? { settlementWindow: options.settlementWindow }
+        : {}),
+    });
+    if (!settlementResult.ok) return settlementResult;
+
+    // PaymentCreated authenticates the immutable payment data before this
+    // mutable state read can use the payment address.
+    const paymentStateResult = await getVerifierReader().then((reader) =>
       readPaymentStateOnce(
         reader,
         proof.paymentAddress,
         inFlightPaymentStateReads,
       ),
     );
-
-    const createdEventResult = await verifyPaymentCreatedEvent({
-      paymentRequest,
-      proof,
-      receiptPromise,
-      provider: options.provider,
-      events,
-      minConfirmations,
-    });
-    if (!createdEventResult.ok) {
-      return createdEventResult;
-    }
-
-    const paymentStateResult = await paymentStatePromise;
     if (!paymentStateResult.ok) {
       return paymentStateResult;
     }
@@ -193,32 +214,32 @@ async function readTransactionReceipt(
 
 async function verifyPaymentCreatedEvent(input: {
   paymentRequest: D402PaymentRequest;
-  proof: DPaymentProof;
-  receiptPromise: Promise<TransactionReceiptResult>;
+  dPaymentProof: DPaymentProof;
+  receipt: TransactionReceipt;
   provider: AbstractProvider;
   events: PaymentEvents;
-  minConfirmations: number;
+  confirmations: number;
 }): Promise<
-  | { ok: true; confirmations?: number }
+  | {
+      ok: true;
+      receipt: TransactionReceipt;
+      createdEvent: PaymentCreatedEvent;
+      confirmations?: number;
+    }
   | Extract<PaymentVerificationResult, { ok: false }>
 > {
-  const receiptResult = await input.receiptPromise;
-  if (!receiptResult.ok) {
-    return receiptResult;
-  }
-
-  const { receipt } = receiptResult;
+  const { receipt } = input;
 
   if (receipt.status !== 1) {
     return { ok: false, reason: "failed-transaction" };
   }
 
   let confirmations: number | undefined;
-  if (input.minConfirmations === 1) {
+  if (input.confirmations === 1) {
     // A non-null receipt proves inclusion, which is one confirmation under
     // this verifier's convention. No block-head lookup is needed.
     confirmations = 1;
-  } else if (input.minConfirmations > 1) {
+  } else if (input.confirmations > 1) {
     let blockNumber: number;
     try {
       blockNumber = await input.provider.getBlockNumber();
@@ -227,7 +248,7 @@ async function verifyPaymentCreatedEvent(input: {
     }
 
     confirmations = blockNumber - receipt.blockNumber + 1;
-    if (confirmations < input.minConfirmations) {
+    if (confirmations < input.confirmations) {
       return { ok: false, reason: "insufficient-confirmations" };
     }
   }
@@ -236,7 +257,7 @@ async function verifyPaymentCreatedEvent(input: {
     logs: receipt.logs,
     factoryAddress: FACTORY_ADDRESS,
     paymentId: input.paymentRequest.paymentId,
-    creator: input.proof.payerAddress,
+    creator: input.dPaymentProof.payerAddress,
     payee: input.paymentRequest.payeeAddress,
     decoder: input.events,
   });
@@ -247,7 +268,7 @@ async function verifyPaymentCreatedEvent(input: {
 
   const eventResult = verifyCreatedEvent(
     input.paymentRequest,
-    input.proof,
+    input.dPaymentProof,
     createdEvent,
   );
   if (!eventResult.ok) {
@@ -256,8 +277,64 @@ async function verifyPaymentCreatedEvent(input: {
 
   return {
     ok: true,
+    receipt,
+    createdEvent,
     ...(confirmations !== undefined ? { confirmations } : {}),
   };
+}
+
+async function verifySettlementPolicy(input: {
+  paymentRequest: D402PaymentRequest;
+  dPaymentProof: DPaymentProof;
+  settlementReference?: D402BlockReference;
+  receipt: TransactionReceipt;
+  createdEvent: PaymentCreatedEvent;
+  provider: AbstractProvider;
+  settlementWindow?: number;
+}): Promise<PaymentVerificationResult> {
+  if (input.settlementWindow === undefined || input.settlementReference === undefined) {
+    return { ok: true };
+  }
+
+  let referenceBlock;
+  try {
+    referenceBlock = await input.provider.getBlock(input.settlementReference.blockHash);
+  } catch (cause) {
+    return { ok: false, reason: "provider-error", cause };
+  }
+
+  if (referenceBlock !== null) {
+    if (
+      referenceBlock.number !== input.settlementReference.blockNumber
+      || referenceBlock.hash?.toLowerCase() !== input.settlementReference.blockHash.toLowerCase()
+      || referenceBlock.timestamp !== Number(input.settlementReference.blockTimestampUnixSec)
+    ) {
+      return { ok: false, reason: "reference-block-mismatch" };
+    }
+    return { ok: true };
+  }
+
+  let creationBlock;
+  try {
+    creationBlock = await input.provider.getBlock(input.receipt.blockNumber);
+  } catch (cause) {
+    return { ok: false, reason: "provider-error", cause };
+  }
+  if (creationBlock === null) {
+    return { ok: false, reason: "provider-error", cause: new Error("creation block unavailable") };
+  }
+
+  if (
+    input.settlementReference.blockNumber > input.receipt.blockNumber
+    || Number(input.settlementReference.blockTimestampUnixSec) > creationBlock.timestamp
+    || BigInt(input.paymentRequest.settlementTimeUnixSec)
+      > BigInt(creationBlock.timestamp) + BigInt(input.settlementWindow)
+    || !sameHex(input.createdEvent.paymentId, input.dPaymentProof.paymentId)
+  ) {
+    return { ok: false, reason: "reference-settlement-out-of-bounds" };
+  }
+
+  return { ok: true };
 }
 
 function verifyCreatedEvent(

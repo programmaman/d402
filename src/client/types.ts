@@ -11,8 +11,7 @@ export interface CreateD402ClientOptions {
   provider?: AbstractProvider;
   fetch?: typeof globalThis.fetch;
   proofHeaderName?: string;
-  paymentConfirmations?: number;
-  actionConfirmations?: number;
+  confirmations?: number;
   policy?: D402ClientPolicy;
   onResponse?: D402ResponseValidator;
   onAccepted?: D402AcceptedPaymentAction;
