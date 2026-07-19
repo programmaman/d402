@@ -1,488 +1,340 @@
-# d402 Compared With x402
+# Why d402 Instead of x402
 
-This document compares d402 with x402 as payment protocols for protected
-internet resources. Visa Trusted Agent Protocol (TAP) is discussed separately
-because it operates at a different layer: TAP identifies and authenticates
-agents and related consumer artifacts, while d402 and x402 define how payment
-requirements and payment material are exchanged and verified.
+d402 and x402 both use HTTP payment challenges, but they make different
+security and product choices. x402 is a broad framework for many payment
+schemes and facilitator services. d402 is an opinionated protocol for binding a
+payment to a specific purchase and keeping that payment usable as a durable
+business agreement.
 
-The comparison is based on the public x402 documentation and repository and
-Visa's public TAP documentation as available on July 18, 2026:
+That narrower scope is d402's advantage. It gives clients and servers one
+consistent payment model instead of inheriting different guarantees from each
+scheme, facilitator, network, and SDK combination.
 
-- [x402 introduction](https://docs.x402.org/introduction)
-- [x402 client/server flow](https://docs.x402.org/core-concepts/client-server)
-- [x402 facilitator model](https://docs.x402.org/core-concepts/facilitator)
+Visa Trusted Agent Protocol (TAP) is not a competing payment protocol. It is an
+agent identity and delegation layer that can be used with either d402 or x402.
+
+## The short answer
+
+d402 is the better choice when payment must be safely connected to one exact
+request, when fulfillment may fail or be disputed, or when the server should
+verify payment without trusting a payment facilitator.
+
+x402 is the better choice when broad ecosystem compatibility, many chains,
+many payment methods, and delegated settlement are more important than having
+one uniform agreement and recovery model.
+
+| Concern | x402 | d402 |
+| --- | --- | --- |
+| Primary abstraction | Pluggable payment payload interpreted by a scheme and verifier | A payment agreement for a specific purchase |
+| Security model | Varies by scheme, network, facilitator, SDK, and deployment | One consistent model across d402 routes |
+| Purchase binding | Depends on the selected flow and correct implementation | Exact request and agreement binding is a core guarantee |
+| Payment timing | Common flows separate authorization, verification, and later settlement | Payment commitment is established before protected fulfillment |
+| Verification authority | Local verifier or facilitator | Independently checkable payment state |
+| Failure recovery | Scheme- and application-specific | Open payment lifecycle with settlement, refund, and dispute paths |
+| Server scaling | May depend on facilitator and scheme state | Outstanding payments survive restarts and can be verified by any replica |
+| Ecosystem breadth | Broad | Deliberately focused |
+
+## Why the distinction matters
+
+Payment-gated HTTP is not only a transaction-submission problem. A safe system
+must preserve several relationships at once:
+
+- the payment belongs to the intended resource;
+- the amount and recipient are the ones the client approved;
+- one authorization cannot be transplanted into another purchase context;
+- asynchronous settlement cannot create a gap where service is delivered more
+  times than payment is collected;
+- retryable infrastructure failures do not invite a second payment;
+- failed fulfillment has a defined recovery path;
+- server restarts and load balancing do not change the purchase being
+  verified.
+
+x402 exposes enough flexibility that these properties can vary by
+implementation. d402 makes them part of one protocol contract.
+
+## Architectural weaknesses reported in x402 research
+
+Several independent 2026 studies identify security problems at the boundary
+between x402's HTTP workflow, signed payment material, facilitator behavior,
+and asynchronous blockchain settlement.
+
+These findings do not imply that every x402 deployment is exploitable. Some
+are scheme-specific or implementation-specific, and x402 can be hardened with
+additional controls. They do show that important safety properties are not
+uniformly guaranteed by the base architecture.
+
+### 1. Payment context can be too weakly bound
+
+Researchers demonstrated cross-resource substitution and other context-binding
+failures in which valid payment material could be accepted in a purchase
+context other than the one the payer intended. The broader lesson is that a
+valid signature is not sufficient unless the signed authorization is bound to
+the complete purchase context and every verifier enforces that binding.
+
+The systematic study *Free-Riding the Agentic Web* reports cross-resource
+substitution among four x402 flaw classes and argues for request-bound
+authorization as an architectural mitigation. *Five Attacks on x402 Agentic
+Payment Protocol* separately reports practical weaknesses in authorization and
+binding across SDKs and live endpoints.
+
+d402 is designed around a payment identity that belongs to the exact purchase
+agreement. A valid payment for one purchase is not treated as a generic bearer
+authorization for another.
+
+### 2. Verification and settlement can drift apart
+
+Common x402 flows verify an authorization before settlement is final. That
+separation creates a time-of-check/time-of-use boundary: the server may decide
+to perform work while the payment is still subject to later settlement,
+concurrency, or failure.
+
+The NDSS 2026 poster *Exploiting the Two-Phase Gap* reports deployments that
+accepted concurrent replays of one payment proof and returned multiple
+protected responses while only one settlement completed on-chain.
+*Free-Riding the Agentic Web* likewise identifies a duplicate-settlement race
+and reports resource leakage in tested SDKs and deployments.
+
+d402 removes that architectural gap from its normal access decision. The
+server grants protected access based on an already-established payment rather
+than treating an unsettled authorization as equivalent to payment.
+
+### 3. Replay protection does not equal purchase idempotency
+
+A chain nonce can prevent one authorization from being settled twice. It does
+not automatically prevent concurrent HTTP requests from receiving duplicate
+service before settlement resolves, and it does not define whether one payment
+buys one use, a quota, or reusable access.
+
+x402 deployments therefore need additional synchronization and consumption
+controls around the verify/settle boundary. Research has reported practical
+duplicate-service and duplicate-settlement races when these controls are
+missing or incomplete.
+
+d402 makes the payment itself a stable business identity. Applications can
+atomically attach one-shot consumption, quotas, or reusable entitlements to
+that identity without confusing a payment authorization with a completed
+purchase. Application consumption state is still required when the product is
+one-shot; d402 makes the correct object available for that decision.
+
+### 4. Dynamic charging expands the trust boundary
+
+x402's flexibility supports variable and usage-based payment schemes. That is
+useful, but it introduces pricing and allowance risks when the final cost is
+known only after work begins.
+
+*Free-Riding the Agentic Web* reports allowance-overdraft behavior and a
+structural problem for output-only pricing when hidden computation can vary.
+The result is a wider trust boundary among client authorization, server
+measurement, facilitator enforcement, and the service's internal accounting.
+
+d402 is stronger when the purchase should be agreed before payment and
+fulfillment. The payer can evaluate the complete price and counterparty policy
+before committing funds, and the server verifies that same purchase agreement
+before delivering the resource.
+
+### 5. Payment failure and HTTP failure can be ambiguous
+
+The x402 v2 HTTP transport permits payment verification or settlement failure
+to return another `402`. Automated clients must inspect the payment response
+carefully to determine whether the server is offering payable terms, reporting
+an invalid authorization, or reporting a settlement failure.
+
+That ambiguity creates duplicate-payment risk when a client interprets every
+`402` as "pay again."
+
+d402 uses `402` only to offer payment when no proof was supplied. Once a
+payment is presented, failures are non-payable and distinguish permanent
+rejection, pending payment, provider unavailability, and timeout. Temporary
+failures can be retried with the same payment instead of creating another one.
+
+### 6. Facilitators expand operational and privacy exposure
+
+x402 permits local verification, but its adoption model commonly places a
+facilitator between the resource server and the blockchain. This simplifies
+integration while adding another availability, policy, metadata, and trust
+boundary.
+
+The paper *Hardening x402: PII-Safe Agentic Payments via Pre-Execution Metadata
+Filtering* describes payment metadata—including resource URLs and human-readable
+descriptions—being sent to resource servers and centralized facilitator APIs,
+and proposes client-side filtering, spending policy, replay guards, and audit
+controls.
+
+d402 does not require a payment facilitator to assert that a payment is valid.
+The server can independently check the payment evidence it relies on. RPC and
+chain infrastructure still exist, but the payment decision is not delegated to
+an additional payment-policy service.
+
+### 7. Payment and service delivery are not atomic
+
+x402 does not make successful payment and correct service delivery one atomic
+operation. The A402 research project identifies this as a core limitation and
+proposes a different atomic service-channel architecture to bind payment
+finalization to service execution and result delivery.
+
+d402 does not claim magical atomic fulfillment either. Its advantage is a
+recovery-oriented payment lifecycle: a payment can remain open while the
+application records fulfillment and can later follow settlement, refund, or
+dispute policy. This does not prove service quality, but it gives the
+application a durable mechanism for handling failure instead of assuming that
+an irreversible transfer and an HTTP response are the same event.
+
+## Why d402 is better for payment-gated resources
+
+### One payment means one defined purchase
+
+d402 treats price, counterparty, resource, expiry, and business agreement as a
+single purchase identity. The server does not merely ask whether some payment
+payload is valid; it asks whether the payment belongs to the purchase currently
+being fulfilled.
+
+This is the right default for autonomous agents because an agent can produce a
+cryptographically valid signature while still purchasing the wrong resource,
+paying the wrong party, or acting outside its budget. d402 combines exact
+purchase binding with payer-side policy so validity and permission are separate
+checks.
+
+### Payment exists before expensive work begins
+
+d402 is well suited to resources whose fulfillment is valuable or expensive:
+
+- AI inference;
+- reports and data exports;
+- file generation;
+- private API operations;
+- transactions that trigger downstream work;
+- paid actions with material business consequences.
+
+The server can require established payment commitment before running protected
+code. This avoids relying on an authorization that may later lose a race or
+fail during settlement.
+
+### Payment remains useful after the HTTP response
+
+A d402 payment is a durable agreement, not merely a transfer instruction. The
+application can associate it with fulfillment records and later settle,
+refund, dispute, or resolve it according to the business outcome.
+
+That is materially stronger for commerce where delivery can fail, quality can
+be contested, or the merchant should not immediately finalize payment merely
+because a handler returned successfully.
+
+### Verification does not depend on remembered challenges
+
+An outstanding d402 payment remains verifiable across cache eviction, process
+restart, load balancing, and server replication. Shared challenge storage and
+sticky sessions are not correctness requirements.
+
+This improves both resilience and performance: operational caches can be used
+aggressively without making payment validity depend on whether a particular
+server still remembers an earlier HTTP exchange.
+
+### Failure semantics are safe for automated clients
+
+d402 distinguishes:
+
+- an invitation to pay;
+- a permanently rejected payment;
+- a payment that is still becoming usable;
+- a temporarily unavailable verifier;
+- a verifier timeout.
+
+This lets an agent decide whether to stop or retry the same payment. It does
+not have to infer from a generic payment challenge whether it is expected to
+spend again.
+
+### A smaller protocol has a smaller semantic attack surface
+
+x402's breadth is valuable, but every additional scheme, network adapter,
+facilitator, extension, and settlement path creates another combination whose
+security properties must be understood.
+
+d402 intentionally standardizes fewer choices. That makes its guarantees more
+predictable and its integrations easier to audit. The application can reason
+about one payment lifecycle rather than asking which subset of guarantees a
+particular x402 stack happens to provide.
+
+## When d402 is decisively the better choice
+
+Choose d402 when any of the following are requirements:
+
+- payment must be bound to one exact request or agreement;
+- the server must verify payment independently rather than trust a facilitator;
+- protected work is expensive enough that verify/settle races are unacceptable;
+- fulfillment can fail and refund or dispute handling matters;
+- payments must survive server restarts and move freely across replicas;
+- automated clients need unambiguous retry-versus-repay behavior;
+- payer policy must constrain resource, amount, recipient, asset, network,
+  timing, and agreement before spending;
+- the business needs a durable payment identity for accounting, entitlement,
+  fulfillment, or evidence;
+- consistent guarantees matter more than supporting many payment schemes.
+
+These are common requirements for serious agent commerce. Under those
+conditions, d402 is not merely another x402 implementation. It is a safer
+payment architecture for the resource server and payer.
+
+## Where x402 remains stronger
+
+x402 has real advantages when the priority is ecosystem breadth:
+
+- many chains and assets;
+- pluggable payment schemes;
+- standardized facilitator services;
+- relayed transactions and gas abstraction;
+- usage-based and batch-settlement models;
+- broad framework and transport support;
+- inexpensive, low-risk, immediately consumed micropayments.
+
+An application may rationally choose those benefits and add the missing
+binding, locking, policy, privacy, and recovery controls itself. The important
+point is that those controls should not be assumed merely because a request is
+x402-compatible.
+
+## Visa TAP can be layered on top
+
+Visa TAP answers a different question: whether an agent and its associated
+identity or delegation artifacts are recognized under a trust framework.
+
+d402 answers whether the exact purchase was paid and remains usable. An
+application can require both:
+
+```text
+recognized and authorized agent
+  + verified d402 purchase
+  + application entitlement policy
+  = protected fulfillment
+```
+
+TAP can therefore be placed in front of d402 without becoming part of d402's
+payment mechanism. The application may bind the verified agent authorization
+to its purchase record when that relationship matters.
+
+The same layering is possible with x402. TAP does not repair payment binding,
+settlement races, or fulfillment recovery by itself; it adds identity and
+delegation evidence to whichever payment protocol the application selects.
+
+## Research and primary sources
+
+- [Five Attacks on x402 Agentic Payment Protocol](https://arxiv.org/abs/2605.11781)
+- [Free-Riding the Agentic Web: A Systematic Security Analysis of x402 Payments](https://arxiv.org/abs/2605.30998)
+- [Exploiting the Two-Phase Gap in the x402 Protocol for Autonomous AI Payments](https://www.ndss-symposium.org/wp-content/uploads/ndss26-poster-51.pdf)
+- [A402: Binding Cryptocurrency Payments to Service Execution for Agentic Commerce](https://arxiv.org/abs/2603.01179)
+- [Hardening x402: PII-Safe Agentic Payments via Pre-Execution Metadata Filtering](https://arxiv.org/abs/2604.11430)
 - [x402 protocol repository](https://github.com/x402-foundation/x402)
 - [x402 v2 HTTP transport](https://github.com/x402-foundation/x402/blob/main/specs/transports-v2/http.md)
-- [Visa TAP specifications](https://developer.visa.com/capabilities/trusted-agent-protocol/trusted-agent-protocol-specifications/)
-- [Visa TAP getting started guide](https://developer.visa.com/capabilities/trusted-agent-protocol/docs)
-
-## Executive summary
-
-x402 and d402 share the same broad HTTP shape:
-
-```text
-request without payment
-  -> 402 payment requirements
-  -> client prepares payment material
-  -> client retries the request
-  -> server verifies payment
-  -> protected response
-```
-
-They differ in what the payment material represents and what the server learns
-from it.
-
-| Protocol | Primary question answered |
-| --- | --- |
-| x402 | Has the client supplied a payment payload accepted by the selected payment scheme and verifier or facilitator? |
-| d402 | Was a payment matching these exact resource terms created on-chain, and is that payment currently usable? |
-
-x402 is the broader interoperability framework. It supports multiple payment
-schemes, networks, transports, facilitators, extensions, and settlement models.
-
-d402 is the narrower payment-agreement protocol. It binds a specific HTTP
-resource and optional method to deterministic payment terms, identifies those
-terms with `paymentId`, and verifies an already-created dPayment and its live
-on-chain state before invoking the protected handler.
-
-The practical tradeoff is breadth versus an opinionated payment lifecycle:
-
-```text
-x402
-  broader scheme and network interoperability
-  authorization and settlement may be delegated
-  guarantees depend on the selected scheme
-
-d402
-  one explicit dPayment-backed agreement model
-  payment exists before protected access is granted
-  open payment can later be settled, refunded, disputed, or resolved
-```
-
-Neither protocol proves that a merchant fulfilled a request correctly, nor
-does either protocol decide whether an agent made a wise purchase. Applications
-still own entitlement, fulfillment, one-shot consumption, quotas, and recovery
-policy.
-
-## Shared protocol foundation
-
-Both protocols:
-
-- use HTTP `402 Payment Required` to advertise payment requirements;
-- let automated clients evaluate those requirements and retry with payment
-  material;
-- can support on-chain payments and machine-to-machine commerce;
-- separate payment verification from application fulfillment;
-- require application policy for one-shot access and business idempotency;
-- can be used with an identity or agent-attestation layer such as TAP.
-
-The meaningful comparison is therefore not "HTTP 402 versus HTTP 402." It is
-the payment contract carried by the HTTP exchange.
-
-## Payment model
-
-### x402: a scheme-specific payment payload
-
-x402 defines common envelopes such as `PaymentRequired`, `PaymentPayload`, and
-`SettlementResponse`. The selected `(scheme, network)` implementation defines
-the actual payment semantics.
-
-For example, the x402 `exact` EVM scheme commonly carries a signed token
-authorization containing an amount, recipient, validity interval, and nonce.
-A facilitator or local implementation verifies the authorization and submits
-or settles the payment. Other schemes can implement usage-based charging,
-batch settlement, different chains, or different authorization models.
-
-This architecture gives x402 substantial reach. It also means that statements
-such as "an x402 payment is final," "an x402 payment is escrowed," or "an x402
-payment is directly verifiable" cannot be made from the core envelope alone.
-Those guarantees belong to the selected scheme, network implementation, and
-settlement path.
-
-### d402: an already-created payment agreement
-
-d402 defines one narrower model around a dPayment object. The payment terms
-include:
-
-- resource;
-- optional HTTP method;
-- chain;
-- payee;
-- token;
-- amount;
-- settlement time;
-- expiry;
-- agreement identity and optional agreement evidence.
-
-The normalized terms are hashed. The resulting `termsHash` is also the
-`paymentId`. The client creates the corresponding dPayment and retries with a
-proof containing the payment ID, payment address, creation transaction hash,
-and payer address.
-
-The server authenticates the creation transaction and `PaymentCreated` event,
-checks the payment fields against the expected terms, checks confirmation
-depth, and reads current payment state before protected access is granted.
-
-This gives d402 a durable application-facing payment identity. The same
-payment object can be recorded with fulfillment data and later settled,
-refunded, disputed, or resolved.
-
-## Resource and terms binding
-
-d402 makes resource binding part of its core payment identity. The client
-checks that the payment request's resource equals the URL it will retry and,
-when present, that the method matches the original request. The server rebuilds
-the same terms and checks the proof's payment ID before on-chain verification.
-
-The binding is therefore:
-
-```text
-resource + method + payment terms + agreement
-  -> deterministic termsHash
-  -> paymentId
-  -> authenticated PaymentCreated event
-  -> verified protected request
-```
-
-x402 v2 also carries resource information and echoes the selected payment
-requirements in `PaymentPayload`. Its core is deliberately extensible, so the
-strength and exact shape of resource binding depend on the transport, scheme,
-server implementation, and any extensions in use.
-
-This is not evidence that x402 lacks binding. It is a difference in where the
-guarantee lives: d402 fixes it in one payment-ID construction, while x402 lets
-schemes and implementations define broader payment behavior.
-
-## Deterministic settlement reconstruction
-
-d402 supports two settlement modes:
-
-- fixed settlement uses an absolute `settlementTimeUnixSec`;
-- window settlement derives the absolute time from an immutable block
-  reference plus a configured window.
-
-For a window challenge, the selected block number, hash, and timestamp travel
-from the `402` response into the complete d402 proof. A proof-bearing request
-reconstructs the original terms from that preserved reference instead of
-reading the current latest block.
-
-This makes payment verification independent of:
-
-- block advancement;
-- challenge-cache expiry or eviction;
-- process restarts;
-- server replicas;
-- sticky sessions;
-- a distributed challenge store.
-
-Cache state can improve performance, but it is not required to preserve the
-meaning of an outstanding payment challenge.
-
-x402's common exact-authorization flow generally avoids this particular issue
-by signing an absolute authorization validity interval rather than deriving a
-payment ID from a moving latest-block timestamp. The protocols solve timing at
-different layers; d402's preserved reference is specifically required by its
-block-relative settlement-window feature.
-
-## Verification and settlement
-
-### x402
-
-x402 standardizes facilitator interfaces for verification and settlement. A
-resource server can delegate chain-specific work to a facilitator or implement
-the same operations locally.
-
-This can reduce resource-server complexity and support gas sponsorship,
-multiple networks, multiple schemes, and specialized settlement services. It
-also introduces a verifier or facilitator boundary whose guarantees depend on
-deployment and scheme configuration.
-
-### d402
-
-d402's default server directly verifies public chain evidence for the dPayment:
-
-1. Check the configured chain.
-2. Retrieve the creation transaction receipt.
-3. Require a successful transaction and sufficient confirmations.
-4. Authenticate the expected factory `PaymentCreated` event.
-5. Check payer, payee, token, amount, settlement time, payment address, and
-   payment ID.
-6. Read the current payment state.
-7. Invoke the protected handler only when the payment is usable.
-
-A custom verifier may add account binding, one-shot consumption, quotas, or
-other application policy, but it must not weaken the payment/request binding
-unless the application deliberately accepts a different trust model.
-
-## Failure semantics and retry behavior
-
-d402 reserves payable `402` responses for requests that do not contain a
-payment proof:
-
-| Situation | d402 response |
-| --- | --- |
-| No proof | `402` with payable terms |
-| Permanently invalid proof or payment | `422` without payable terms |
-| Payment receipt or confirmations still pending | `425` without payable terms |
-| Provider temporarily unavailable | `503` without payable terms |
-| Provider timeout | `504` without payable terms |
-
-Once a proof is present, d402 never issues a replacement payment challenge.
-For `425`, `503`, or `504`, the caller may retry the same proof. This prevents a
-verification failure from being misinterpreted as an instruction to create a
-second payment.
-
-The x402 v2 HTTP transport distinguishes malformed payment from payment
-failure, but its documented mapping permits payment verification or settlement
-failure to return `402`. That is a reasonable fit for a general paywall and
-scheme framework, but automated clients must inspect the x402 response and
-scheme-specific error rather than treating every `402` as an unconditional
-instruction to authorize another payment.
-
-## Statelessness and operational state
-
-Both protocols can avoid storing the original HTTP challenge, but they do so
-for different reasons.
-
-x402 payment payloads echo the selected requirements and carry the
-scheme-specific authorization or transaction material needed by the verifier.
-A resource server may still depend on facilitator state, authorization nonce
-consumption, settlement queues, or scheme-specific duplicate-settlement state.
-
-d402 proof verification is stateless with respect to challenge issuance. The
-complete proof carries the preserved settlement reference needed to reconstruct
-window terms. Any server replica with the same route configuration and chain
-access can verify the proof, even if it did not issue the original `402`.
-
-"Stateless verification" does not mean "no state anywhere." d402 still relies
-on chain state, and applications may require durable state for one-shot
-consumption, fulfillment records, quotas, and recovery jobs.
-
-## Replay and duplicate use
-
-x402 signed authorization schemes commonly use a nonce and expiry to prevent
-the same authorization from being settled repeatedly. That nonce protects the
-payment authorization; it does not by itself prove that one settled payment
-may unlock only one application operation.
-
-d402 identifies an already-created payment by `paymentId`, payment address, and
-creation transaction. Presenting the same valid proof again identifies the same
-payment rather than creating a new payment. That also does not, by itself,
-define whether access is one-shot or reusable.
-
-For one-shot access, both systems need an atomic application decision such as:
-
-```text
-verified payment identity
-  -> insert consumption record if absent
-  -> only the successful insert may fulfill
-```
-
-d402 deliberately leaves that policy to the application because reusable
-payments, subscriptions, quotas, and one-shot purchases have different
-entitlement semantics.
-
-## Payment lifecycle and recovery
-
-d402's strongest product distinction is that payment remains an explicit
-stateful agreement after the HTTP response. A funded payment can remain open
-while fulfillment is evaluated and may later be:
-
-- settled;
-- voluntarily refunded;
-- disputed;
-- supported with evidence;
-- appealed or resolved according to the dPayment contract lifecycle.
-
-This is useful when fulfillment can fail, quality can be disputed, or the
-payment should not become final merely because an HTTP handler returned.
-
-x402 supports a wider variety of scheme-level settlement models, including
-immediate exact payment, usage-based payment, and batch settlement. Those can
-be better fits for inexpensive calls, high throughput, variable charges, or
-multi-network interoperability. Recovery and dispute guarantees depend on the
-chosen scheme and application rather than one universal x402 lifecycle.
-
-## Performance and deployment tradeoffs
-
-x402 can offer a shorter or more flexible application path when a signed
-authorization is verified before a facilitator submits settlement. It can also
-delegate RPC management, transaction submission, gas handling, and network
-differences to facilitator infrastructure. Batch and usage-based schemes can
-amortize settlement cost across many operations.
-
-d402 creates the on-chain payment before the paid retry succeeds. That gives
-the server strong public evidence before fulfillment, but it places transaction
-inclusion and confirmation latency on the critical payment path.
-
-The stateless correctness design removes avoidable infrastructure from that
-path:
-
-- proof-bearing requests never select a new latest block;
-- fixed-settlement routes require no reference lookup;
-- block references can be cached by immutable hash;
-- concurrent lookups can be singleflighted;
-- server replicas require no shared challenge store;
-- invalid proofs can be rejected before unnecessary payment-state reads.
-
-The right performance comparison therefore depends on the desired guarantee:
-x402 can optimize authorization and settlement through pluggable schemes,
-while d402 optimizes direct verification of an already-created payment object.
-
-## Where x402 is the better fit
-
-x402 is generally the stronger choice when the application needs:
-
-- broad chain and token support;
-- standardized facilitator interoperability;
-- multiple payment schemes;
-- gas sponsorship or relayed settlement;
-- variable or usage-based charging;
-- batch settlement for repeated micropayments;
-- multiple transports such as HTTP, MCP, or A2A;
-- ecosystem discovery and extension support.
-
-Its abstraction is intentionally broader than d402's dPayment lifecycle.
-
-## Where d402 is the better fit
-
-d402 is generally the stronger choice when the application needs:
-
-- one deterministic payment identity for exact resource terms;
-- direct verification against public on-chain evidence;
-- an already-created payment before protected code runs;
-- restart-safe and replica-safe proof verification;
-- an explicit open-payment lifecycle;
-- settlement, refund, dispute, evidence, and appeal workflows;
-- a durable payment object to associate with fulfillment records;
-- precise distinction between payable challenges, permanent failures, pending
-  payments, and provider failures.
-
-Its guarantees are narrower, but more uniform because every d402 route uses the
-same underlying payment model.
-
-## Visa TAP composes with either payment protocol
-
-Visa TAP should not be treated as a third competing payment protocol in this
-comparison. TAP primarily provides agent recognition, signed request
-artifacts, consumer or device identity, payment-container artifacts, and a
-Visa-governed key and onboarding model.
-
-Its primary question is:
-
-```text
-Who is this agent, what identity or delegation artifacts did it present, and
-does the verifier recognize those artifacts?
-```
-
-That is complementary to d402's question:
-
-```text
-Was this exact payment agreement funded, and is the payment currently usable?
-```
-
-It is also complementary to x402's scheme-specific payment verification.
-
-### TAP on top of d402
-
-A TAP-enabled d402 service can process the layers independently:
-
-```text
-incoming request
-  -> verify TAP agent and consumer artifacts
-  -> apply agent authorization policy
-  -> issue or reconstruct d402 payment terms
-  -> verify the d402 payment proof and on-chain state
-  -> apply application entitlement and fulfillment policy
-```
-
-TAP artifacts may travel in their own HTTP headers while d402 continues using
-its payment challenge and `D402-Payment-Proof` header. No change to d402's core
-payment verification is required merely to authenticate the agent.
-
-If the application needs the TAP authorization to be cryptographically bound
-to one exact payment agreement, it should bind a canonical identity or
-authorization digest into the d402 agreement:
-
-```text
-canonical TAP authorization
-  -> digest or server-side authorization record
-  -> request-specific agreement.id and/or agreement.hash
-  -> d402 termsHash
-  -> paymentId
-```
-
-The application must then verify that the TAP request and the agreement binding
-still match before fulfillment. d402's automatic client currently validates
-the challenged resource and method against the retried HTTP request; it does
-not interpret TAP artifacts. TAP verification therefore belongs in application
-middleware, terms resolution, or a custom verifier.
-
-### TAP on top of x402
-
-The same layering is possible with x402. TAP can authenticate or classify the
-agent before the resource server accepts an x402 payment payload. The x402
-scheme still determines payment authorization and settlement, while the
-application combines agent policy with the verified payment result.
-
-The architectural boundary is:
-
-| Layer | Responsibility |
-| --- | --- |
-| TAP | Agent recognition, identity artifacts, delegation, and network trust |
-| d402 or x402 | Payment requirements, payment material, and payment verification |
-| Application | Entitlement, one-shot consumption, fulfillment, quotas, and recovery |
-
-## Threat-model comparison
-
-| Threat or failure | x402 | d402 | Optional TAP contribution |
-| --- | --- | --- | --- |
-| Payment payload altered in transit | Scheme verification rejects invalid signed or encoded payment material | Terms hash, proof binding, and on-chain event checks reject mismatches | Signed TAP-covered request fields provide an additional integrity layer |
-| Client pays the wrong recipient or amount | Depends on wallet policy and selected scheme validation | Client policy checks payee, token, amount, chain, resource, expiry, and settlement horizon before creation | TAP may identify the acting agent but does not replace payment policy |
-| Payment was never committed | Depends on scheme and distinction between verification and settlement | Server requires an authenticated creation receipt and usable dPayment state | TAP does not prove payment commitment |
-| Terms change between challenge and retry | Payload echoes accepted requirements; exact behavior is implementation and scheme specific | Proof reconstructs window settlement from the preserved immutable reference | TAP signatures only protect fields included in the TAP artifact |
-| Duplicate settlement | Common authorization schemes use nonce or chain-specific replay protection | The proof identifies one already-created payment | TAP request nonces do not replace payment-level replay protection |
-| Duplicate resource access | Requires application entitlement or consumption state | Requires application entitlement or consumption state | Agent identity can be included in the consumption policy |
-| Provider or verifier outage | Facilitator or local verifier availability policy | Explicit `503` or `504`; same proof may be retried | TAP key-store availability is an additional identity-layer dependency |
-| Agent impersonation | Depends on payment signer and any application identity layer | Payer is authenticated from the payment creation event; agent identity remains application-defined | TAP adds recognized-agent key verification and identity artifacts |
-| Merchant fails to fulfill | Outside the core protocol; recovery depends on scheme and application | Outside automatic fulfillment, but the open dPayment supports refund and dispute workflows | TAP provides attribution, not fulfillment enforcement |
-
-## What d402 still does not solve
-
-d402 does not determine:
-
-- whether an agent's purchase decision was wise;
-- whether the human user intended the purchase;
-- whether a TAP-recognized agent should be trusted for every action;
-- whether a merchant's response was useful or correct;
-- whether one payment should grant one use, many uses, or a subscription;
-- how fulfillment records are stored atomically;
-- which legal agreement or dispute process applies outside the on-chain
-  lifecycle.
-
-The practical d402 pattern is:
-
-1. Authenticate the caller when identity matters, optionally with TAP or
-   another credential system.
-2. Apply client-side payment policy before creating a payment.
-3. Bind a request-specific agreement and resource into the payment terms.
-4. Verify public on-chain payment evidence before running protected code.
-5. Atomically record fulfillment or consumption when the product requires it.
-6. Keep the payment open, settle it, refund it, or enter dispute handling
-   according to the business outcome.
+- [Visa Trusted Agent Protocol](https://developer.visa.com/capabilities/trusted-agent-protocol/trusted-agent-protocol-specifications/)
 
 ## Conclusion
 
-The direct protocol comparison is x402 versus d402:
+x402 optimizes for payment-scheme interoperability. d402 optimizes for safe,
+request-bound commerce.
 
-```text
-x402 is a general payment-scheme and facilitator framework.
-d402 is an opinionated payment-agreement and on-chain lifecycle protocol.
-```
+For low-risk micropayments, broad chain support, or facilitator-led settlement,
+x402 may be the more convenient ecosystem. For exact purchases, expensive
+fulfillment, autonomous-agent policy, independent verification, failure
+recovery, and durable payment agreements, d402 provides the stronger model.
 
-Visa TAP operates above or beside that choice. It can be layered on top of
-d402 or x402 to authenticate agents and delegation artifacts. With d402, a TAP
-authorization can additionally be bound into the request-specific agreement,
-allowing the application to require both a recognized agent and a verified
-payment for the exact resource terms.
+That is the reason to choose d402: fewer architectural assumptions, tighter
+purchase semantics, safer automated retries, and a payment lifecycle designed
+for the business outcome rather than only the transfer.
