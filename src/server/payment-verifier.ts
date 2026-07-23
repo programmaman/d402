@@ -19,6 +19,10 @@ import type {
   PaymentVerifier,
   VerifiedPayment,
 } from "./types.js";
+
+type PaymentValidationResult =
+  | { ok: true }
+  | Extract<PaymentVerificationResult, { ok: false }>;
 import { getConnectedChainId } from "../runtime/chain.js";
 import { D402_DEFAULT_CONFIRMATIONS } from "../runtime/defaults.js";
 import { getDPaymentsMulticallConfig } from "../runtime/multicall.js";
@@ -154,7 +158,7 @@ export function createDPaymentsVerifier(
 function verifyProofMatchesRequest(
   paymentRequest: D402PaymentRequest,
   proof: DPaymentProof,
-): PaymentVerificationResult {
+): PaymentValidationResult {
   if (proof.paymentId !== paymentRequest.paymentId) {
     return { ok: false, reason: "payment-id-mismatch" };
   }
@@ -165,7 +169,7 @@ function verifyProofMatchesRequest(
 async function verifyChain(
   paymentRequest: D402PaymentRequest,
   connectedChainId: Promise<number>,
-): Promise<PaymentVerificationResult> {
+): Promise<PaymentValidationResult> {
   let chainId: number;
   try {
     chainId = await connectedChainId;
@@ -291,7 +295,7 @@ async function verifySettlementPolicy(input: {
   createdEvent: PaymentCreatedEvent;
   provider: AbstractProvider;
   settlementWindow?: number;
-}): Promise<PaymentVerificationResult> {
+}): Promise<PaymentValidationResult> {
   if (input.settlementWindow === undefined || input.settlementReference === undefined) {
     return { ok: true };
   }
@@ -341,7 +345,7 @@ function verifyCreatedEvent(
   paymentRequest: D402PaymentRequest,
   proof: DPaymentProof,
   event: PaymentCreatedEvent,
-): PaymentVerificationResult {
+): PaymentValidationResult {
   if (!sameHex(event.paymentId, paymentRequest.paymentId)) {
     return { ok: false, reason: "payment-id-mismatch" };
   }

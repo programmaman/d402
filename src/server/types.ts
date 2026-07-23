@@ -123,7 +123,7 @@ export interface PaymentActions {
 }
 
 export type PaymentVerificationResult =
-  | { ok: true; payment?: VerifiedPayment }
+  | { ok: true; payment: VerifiedPayment }
   | {
       ok: false;
       reason: PaymentVerificationFailureReason;
@@ -146,7 +146,7 @@ export interface PayableContext {
   paymentRequest: D402PaymentRequest;
   dPaymentProof: DPaymentProof;
   verification: Extract<PaymentVerificationResult, { ok: true }>;
-  payment?: VerifiedPayment;
+  payment: VerifiedPayment;
   settlementReference?: D402BlockReference;
 }
 

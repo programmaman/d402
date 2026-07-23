@@ -141,7 +141,7 @@ export function payable<Req extends Request = Request>(
       paymentRequest,
       dPaymentProof,
       verification,
-      ...(verification.payment !== undefined ? { payment: verification.payment } : {}),
+      payment: verification.payment,
       ...(authenticatedSettlementReference !== undefined
         ? { settlementReference: authenticatedSettlementReference }
         : {}),

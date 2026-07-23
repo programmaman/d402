@@ -41,8 +41,8 @@ const protectedReport = payable({
       },
       payment: {
         paymentId: context.paymentRequest.paymentId,
-        paymentAddress: context.payment?.paymentAddress,
-        state: context.payment?.state,
+        paymentAddress: context.payment.paymentAddress,
+        state: context.payment.state,
       },
     });
   },
