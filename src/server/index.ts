@@ -5,6 +5,12 @@ export {
 } from "./payment-proof.js";
 export { paymentActions } from "./payment-actions.js";
 export {
+  None,
+  Once,
+  type PaymentConsumer,
+  type OncePaymentConsumerOptions,
+} from "./payment-consumer.js";
+export {
   termsBasedPaymentRequestBuilder,
 } from "./payment-request.js";
 export type {

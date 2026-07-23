@@ -298,7 +298,7 @@ const client = await createD402Client({
 ```
 
 Use `paymentActions()` on the server side when a worker or recovery path needs
-to settle, refund, submit evidence, or appeal a verified payment.
+to settle, refund, consume, submit evidence, or appeal a verified payment.
 
 ```ts
 import { paymentActions } from "d402/server";
@@ -310,6 +310,7 @@ const actions = paymentActions({
 });
 
 await actions.refundPayment(paymentAddress);
+await actions.consumePayment(paymentAddress);
 ```
 
 ### Publish Evidence

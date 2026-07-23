@@ -232,6 +232,7 @@ const actions = paymentActions({ provider, signer });
 
 await actions.settlePayment(paymentAddress);
 await actions.refundPayment(paymentAddress);
+await actions.consumePayment(paymentAddress);
 await actions.submitEvidence(paymentAddress, "ipfs://QmEvidence");
 await actions.appealPayment(paymentAddress);
 ```

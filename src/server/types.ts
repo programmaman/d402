@@ -6,6 +6,7 @@ import type {
   PaymentAddress,
 } from "../core/index.js";
 import type { AbstractProvider, Signer } from "ethers";
+import type { PaymentConsumer } from "./payment-consumer.js";
 
 export type PaymentResourceResolver<Req = Request> =
   | string
@@ -50,6 +51,7 @@ export type D402PaymentVerificationFailureReason =
   | "onchain-payment-not-found"
   | "onchain-payment-mismatch"
   | "onchain-payment-not-usable"
+  | "payment-already-consumed"
   | "unsupported-chain"
   | "wrong-chain"
   | "wrong-factory"
@@ -113,6 +115,7 @@ export interface PaymentAppealResult extends PaymentActionResult {
 export interface PaymentActions {
   settlePayment: (paymentAddress: PaymentAddress) => Promise<PaymentActionResult>;
   refundPayment: (paymentAddress: PaymentAddress) => Promise<PaymentActionResult>;
+  consumePayment: (paymentAddress: PaymentAddress) => Promise<PaymentActionResult>;
   submitEvidence: (
     paymentAddress: PaymentAddress,
     evidenceUri: string,
@@ -195,6 +198,7 @@ export interface PayableRouteConfig<Req = Request, Res = Response> {
   terms: PayableTermsResolver<Req>;
   handler: PayableHandler<Req, Res>;
   verify?: PaymentVerifier<Req>;
+  consumer?: PaymentConsumer;
   proofHeaderName?: string;
   buildPaymentRequiredResponse?: PaymentRequiredResponseBuilder;
   buildPaymentVerificationErrorResponse?: PaymentVerificationErrorResponseBuilder;

@@ -25,11 +25,13 @@ import type {
   PaymentVerificationFailureReason,
 } from "./types.js";
 import { createDPaymentsVerifier, verifyPayment } from "./payment-verifier.js";
+import { None } from "./payment-consumer.js";
 
 export function payable<Req extends Request = Request>(
   options: PayableRouteConfig<Req>,
 ): (request: Req) => Promise<Response> {
   const verifier = options.verify ?? createDPaymentsVerifier(options.paymentConfig);
+  const consumer = options.consumer ?? None;
   const cacheSetting = options.paymentConfig.cache
     ?? (options.paymentConfig.settlementWindow !== undefined ? true : undefined);
   const referenceCacheTtlMs = resolveLatestBlockCacheTtlMs(cacheSetting);
@@ -135,6 +137,11 @@ export function payable<Req extends Request = Request>(
 
     if (!verification.ok) {
       return buildVerificationErrorResponse(options, verification.reason);
+    }
+
+    const consumption = await consumer.consume(verification.payment);
+    if (!consumption.ok) {
+      return buildVerificationErrorResponse(options, consumption.reason);
     }
 
     return options.handler(request, {

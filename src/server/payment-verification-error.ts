@@ -28,6 +28,8 @@ export function buildPaymentVerificationErrorReason(
       return { code, retryable: true, message: "Payment verification timed out. Retry with the same proof." };
     case "provider-error":
       return { code, retryable: true, message: "Payment verification provider call failed. Retry with the same proof." };
+    case "payment-already-consumed":
+      return { code, retryable: false };
     case "onchain-payment-mismatch":
     case "onchain-payment-not-usable":
     case "wrong-chain":

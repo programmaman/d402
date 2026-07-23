@@ -129,12 +129,14 @@ Server responsibility:
 
 - verify payment proofs and on-chain state
 - persist payment records for later settlement or refund handling
-- run settlement, refund, evidence, or appeal actions with a server signer
+- run settlement, refund, consumption, evidence, or appeal actions with a server signer
 
 ```ts
 import {
   payable,
   createDPaymentsVerifier,
+  None,
+  Once,
   paymentActions,
 } from "d402/server";
 ```
@@ -157,6 +159,10 @@ Important options:
 - `terms`: static terms or a function of the request.
 - `handler`: protected handler.
 - `verify`: optional custom verifier.
+- `consumer`: optional payment-consumption policy. Use
+  `Once({ provider, signer })` to consume a verified payment before the
+  protected handler runs, or `None` to state the reusable policy explicitly.
+  Routes are reusable by default.
 - `proofHeaderName`: optional proof header override.
 - `buildPaymentRequiredResponse`: optional 402 response builder.
 
@@ -178,6 +184,7 @@ const actions = paymentActions({ provider, signer });
 
 await actions.settlePayment(paymentAddress);
 await actions.refundPayment(paymentAddress);
+await actions.consumePayment(paymentAddress);
 await actions.submitEvidence(paymentAddress, "ipfs://QmEvidence");
 await actions.appealPayment(paymentAddress);
 ```

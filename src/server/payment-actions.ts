@@ -1,5 +1,10 @@
 import type { PreparedTx } from "@rakelabs/dpayments-sdk";
-import type { Signer, TransactionReceipt, TransactionRequest } from "ethers";
+import type {
+  AbstractProvider,
+  Signer,
+  TransactionReceipt,
+  TransactionRequest,
+} from "ethers";
 
 import type { Hex32, PaymentAddress } from "../core/index.js";
 import { D402_DEFAULT_CONFIRMATIONS } from "../runtime/defaults.js";
@@ -14,7 +19,7 @@ import type {
 export function paymentActions(config: PaymentConfig): PaymentActions {
   if (config.signer === undefined) {
     throw new Error(
-      "paymentConfig.signer is required for payment actions so the server can broadcast settlement, refund, evidence, or appeal transactions.",
+      "paymentConfig.signer is required for payment actions so the server can broadcast settlement, refund, consumption, evidence, or appeal transactions.",
     );
   }
   const actionConfig = {
@@ -29,6 +34,9 @@ export function paymentActions(config: PaymentConfig): PaymentActions {
     refundPayment(payment) {
       return sendPaymentAction(actionConfig, payment, "refund");
     },
+    consumePayment(payment) {
+      return sendPaymentAction(actionConfig, payment, "consume");
+    },
     submitEvidence(payment, evidenceUri) {
       return sendEvidenceAction(actionConfig, payment, evidenceUri);
     },
@@ -41,7 +49,7 @@ export function paymentActions(config: PaymentConfig): PaymentActions {
 async function sendPaymentAction(
   config: PaymentConfig & { signer: Signer },
   paymentAddress: PaymentAddress,
-  action: "settle" | "refund",
+  action: "settle" | "refund" | "consume",
 ): Promise<PaymentActionResult> {
   const walletAddress = await config.signer.getAddress();
   console.log("[server] payment action started", {
@@ -53,8 +61,11 @@ async function sendPaymentAction(
   const dPayment = dpayments.dPayment(paymentAddress);
   const tx = action === "settle"
     ? dPayment.settle(walletAddress)
-    : dPayment.voluntaryRefund(walletAddress);
+    : action === "refund"
+      ? dPayment.voluntaryRefund(walletAddress)
+      : dPayment.consume(walletAddress);
   const receipt = await sendPreparedTx(
+    config.provider,
     config.signer,
     tx,
     config.confirmations ?? D402_DEFAULT_CONFIRMATIONS,
@@ -84,6 +95,7 @@ async function sendEvidenceAction(
   const dPayment = dpayments.dPayment(paymentAddress);
   const tx = dPayment.submitEvidence(evidenceUri, walletAddress);
   const receipt = await sendPreparedTx(
+    config.provider,
     config.signer,
     tx,
     config.confirmations ?? D402_DEFAULT_CONFIRMATIONS,
@@ -113,6 +125,7 @@ async function sendAppealAction(
     walletAddress,
   );
   const receipt = await sendPreparedTx(
+    config.provider,
     config.signer,
     prepared.tx,
     config.confirmations ?? D402_DEFAULT_CONFIRMATIONS,
@@ -133,11 +146,21 @@ async function sendAppealAction(
 }
 
 async function sendPreparedTx(
+  provider: AbstractProvider,
   signer: Signer,
   tx: PreparedTx,
   confirmations: number,
 ): Promise<TransactionReceipt> {
-  const response = await signer.sendTransaction(toTransactionRequest(tx));
+  const request = toTransactionRequest(tx);
+  const from = await signer.getAddress();
+  const gasLimit = await provider.estimateGas({
+    ...request,
+    from,
+  });
+  const response = await signer.sendTransaction({
+    ...request,
+    gasLimit,
+  });
   const receipt = await response.wait(confirmations);
 
   if (receipt === null || receipt.status !== 1) {
