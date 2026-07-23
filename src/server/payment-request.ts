@@ -1,8 +1,31 @@
 import { D402_VERSION } from "../core/constants.js";
 import { hashNormalizedPaymentTerms } from "../core/payment-terms-hasher.js";
 import { termsHashInputSchema } from "../core/schemas.js";
-import type { D402PaymentRequest, D402PaymentTerms } from "../core/types.js";
+import type {
+  D402PaymentRequest,
+  D402PaymentTerms,
+  D402TermsBasedPaymentRequest,
+  Hex32,
+} from "../core/types.js";
 import type { PayableTerms, PayableTermsResolver } from "./types.js";
+
+export interface PaymentRequestBuilder<T extends D402PaymentRequest> {
+  build(input: {
+    terms: D402PaymentTerms;
+    termsHash: Hex32;
+  }): T;
+}
+
+export const termsBasedPaymentRequestBuilder:
+  PaymentRequestBuilder<D402TermsBasedPaymentRequest> = {
+    build({ terms, termsHash }) {
+      return {
+        ...terms,
+        termsHash,
+        paymentId: termsHash,
+      };
+    },
+  };
 
 export interface BuildServerPaymentRequestInput {
   request: Request;
@@ -17,15 +40,18 @@ export async function resolvePayableTerms<Req>(
   return typeof resolver === "function" ? resolver(request) : resolver;
 }
 
-export function buildPaymentRequest(input: D402PaymentTerms): D402PaymentRequest {
+export function buildPaymentRequest(
+  input: D402PaymentTerms,
+  builder: PaymentRequestBuilder<D402PaymentRequest> =
+    termsBasedPaymentRequestBuilder,
+): D402PaymentRequest {
   const normalizedTerms = normalizePaymentTerms(input);
   const termsHash = hashNormalizedPaymentTerms(normalizedTerms);
 
-  return {
-    ...normalizedTerms,
+  return builder.build({
+    terms: normalizedTerms,
     termsHash,
-    paymentId: termsHash,
-  };
+  });
 }
 
 export function buildServerPaymentRequest(

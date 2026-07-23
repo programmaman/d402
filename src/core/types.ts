@@ -2,6 +2,11 @@ export type Hex32 = `0x${string}`;
 export type Address = `0x${string}`;
 export type PaymentAddress = Address;
 export type DecimalString = `${bigint}`;
+export type D402Version = 2;
+
+export interface D402Versioned {
+  version: D402Version;
+}
 
 /**
  * Immutable block header fields used to reproduce protocol calculations.
@@ -20,8 +25,7 @@ export interface D402Agreement {
   uri?: string;
 }
 
-export interface D402PaymentRequest {
-  version: 2;
+export interface D402TermsBasedPaymentRequest extends D402Versioned {
   resource: string;
   method?: string;
   chainId: number;
@@ -35,8 +39,15 @@ export interface D402PaymentRequest {
   paymentId: Hex32;
 }
 
-export interface DPaymentProof {
-  version: 2;
+/**
+ * The current terms-based payment request shape.
+ *
+ * Kept as an alias for compatibility while additional request variants are
+ * developed separately.
+ */
+export type D402PaymentRequest = D402TermsBasedPaymentRequest;
+
+export interface DPaymentProof extends D402Versioned {
   paymentId: Hex32;
   paymentAddress: PaymentAddress;
   txHash: Hex32;

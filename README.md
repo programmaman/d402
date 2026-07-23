@@ -398,5 +398,7 @@ flow, appeals, and resolution responsibilities.
 - [API reference](docs/api.md): exported functions, options, and types by entry point
 - [Signing modes](docs/signing.md): browser wallets, services, agents, and guardrails
 - [Advanced server patterns](docs/advanced.md): resource binding, one-shot consumption, reuse, settlement jobs
+- [Endpoint patterns](docs/endpoint-patterns.md): orders, reports, public APIs, jobs, subscriptions, metering, and async fulfillment
+- [Transaction-derived identity](docs/transaction-identity.md): proposed unique payment instances for anonymous and high-volume APIs
 - [Protocol comparisons](docs/comparisons.md): d402 compared with x402 and Visa Trusted Agent Protocol
 - [Runnable examples](examples/README.md): Express, Next.js, and one-shot access examples

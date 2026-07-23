@@ -4,6 +4,12 @@ export {
   decodeD402PaymentProof,
 } from "./payment-proof.js";
 export { paymentActions } from "./payment-actions.js";
+export {
+  termsBasedPaymentRequestBuilder,
+} from "./payment-request.js";
+export type {
+  PaymentRequestBuilder,
+} from "./payment-request.js";
 export type {
   PayableContext,
   PayableHandler,
