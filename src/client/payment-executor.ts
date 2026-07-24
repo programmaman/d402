@@ -1,4 +1,5 @@
 import {
+  decodeDPaymentError,
   PaymentEvents,
   ZERO_ADDRESS,
 } from "@rakelabs/dpayments-sdk";
@@ -167,13 +168,21 @@ async function createDPaymentsPayment(
 
     if ("approvalTx" in preparedPayment) {
       const approvalResponse = await broadcastInQueue(() =>
-        sendPreparedTx(options.signer, preparedPayment.approvalTx),
+        sendPreparedTx(
+          options.provider,
+          options.signer,
+          preparedPayment.approvalTx,
+        ),
       );
       await waitForSuccessfulReceipt(approvalResponse, confirmations);
     }
 
     const createResponse = await broadcastInQueue(() =>
-      sendPreparedTx(options.signer, preparedPayment.creationTx),
+      sendPreparedTx(
+        options.provider,
+        options.signer,
+        preparedPayment.creationTx,
+      ),
     );
     const receipt = await waitForSuccessfulReceipt(
       createResponse,
@@ -193,13 +202,7 @@ async function createDPaymentsPayment(
       payerAddress: preparedPayment.payerAddress as Address,
     };
   } catch (cause) {
-    if (cause instanceof D402PaymentExecutionError) {
-      throw cause;
-    }
-
-    throw new D402PaymentExecutionError("Could not create dPayment.", {
-      cause,
-    });
+    throw paymentExecutionError("Could not create dPayment.", cause);
   }
 }
 
@@ -270,7 +273,7 @@ async function sendPaymentAction(
       ? dPayment.settle(walletAddress)
       : unreachable(action);
     const response = await broadcastInQueue(() =>
-      sendPreparedTx(options.signer, tx),
+      sendPreparedTx(options.provider, options.signer, tx),
     );
     const receipt = await waitForSuccessfulReceipt(
       response,
@@ -287,9 +290,7 @@ async function sendPaymentAction(
     return { txHash: receipt.hash as Hex32 };
   } catch (cause) {
     logPaymentActionFailure(action, payment, cause);
-    throw new D402PaymentExecutionError("Could not send payment action.", {
-      cause,
-    });
+    throw paymentExecutionError("Could not settle dPayment.", cause);
   }
 }
 
@@ -320,7 +321,7 @@ async function raisePaymentDispute(
       chainId: prepared.tx.chainId,
     });
     const response = await broadcastInQueue(() =>
-      sendPreparedTx(options.signer, prepared.tx),
+      sendPreparedTx(options.provider, options.signer, prepared.tx),
     );
     const receipt = await waitForSuccessfulReceipt(
       response,
@@ -336,9 +337,10 @@ async function raisePaymentDispute(
     return { txHash: receipt.hash as Hex32 };
   } catch (cause) {
     logPaymentActionFailure("dispute", payment, cause);
-    throw new D402PaymentExecutionError("Could not raise payment dispute.", {
+    throw paymentExecutionError(
+      "Could not raise dPayment dispute.",
       cause,
-    });
+    );
   }
 }
 
@@ -359,7 +361,7 @@ async function submitPaymentEvidence(
     const dPayment = dpayments.dPayment(payment.paymentAddress);
     const tx = dPayment.submitEvidence(evidenceUri, walletAddress);
     const response = await broadcastInQueue(() =>
-      sendPreparedTx(options.signer, tx),
+      sendPreparedTx(options.provider, options.signer, tx),
     );
     const receipt = await waitForSuccessfulReceipt(
       response,
@@ -377,13 +379,9 @@ async function submitPaymentEvidence(
     return { txHash: receipt.hash as Hex32 };
   } catch (cause) {
     logPaymentActionFailure("submit-evidence", payment, cause);
-    if (cause instanceof D402PaymentExecutionError) {
-      throw cause;
-    }
-
-    throw new D402PaymentExecutionError(
-      "Could not submit payment evidence.",
-      { cause },
+    throw paymentExecutionError(
+      "Could not submit dPayment evidence.",
+      cause,
     );
   }
 }
@@ -398,11 +396,38 @@ async function createDPayments(
   });
 }
 
+function paymentExecutionError(
+  message: string,
+  cause: unknown,
+): D402PaymentExecutionError {
+  if (cause instanceof D402PaymentExecutionError) {
+    return cause;
+  }
+
+  const decoded = decodeDPaymentError(cause);
+  const decodedMessage = decoded !== null && "error" in decoded
+    ? `${message} dPayments reverted with ${decoded.error}.`
+    : message;
+
+  return new D402PaymentExecutionError(decodedMessage, { cause });
+}
+
 async function sendPreparedTx(
+  provider: AbstractProvider,
   signer: Signer,
   tx: PreparedTx,
 ): Promise<TransactionResponse> {
-  return signer.sendTransaction(toTransactionRequest(tx));
+  const request = toTransactionRequest(tx);
+  const from = await signer.getAddress();
+  const gasLimit = await provider.estimateGas({
+    ...request,
+    from,
+  });
+
+  return signer.sendTransaction({
+    ...request,
+    gasLimit,
+  });
 }
 
 async function waitForSuccessfulReceipt(
