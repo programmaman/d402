@@ -2,6 +2,30 @@
 
 All notable public changes to d402 are documented here.
 
+## 0.2.1
+
+### Payment consumption
+
+- Added one-shot payable routes through `consumer: Once({ provider, signer })`.
+- Payable routes remain reusable by default and may state that policy explicitly
+  with `consumer: None`.
+- A verified payment is consumed before the protected handler runs. Replaying
+  the same proof returns `422` with the non-retryable
+  `payment-already-consumed` reason and does not invoke the handler again.
+- Added the public `paymentActions().consumePayment(paymentAddress)` server
+  action for integrators that need to consume payments outside payable routes.
+
+### Server action performance and reliability
+
+- Server payment actions now perform authorized gas estimation before
+  broadcasting and reuse the estimate as the transaction gas limit.
+- Transactions known to revert during preflight are not broadcast, avoiding gas
+  costs, nonce consumption, and confirmation latency for predictable failures.
+- Preflight preserves contract revert data for decoding while unexpected
+  provider, signer, and transaction errors continue to propagate unchanged.
+- Authorized preflight applies consistently to server settlement, refund,
+  consumption, evidence, and appeal actions.
+
 ## 0.2.0
 
 ### Payment flow
