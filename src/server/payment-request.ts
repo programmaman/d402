@@ -4,7 +4,6 @@ import { termsHashInputSchema } from "../core/schemas.js";
 import type {
   D402PaymentRequest,
   D402PaymentTerms,
-  D402TermsBasedPaymentRequest,
   Hex32,
 } from "../core/types.js";
 import type { PayableTerms, PayableTermsResolver } from "./types.js";
@@ -17,7 +16,7 @@ export interface PaymentRequestBuilder<T extends D402PaymentRequest> {
 }
 
 export const termsBasedPaymentRequestBuilder:
-  PaymentRequestBuilder<D402TermsBasedPaymentRequest> = {
+  PaymentRequestBuilder<D402PaymentRequest> = {
     build({ terms, termsHash }) {
       return {
         ...terms,

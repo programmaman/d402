@@ -2,7 +2,7 @@ export type Hex32 = `0x${string}`;
 export type Address = `0x${string}`;
 export type PaymentAddress = Address;
 export type DecimalString = `${bigint}`;
-export type D402Version = 2;
+export type D402Version = 3;
 
 export interface D402Versioned {
   version: D402Version;
@@ -25,7 +25,7 @@ export interface D402Agreement {
   uri?: string;
 }
 
-export interface D402TermsBasedPaymentRequest extends D402Versioned {
+export interface D402PaymentRequest extends D402Versioned {
   resource: string;
   method?: string;
   chainId: number;
@@ -35,17 +35,7 @@ export interface D402TermsBasedPaymentRequest extends D402Versioned {
   settlementTimeUnixSec: DecimalString;
   agreement: D402Agreement;
   expiresAtUnixSec: number;
-  termsHash: Hex32;
-  paymentId: Hex32;
 }
-
-/**
- * The current terms-based payment request shape.
- *
- * Kept as an alias for compatibility while additional request variants are
- * developed separately.
- */
-export type D402PaymentRequest = D402TermsBasedPaymentRequest;
 
 export interface DPaymentProof extends D402Versioned {
   paymentId: Hex32;
@@ -60,4 +50,4 @@ export interface D402PaymentProof {
   settlementReference?: D402BlockReference;
 }
 
-export type D402PaymentTerms = Omit<D402PaymentRequest, "termsHash" | "paymentId">;
+export type D402PaymentTerms = D402PaymentRequest;

@@ -14,7 +14,6 @@ export type {
   DPaymentProof,
   D402PaymentProof,
   D402PaymentRequest,
-  D402TermsBasedPaymentRequest,
   D402PaymentTerms,
   DecimalString,
   Hex32,
