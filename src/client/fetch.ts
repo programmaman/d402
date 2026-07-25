@@ -67,7 +67,11 @@ export function createD402Client(
       }
 
       const payment = await executor.createPayment(paymentRequest);
-      const dPaymentProof = buildDPaymentProof(payment);
+      const dPaymentProof = buildDPaymentProof({
+        paymentAddress: payment.paymentAddress,
+        txHash: payment.txHash,
+        txNonce: payment.txNonce,
+      });
       const paidRequest = withPaymentProofHeader(
         prepared.retry,
         proofHeaderName,

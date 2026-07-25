@@ -38,11 +38,9 @@ export interface D402PaymentRequest extends D402Versioned {
 }
 
 export interface DPaymentProof extends D402Versioned {
-  paymentId: Hex32;
   paymentAddress: PaymentAddress;
   txHash: Hex32;
-  /** Must match `PaymentCreated.creator` from the trusted factory receipt. */
-  payerAddress: Address;
+  txNonce: DecimalString;
 }
 
 export interface D402PaymentProof {

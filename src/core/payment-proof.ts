@@ -6,10 +6,9 @@ export function parseDPaymentProof(proof: unknown): DPaymentProof {
 
   return {
     version: parsed.version,
-    paymentId: parsed.paymentId,
     paymentAddress: parsed.paymentAddress,
     txHash: parsed.txHash,
-    payerAddress: parsed.payerAddress,
+    txNonce: parsed.txNonce,
   };
 }
 

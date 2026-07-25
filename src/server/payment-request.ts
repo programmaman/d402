@@ -1,30 +1,10 @@
 import { D402_VERSION } from "../core/constants.js";
-import { hashNormalizedPaymentTerms } from "../core/payment-terms-hasher.js";
-import { termsHashInputSchema } from "../core/schemas.js";
+import { normalizePaymentRequest } from "../core/payment-request.js";
 import type {
-  D402PaymentRequest,
   D402PaymentTerms,
-  Hex32,
+  D402PaymentRequest,
 } from "../core/types.js";
 import type { PayableTerms, PayableTermsResolver } from "./types.js";
-
-export interface PaymentRequestBuilder<T extends D402PaymentRequest> {
-  build(input: {
-    terms: D402PaymentTerms;
-    termsHash: Hex32;
-  }): T;
-}
-
-export const termsBasedPaymentRequestBuilder:
-  PaymentRequestBuilder<D402PaymentRequest> = {
-    build({ terms, termsHash }) {
-      return {
-        ...terms,
-        termsHash,
-        paymentId: termsHash,
-      };
-    },
-  };
 
 export interface BuildServerPaymentRequestInput {
   request: Request;
@@ -41,16 +21,8 @@ export async function resolvePayableTerms<Req>(
 
 export function buildPaymentRequest(
   input: D402PaymentTerms,
-  builder: PaymentRequestBuilder<D402PaymentRequest> =
-    termsBasedPaymentRequestBuilder,
 ): D402PaymentRequest {
-  const normalizedTerms = normalizePaymentTerms(input);
-  const termsHash = hashNormalizedPaymentTerms(normalizedTerms);
-
-  return builder.build({
-    terms: normalizedTerms,
-    termsHash,
-  });
+  return normalizePaymentRequest(input);
 }
 
 export function buildServerPaymentRequest(
@@ -97,22 +69,5 @@ function completeTermsFromRequest(
     settlementTimeUnixSec,
     agreement: terms.agreement,
     expiresAtUnixSec: terms.expiresAtUnixSec,
-  };
-}
-
-function normalizePaymentTerms(input: D402PaymentTerms): D402PaymentTerms {
-  const parsed = termsHashInputSchema.parse(input);
-
-  return {
-    version: parsed.version,
-    resource: parsed.resource,
-    chainId: parsed.chainId,
-    payeeAddress: parsed.payeeAddress,
-    tokenAddress: parsed.tokenAddress,
-    netAmount: parsed.netAmount,
-    settlementTimeUnixSec: parsed.settlementTimeUnixSec,
-    agreement: parsed.agreement,
-    expiresAtUnixSec: parsed.expiresAtUnixSec,
-    ...(parsed.method !== undefined ? { method: parsed.method } : {}),
   };
 }

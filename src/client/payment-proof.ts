@@ -1,24 +1,27 @@
 import { Buffer } from "node:buffer";
 
+import { D402_VERSION } from "../core/constants.js";
 import { parseD402PaymentProof, parseDPaymentProof } from "../core/index.js";
 import type {
   Address,
   D402PaymentProof,
+  DecimalString,
   DPaymentProof,
   Hex32,
 } from "../core/types.js";
 
 export interface BuildPaymentProofInput {
-  paymentId: Hex32;
   paymentAddress: Address;
   txHash: Hex32;
-  payerAddress: Address;
+  txNonce: bigint | DecimalString;
 }
 
 export function buildDPaymentProof(input: BuildPaymentProofInput): DPaymentProof {
   return parseDPaymentProof({
-    version: 2,
-    ...input,
+    version: D402_VERSION,
+    paymentAddress: input.paymentAddress,
+    txHash: input.txHash,
+    txNonce: input.txNonce.toString(),
   });
 }
 

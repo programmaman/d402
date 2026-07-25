@@ -5,6 +5,7 @@ import { D402_VERSION } from "./constants.js";
 import type {
   Address,
   D402Agreement,
+  D402PaymentRequest,
   DecimalString,
   Hex32,
 } from "./types.js";
@@ -54,7 +55,7 @@ export const agreementSchema = z
     ...(parsed.uri !== undefined ? { uri: parsed.uri } : {}),
   }));
 
-export const termsHashInputSchema = z
+export const paymentRequestSchema = z
   .object({
     version: z.literal(D402_VERSION),
     resource: z.string().trim().min(1, { message: "must not be blank" }),
@@ -72,14 +73,7 @@ export const termsHashInputSchema = z
     agreement: agreementSchema,
     expiresAtUnixSec: z.number().int().positive(),
   })
-  .strict();
-
-export const paymentRequestSchema = termsHashInputSchema
-  .extend({
-    termsHash: hex32Schema,
-    paymentId: hex32Schema,
-  })
-  .strict();
+  .strict() as z.ZodType<D402PaymentRequest>;
 
 export const blockReferenceSchema = z
   .object({
@@ -92,10 +86,9 @@ export const blockReferenceSchema = z
 export const dPaymentProofSchema = z
   .object({
     version: z.literal(D402_VERSION),
-    paymentId: hex32Schema,
     paymentAddress: addressSchema,
     txHash: hex32Schema,
-    payerAddress: addressSchema,
+    txNonce: decimalStringSchema,
   })
   .strict();
 

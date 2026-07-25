@@ -10,12 +10,6 @@ export {
   type PaymentConsumer,
   type OncePaymentConsumerOptions,
 } from "./payment-consumer.js";
-export {
-  termsBasedPaymentRequestBuilder,
-} from "./payment-request.js";
-export type {
-  PaymentRequestBuilder,
-} from "./payment-request.js";
 export type {
   PayableContext,
   PayableHandler,
