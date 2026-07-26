@@ -143,7 +143,7 @@ async function createDPaymentsPayment(
   try {
     const payerAddress =
       await options.signer.getAddress() as Address;
-    const paymentSalt = createPaymentSalt();
+    const paymentSalt = paymentRequest.paymentSalt ?? createPaymentSalt();
     const paymentId = derivePaymentId(
       paymentRequest,
       payerAddress,

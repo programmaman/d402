@@ -17,14 +17,23 @@ export function derivePaymentId(
   const normalized = normalizePaymentRequest(request);
   const {
     expiresAtUnixSec,
+    paymentSalt: requestedPaymentSalt,
     ...paymentTerms
   } = normalized;
   void expiresAtUnixSec;
 
+  const effectivePaymentSalt = hex32Schema.parse(paymentSalt);
+  if (
+    requestedPaymentSalt !== undefined
+    && requestedPaymentSalt !== effectivePaymentSalt
+  ) {
+    throw new Error("paymentSalt does not match payment request");
+  }
+
   const canonical = canonicalize({
     ...paymentTerms,
     payerAddress: addressSchema.parse(payerAddress),
-    paymentSalt: hex32Schema.parse(paymentSalt),
+    paymentSalt: effectivePaymentSalt,
   });
 
   if (canonical === undefined) {

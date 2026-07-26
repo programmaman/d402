@@ -1,3 +1,5 @@
+import type { D402CanonicalSalt } from "./constants.js";
+
 export type Hex32 = `0x${string}`;
 export type Address = `0x${string}`;
 export type PaymentAddress = Address;
@@ -35,6 +37,7 @@ export interface D402PaymentRequest extends D402Versioned {
   settlementTimeUnixSec: DecimalString;
   agreement: D402Agreement;
   expiresAtUnixSec: number;
+  paymentSalt?: D402CanonicalSalt;
 }
 
 export interface DPaymentProof extends D402Versioned {

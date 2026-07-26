@@ -40,9 +40,41 @@ export interface VerifyPaymentInput<Req = Request> {
   verifier: PaymentVerifier<Req>;
 }
 
+type PaymentSaltVerificationResult =
+  | { ok: true }
+  | {
+      ok: false;
+      reason: "payment-id-mismatch";
+    };
+
+export function verifyPaymentSalt(
+  paymentRequest: D402PaymentRequest,
+  dPaymentProof: DPaymentProof,
+): PaymentSaltVerificationResult {
+  if (
+    paymentRequest.paymentSalt !== undefined
+    && paymentRequest.paymentSalt !== dPaymentProof.paymentSalt
+  ) {
+    return {
+      ok: false,
+      reason: "payment-id-mismatch",
+    };
+  }
+
+  return { ok: true };
+}
+
 export async function verifyPayment<Req>(
   input: VerifyPaymentInput<Req>,
 ): Promise<PaymentVerificationResult> {
+  const saltResult = verifyPaymentSalt(
+    input.paymentRequest,
+    input.dPaymentProof,
+  );
+  if (!saltResult.ok) {
+    return saltResult;
+  }
+
   return input.verifier({
     request: input.request,
     paymentRequest: input.paymentRequest,

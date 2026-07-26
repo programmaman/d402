@@ -14,6 +14,10 @@ export type PaymentResourceResolver<Req = Request> =
   | string
   | ((request: Req) => string | Promise<string>);
 
+export type PaymentIdentifier =
+  | "server"
+  | "client";
+
 export interface PaymentConfig<Req = Request> {
   provider: AbstractProvider;
   signer?: Signer;
@@ -22,6 +26,7 @@ export interface PaymentConfig<Req = Request> {
   settlementWindow?: number;
   settlementTimeUnixSec?: number;
   cache?: boolean | number;
+  identifier?: PaymentIdentifier;
 }
 
 export interface PayableTerms {

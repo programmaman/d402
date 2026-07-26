@@ -1,15 +1,23 @@
-import { D402_VERSION } from "../core/constants.js";
+import {
+  D402_CANONICAL_SALT,
+  D402_VERSION,
+} from "../core/constants.js";
 import { normalizePaymentRequest } from "../core/payment-request.js";
 import type {
   D402PaymentTerms,
   D402PaymentRequest,
 } from "../core/types.js";
-import type { PayableTerms, PayableTermsResolver } from "./types.js";
+import type {
+  PaymentIdentifier,
+  PayableTerms,
+  PayableTermsResolver,
+} from "./types.js";
 
 export interface BuildServerPaymentRequestInput {
   request: Request;
   terms: PayableTerms;
   resource?: D402PaymentTerms["resource"];
+  identifier?: PaymentIdentifier;
 }
 
 export async function resolvePayableTerms<Req>(
@@ -28,10 +36,13 @@ export function buildPaymentRequest(
 export function buildServerPaymentRequest(
   input: BuildServerPaymentRequestInput,
 ): D402PaymentRequest {
+  assertPayableTermsDoNotSelectSalt(input.terms);
+
   const completeTerms = completeTermsFromRequest(
     input.request,
     input.terms,
     input.resource,
+    input.identifier,
   );
 
   return buildPaymentRequest(completeTerms);
@@ -41,6 +52,7 @@ function completeTermsFromRequest(
   request: Request,
   terms: PayableTerms,
   resource: D402PaymentTerms["resource"] | undefined,
+  identifier: PaymentIdentifier | undefined,
 ): D402PaymentTerms {
   const partialTerms = terms as Partial<D402PaymentTerms>;
   const settlementTimeUnixSec = partialTerms.settlementTimeUnixSec;
@@ -58,7 +70,7 @@ function completeTermsFromRequest(
     );
   }
 
-  return {
+  const completedRequest = {
     version: partialTerms.version ?? D402_VERSION,
     resource: resolvedResource,
     method: partialTerms.method ?? request.method,
@@ -70,4 +82,21 @@ function completeTermsFromRequest(
     agreement: terms.agreement,
     expiresAtUnixSec: terms.expiresAtUnixSec,
   };
+
+  return {
+    ...completedRequest,
+    ...(identifier === "client"
+      ? {}
+      : { paymentSalt: D402_CANONICAL_SALT }),
+  };
+}
+
+function assertPayableTermsDoNotSelectSalt(
+  terms: PayableTerms,
+): void {
+  if (Object.prototype.hasOwnProperty.call(terms, "paymentSalt")) {
+    throw new Error(
+      "paymentSalt cannot be configured through payable terms; use paymentConfig.identifier",
+    );
+  }
 }

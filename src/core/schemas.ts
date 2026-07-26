@@ -1,7 +1,10 @@
 import { getAddress, isHexString } from "ethers";
 import { z } from "zod";
 
-import { D402_VERSION } from "./constants.js";
+import {
+  D402_CANONICAL_SALT,
+  D402_VERSION,
+} from "./constants.js";
 import type {
   Address,
   D402Agreement,
@@ -72,8 +75,22 @@ export const paymentRequestSchema = z
     settlementTimeUnixSec: positiveDecimalStringSchema,
     agreement: agreementSchema,
     expiresAtUnixSec: z.number().int().positive(),
+    paymentSalt: z.literal(D402_CANONICAL_SALT).optional(),
   })
-  .strict() as z.ZodType<D402PaymentRequest>;
+  .strict()
+  .transform((parsed): D402PaymentRequest => {
+    const {
+      method,
+      paymentSalt,
+      ...request
+    } = parsed;
+
+    return {
+      ...request,
+      ...(method !== undefined ? { method } : {}),
+      ...(paymentSalt !== undefined ? { paymentSalt } : {}),
+    };
+  });
 
 export const blockReferenceSchema = z
   .object({

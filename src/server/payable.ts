@@ -24,7 +24,11 @@ import type {
   PaymentRequiredResponseBuilder,
   PaymentVerificationFailureReason,
 } from "./types.js";
-import { createDPaymentsVerifier, verifyPayment } from "./payment-verifier.js";
+import {
+  createDPaymentsVerifier,
+  verifyPayment,
+  verifyPaymentSalt,
+} from "./payment-verifier.js";
 import { None } from "./payment-consumer.js";
 
 export function payable<Req extends Request = Request>(
@@ -72,6 +76,9 @@ export function payable<Req extends Request = Request>(
         request,
         terms: challengeSettlement.terms,
         ...(resource !== undefined ? { resource } : {}),
+        ...(options.paymentConfig.identifier !== undefined
+          ? { identifier: options.paymentConfig.identifier }
+          : {}),
       });
 
       if (
@@ -103,8 +110,16 @@ export function payable<Req extends Request = Request>(
       request,
       terms: settlement.terms,
       ...(resource !== undefined ? { resource } : {}),
+      ...(options.paymentConfig.identifier !== undefined
+        ? { identifier: options.paymentConfig.identifier }
+        : {}),
     });
     const { dPaymentProof } = proof;
+
+    const saltResult = verifyPaymentSalt(paymentRequest, dPaymentProof);
+    if (!saltResult.ok) {
+      return buildVerificationErrorResponse(options, saltResult.reason);
+    }
 
     let authenticatedSettlementReference: D402BlockReference | undefined;
     if (settlement.mode === "window" && settlement.settlementReference !== undefined) {

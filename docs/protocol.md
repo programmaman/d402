@@ -39,7 +39,7 @@ can still parse it.
 
 ```ts
 interface D402PaymentRequest {
-  version: 2;
+  version: 0.3;
   resource: string;
   method?: string;
   chainId: number;
@@ -53,14 +53,14 @@ interface D402PaymentRequest {
     uri?: string;
   };
   expiresAtUnixSec: number;
-  termsHash: `0x${string}`;
-  paymentId: `0x${string}`;
+  paymentSalt?:
+    "0xf70865accd1b69835cd1ac81f96bc4351fa9e88b4cf76f91f0661ce3d15e2ac6";
 }
 ```
 
 Fields:
 
-- `version`: current protocol version, `2`.
+- `version`: current protocol version, `0.3`.
 - `resource`: canonical identity of the protected operation or asset.
 - `method`: optional HTTP method binding. When present, the client requires it
   to match the retried request method.
@@ -71,14 +71,14 @@ Fields:
 - `settlementTimeUnixSec`: earliest settlement time, as Unix seconds.
 - `agreement`: app-level agreement instance identifier and optional content hash/URI.
 - `expiresAtUnixSec`: payment request expiry, as Unix seconds.
-- `termsHash`: deterministic hash of the payment terms.
-- `paymentId`: equal to `termsHash`; used as the dPayment ID.
+- `paymentSalt`: optional canonical salt selecting server-controlled payment
+  identity. Omission selects client-controlled entropy.
 
-`paymentId` is deterministic. Identical payment terms produce identical payment
-IDs. Include distinct `resource` or `agreement.id` metadata when each order,
-session, or purchase needs a unique payment. For request-specific agreements,
-the integrator should provide a stable identifier such as
-`report-access:v1:${requestId}`. d402 does not generate a default nonce.
+The request does not carry `paymentId`, payer identity, or an EOA transaction
+nonce. By default, `payable()` emits the canonical salt; configure
+`paymentConfig.identifier: "client"` to omit it and let each client invocation
+generate a fresh salt. The client derives `paymentId` from the normalized
+request, actual signer address, and effective salt.
 
 ## Payment Proof
 
@@ -93,11 +93,10 @@ Decoded proof shape:
 ```ts
 interface D402PaymentProof {
   dPaymentProof: {
-    version: 2;
-    paymentId: `0x${string}`;
+    version: 0.3;
     paymentAddress: `0x${string}`;
     txHash: `0x${string}`;
-    payerAddress: `0x${string}`;
+    paymentSalt: `0x${string}`;
   };
   settlementReference?: {
     blockNumber: number;
@@ -107,17 +106,16 @@ interface D402PaymentProof {
 }
 ```
 
-`payerAddress` is required. It is the account recorded as `creator` by the
-trusted factory's `PaymentCreated` event. The value supplied by the client is
-not trusted on its own: the server accepts it only after the receipt event's
-`creator` matches it.
+The proof does not claim `paymentId` or `payerAddress`. The server authenticates
+the actual payer from the trusted factory's `PaymentCreated.creator` and derives
+the expected ID from the request, authenticated creator, and proof salt.
 
 The server checks that:
 
-- the proof parses and matches the expected payment ID
+- the proof parses and its salt derives the expected payment ID
 - the transaction exists and succeeded
 - the transaction emitted the expected dPayment `PaymentCreated` event
-- the factory, payment address, payee, token, amount, settlement time, and payer match
+- the factory, payment address, payee, token, amount, and settlement time match
 - the live payment state is usable
 - the configured confirmation count is met
 
@@ -156,7 +154,6 @@ Common `reason.code` values:
 - `wrong-token`
 - `wrong-amount`
 - `wrong-settlement-time`
-- `wrong-payer`
 - `insufficient-confirmations`
 - `failed-transaction`
 - `missing-created-event`

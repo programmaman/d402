@@ -16,6 +16,7 @@ export type {
   PayableRouteConfig,
   D402PaymentVerificationFailureReason,
   PaymentConfig,
+  PaymentIdentifier,
   PaymentRequiredReason,
   PaymentRequiredReasonCategory,
   PaymentRequiredReasonCode,
