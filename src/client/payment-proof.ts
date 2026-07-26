@@ -5,7 +5,6 @@ import { parseD402PaymentProof, parseDPaymentProof } from "../core/index.js";
 import type {
   Address,
   D402PaymentProof,
-  DecimalString,
   DPaymentProof,
   Hex32,
 } from "../core/types.js";
@@ -13,7 +12,7 @@ import type {
 export interface BuildPaymentProofInput {
   paymentAddress: Address;
   txHash: Hex32;
-  txNonce: bigint | DecimalString;
+  paymentSalt: Hex32;
 }
 
 export function buildDPaymentProof(input: BuildPaymentProofInput): DPaymentProof {
@@ -21,7 +20,7 @@ export function buildDPaymentProof(input: BuildPaymentProofInput): DPaymentProof
     version: D402_VERSION,
     paymentAddress: input.paymentAddress,
     txHash: input.txHash,
-    txNonce: input.txNonce.toString(),
+    paymentSalt: input.paymentSalt,
   });
 }
 

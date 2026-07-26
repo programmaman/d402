@@ -6,6 +6,42 @@ import type {
   PaymentEvents,
 } from "@rakelabs/dpayments-sdk";
 
+export function findPaymentCreatedEvents(input: {
+  logs: readonly EvmLog[];
+  factoryAddress: string;
+  decoder: Pick<PaymentEvents, "tryDecodePaymentCreated">;
+}): PaymentCreatedEvent[] {
+  const expectedTopic = TOPIC_PAYMENT_CREATED.toLowerCase();
+  const expectedFactory = input.factoryAddress.toLowerCase();
+  const events: PaymentCreatedEvent[] = [];
+
+  for (const log of input.logs) {
+    if (
+      log.address !== undefined
+      && log.address.toLowerCase() !== expectedFactory
+    ) {
+      continue;
+    }
+
+    if (
+      log.topics !== undefined
+      && (
+        log.topics.length === 0
+        || log.topics[0]?.toLowerCase() !== expectedTopic
+      )
+    ) {
+      continue;
+    }
+
+    const decoded = input.decoder.tryDecodePaymentCreated(log);
+    if (decoded !== undefined) {
+      events.push(decoded);
+    }
+  }
+
+  return events;
+}
+
 export function findPaymentCreatedEvent(input: {
   logs: readonly EvmLog[];
   factoryAddress: string;

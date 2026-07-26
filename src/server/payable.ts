@@ -106,10 +106,6 @@ export function payable<Req extends Request = Request>(
     });
     const { dPaymentProof } = proof;
 
-    if (dPaymentProof.paymentId.toLowerCase() !== paymentRequest.paymentId.toLowerCase()) {
-      return buildVerificationErrorResponse(options, "payment-id-mismatch");
-    }
-
     let authenticatedSettlementReference: D402BlockReference | undefined;
     if (settlement.mode === "window" && settlement.settlementReference !== undefined) {
       const resolvedReference = await resolveSettlementReference(

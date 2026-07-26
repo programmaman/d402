@@ -110,11 +110,17 @@ controls around the verify/settle boundary. Research has reported practical
 duplicate-service and duplicate-settlement races when these controls are
 missing or incomplete.
 
-d402 makes the payment itself a stable business identity. Applications can
-atomically attach one-shot consumption, quotas, or reusable entitlements to
-that identity without confusing a payment authorization with a completed
-purchase. Application consumption state is still required when the product is
-one-shot; d402 makes the correct object available for that decision.
+d402 makes the payment itself a stable business identity and exposes protocol-
+level consumption semantics for one-shot fulfillment. It also supports
+reusable payments and lifecycle actions without confusing a payment
+authorization with a completed purchase. The application chooses the policy,
+while d402 supplies the protocol transition and verification behavior.
+
+For strict one-shot access, protocol consumption can serve as the shared
+replay lock. A server does not need a database merely to prevent the same
+payment from being used twice across retries, restarts, or replicas. An
+application may still use storage if it needs to recover and return the exact
+result of an earlier fulfillment after an HTTP response was lost.
 
 ### 4. Dynamic charging expands the trust boundary
 
@@ -173,11 +179,12 @@ proposes a different atomic service-channel architecture to bind payment
 finalization to service execution and result delivery.
 
 d402 does not claim magical atomic fulfillment either. Its advantage is a
-recovery-oriented payment lifecycle: a payment can remain open while the
-application records fulfillment and can later follow settlement, refund, or
-dispute policy. This does not prove service quality, but it gives the
-application a durable mechanism for handling failure instead of assuming that
-an irreversible transfer and an HTTP response are the same event.
+complete protocol-level payment lifecycle: a payment can remain open and then
+be settled, refunded, consumed, disputed, appealed, or resolved through the
+defined payment actions. Evidence submission is part of the dispute path.
+This does not prove service quality, but it gives the protocol an explicit way
+to handle failure instead of assuming that an irreversible transfer and an
+HTTP response are the same event.
 
 ## Why d402 is better for payment-gated resources
 
@@ -212,8 +219,8 @@ fail during settlement.
 ### Payment remains useful after the HTTP response
 
 A d402 payment is a durable agreement, not merely a transfer instruction. The
-application can associate it with fulfillment records and later settle,
-refund, dispute, or resolve it according to the business outcome.
+protocol supports settlement, refunds, consumption, disputes, appeals,
+evidence, and resolution as part of the payment lifecycle.
 
 That is materially stronger for commerce where delivery can fail, quality can
 be contested, or the merchant should not immediately finalize payment merely
@@ -290,6 +297,74 @@ An application may rationally choose those benefits and add the missing
 binding, locking, policy, privacy, and recovery controls itself. The important
 point is that those controls should not be assumed merely because a request is
 x402-compatible.
+
+## Additional architectural tradeoffs
+
+The practical difference is not simply that d402 has more fields. d402 makes
+the payment a durable, request-specific object; x402 primarily makes a signed
+transfer authorization available to a facilitator.
+
+| Concern | d402 advantage | x402 cost or tradeoff |
+| --- | --- | --- |
+| Payment identity | Each payment has a durable identity tied to the purchase | An authorization can be valid without defining a durable business payment |
+| Resource binding | The purchase terms and intended resource are treated as one agreement | Resource binding depends more heavily on the selected integration and its checks |
+| Payer authenticity | The payment record identifies the party that actually paid | The facilitator reports payment participants, but the transfer itself is not a durable purchase record |
+| Retry semantics | The protocol distinguishes retrying a payment from making a new payment | Retry and deduplication depend more heavily on payload replay or application policy |
+| Fulfillment timing | The server can require an established payment before expensive protected work | Verify and settlement are separate facilitator operations, creating a possible pre-settlement service-delivery gap |
+| Consumption | One-shot use, entitlement, refund, dispute, and evidence can share the same payment record | The application must build these semantics around facilitator responses and settlement data |
+| Verification authority | The server can independently verify the payment record | The common deployment model depends more heavily on a facilitator for verification and settlement |
+| Failure recovery | The payment remains a durable object that can stay open and later be settled, refunded, or disputed | Settlement failure, HTTP failure, and duplicate-request handling require scheme- and application-specific recovery |
+| Protocol surface | Fewer standardized choices make guarantees easier to audit | Less ecosystem breadth and fewer built-in payment schemes |
+
+### d402's concrete advantages
+
+d402 is the stronger architecture when the payment is part of a real business
+workflow rather than an immediately consumed micropayment:
+
+- It binds payment to the complete purchase agreement instead of merely
+  authorizing an asset transfer.
+- It keeps the meaning of the purchase stable across ordinary transaction and
+  infrastructure changes.
+- It gives independent server instances a common payment record to verify,
+  which supports restart, load-balancing, and replication scenarios.
+- It distinguishes a retry of an existing payment from a new legitimate
+  payment.
+- It provides a stable object for fulfillment records, accounting, refunds,
+  disputes, and evidence.
+- It makes the payer part of identity without allowing the client or server to
+  assert an unauthenticated payer address.
+
+### d402's costs
+
+d402 pays for those guarantees with narrower scope and more protocol machinery:
+
+- The payment lifecycle is more structured than a direct transfer flow.
+- Clients and servers have more payment-lifecycle responsibilities than in a
+  facilitator-led transfer flow.
+- The protocol is less naturally suited to tiny, disposable, usage-metered
+  charges where facilitator settlement and batching are more important than a
+  durable purchase object.
+- Applications still choose their fulfillment policy and may keep business
+  records, while d402 provides the payment-level lifecycle and consumption
+  guarantees those policies rely on.
+- The more opinionated identity model makes adding unrelated schemes or chains
+  harder than x402's pluggable mechanism architecture.
+
+### x402's genuine advantages
+
+x402 remains the better choice when the dominant requirements are ecosystem
+reach and low-friction settlement:
+
+- broad support for chains, assets, schemes, wallets, and facilitator services;
+- gas abstraction and delegated settlement;
+- EIP-3009, Permit2, smart-wallet, batch, and usage-based flows;
+- a mature plugin, extension, HTTP, and facilitator model;
+- a simpler path for payments that need no durable post-payment lifecycle.
+
+Those are real advantages. The architectural cost is that request binding,
+consumption, idempotency, privacy, locking, and fulfillment recovery are not
+uniform guarantees of the base protocol. They must be supplied by the chosen
+scheme, facilitator, extension, or application.
 
 ## Visa TAP can be layered on top
 

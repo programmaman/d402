@@ -2,7 +2,7 @@ import canonicalize from "canonicalize";
 import { keccak256, toUtf8Bytes } from "ethers";
 
 import { normalizePaymentRequest } from "./payment-request.js";
-import { addressSchema } from "./schemas.js";
+import { addressSchema, hex32Schema } from "./schemas.js";
 import type {
   Address,
   D402PaymentRequest,
@@ -12,7 +12,7 @@ import type {
 export function derivePaymentId(
   request: D402PaymentRequest,
   payerAddress: Address,
-  txNonce: bigint,
+  paymentSalt: Hex32,
 ): Hex32 {
   const normalized = normalizePaymentRequest(request);
   const {
@@ -24,7 +24,7 @@ export function derivePaymentId(
   const canonical = canonicalize({
     ...paymentTerms,
     payerAddress: addressSchema.parse(payerAddress),
-    txNonce: txNonce.toString(),
+    paymentSalt: hex32Schema.parse(paymentSalt),
   });
 
   if (canonical === undefined) {

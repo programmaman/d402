@@ -70,7 +70,7 @@ export function createD402Client(
       const dPaymentProof = buildDPaymentProof({
         paymentAddress: payment.paymentAddress,
         txHash: payment.txHash,
-        txNonce: payment.txNonce,
+        paymentSalt: payment.paymentSalt,
       });
       const paidRequest = withPaymentProofHeader(
         prepared.retry,

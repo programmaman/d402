@@ -39,7 +39,6 @@ export function buildPaymentVerificationErrorReason(
     case "wrong-token":
     case "wrong-amount":
     case "wrong-settlement-time":
-    case "wrong-payer":
     case "failed-transaction":
     case "missing-created-event":
     case "disputed-payment":

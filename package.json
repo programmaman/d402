@@ -64,7 +64,7 @@
     "dev": "tsx src/index.ts",
     "lint": "eslint src",
     "lint:fix": "eslint src --fix",
-    "prepack": "npm run build",
+    "prepack": "npm run clean && npm run build",
     "test": "vitest run --dir test",
     "test:watch": "npm run build && vitest --dir test",
     "typecheck": "tsc -p tsconfig.json --noEmit",

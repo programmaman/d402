@@ -8,7 +8,8 @@ export {
   parseD402PaymentProof,
 } from "./payment-proof.js";
 export {
-  D402_QUICK_DISPUTABLE_PAYMENT
+  D402_CANONICAL_SALT,
+  D402_QUICK_DISPUTABLE_PAYMENT,
 } from "./constants.js";
 export type {
   Address,

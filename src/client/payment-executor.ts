@@ -17,9 +17,20 @@ import type {
   TransactionRequest,
   TransactionResponse,
 } from "ethers";
-import { NonceManager } from "ethers";
+import {
+  hexlify,
+  NonceManager,
+  randomBytes,
+} from "ethers";
 
-import type { Address, D402PaymentRequest, Hex32 } from "../core/index.js";
+import {
+  derivePaymentId,
+} from "../core/index.js";
+import type {
+  Address,
+  D402PaymentRequest,
+  Hex32,
+} from "../core/index.js";
 import {
   D402ConfigurationError,
   D402PaymentExecutionError,
@@ -45,10 +56,6 @@ export function createDPaymentsExecutor(
   const signer = new NonceManager(options.signer);
   const queuedOptions = { ...options, signer };
   let broadcastQueue: Promise<unknown> = Promise.resolve();
-  const inFlightCreates = new Map<
-    string,
-    Promise<D402CreatedPayment>
-  >();
 
   async function broadcastInQueue<T>(
     operation: () => Promise<T>,
@@ -71,27 +78,11 @@ export function createDPaymentsExecutor(
 
   return {
     async createPayment(paymentRequest) {
-      const key = paymentCreationKey(paymentRequest);
-      const existing = inFlightCreates.get(key);
-      if (existing !== undefined) {
-        return existing;
-      }
-
-      const pending = createDPaymentsPayment(
+      return createDPaymentsPayment(
         queuedOptions,
         paymentRequest,
         broadcastInQueue,
       );
-      inFlightCreates.set(key, pending);
-
-      const cleanup = () => {
-        if (inFlightCreates.get(key) === pending) {
-          inFlightCreates.delete(key);
-        }
-      };
-
-      void pending.then(cleanup, cleanup);
-      return pending;
     },
     async settlePayment(payment) {
       return sendPaymentAction(
@@ -123,18 +114,6 @@ type BroadcastInQueue = <T>(
   operation: () => Promise<T>,
 ) => Promise<T>;
 
-function paymentCreationKey(
-  paymentRequest: D402PaymentRequest,
-): string {
-  return [
-    paymentRequest.paymentId.toLowerCase(),
-    paymentRequest.tokenAddress?.toLowerCase() ?? "native",
-    paymentRequest.payeeAddress.toLowerCase(),
-    paymentRequest.netAmount,
-    paymentRequest.settlementTimeUnixSec,
-  ].join(":");
-}
-
 type PreparedDpaymentSdkResult =
   | Awaited<ReturnType<DPayments["factory"]["prepareCreateEthPayment"]>>
   | Awaited<ReturnType<DPayments["factory"]["prepareCreateErc20Payment"]>>;
@@ -162,7 +141,27 @@ async function createDPaymentsPayment(
   broadcastInQueue: BroadcastInQueue,
 ): Promise<D402CreatedPayment> {
   try {
-    const preparedPayment = await preparePayment(options, paymentRequest);
+    const payerAddress =
+      await options.signer.getAddress() as Address;
+    const paymentSalt = createPaymentSalt();
+    const paymentId = derivePaymentId(
+      paymentRequest,
+      payerAddress,
+      paymentSalt,
+    );
+    const preparedPayment = await preparePayment(
+      options,
+      paymentRequest,
+      paymentId,
+    );
+    if (
+      preparedPayment.payerAddress.toLowerCase() !==
+      payerAddress.toLowerCase()
+    ) {
+      throw new D402PaymentExecutionError(
+        "Signer address changed during dPayment preparation.",
+      );
+    }
     const confirmations = options.confirmations ??
       D402_DEFAULT_CONFIRMATIONS;
 
@@ -192,14 +191,16 @@ async function createDPaymentsPayment(
       receipt,
       paymentRequest,
       preparedPayment.creationTx.to,
-      preparedPayment.payerAddress,
+      payerAddress,
+      paymentId,
     );
 
     return {
-      paymentId: paymentRequest.paymentId,
+      paymentId,
       paymentAddress,
       txHash: receipt.hash as Hex32,
-      payerAddress: preparedPayment.payerAddress as Address,
+      paymentSalt,
+      payerAddress,
     };
   } catch (cause) {
     throw paymentExecutionError("Could not create dPayment.", cause);
@@ -215,18 +216,19 @@ function isErc20PreparedPayment(
 async function preparePayment(
   options: CreateDPaymentsExecutorOptions,
   paymentRequest: D402PaymentRequest,
+  paymentId: Hex32,
 ): Promise<PreparedDpayment> {
   const payerAddress = await options.signer.getAddress();
   const dpayments = await createDPayments(options, payerAddress);
   const prepared = paymentRequest.tokenAddress === null
     ? await dpayments.factory.prepareCreateEthPayment({
-        paymentId: paymentRequest.paymentId,
+        paymentId,
         netAmount: BigInt(paymentRequest.netAmount),
         payeeAddress: paymentRequest.payeeAddress,
         settlementTimeUnixSec: BigInt(paymentRequest.settlementTimeUnixSec),
       })
     : await dpayments.factory.prepareCreateErc20Payment({
-        paymentId: paymentRequest.paymentId,
+        paymentId,
         tokenAddress: paymentRequest.tokenAddress,
         netAmount: BigInt(paymentRequest.netAmount),
         payeeAddress: paymentRequest.payeeAddress,
@@ -235,7 +237,7 @@ async function preparePayment(
 
   if (
     prepared.paymentId.toLowerCase() !==
-    paymentRequest.paymentId.toLowerCase()
+    paymentId.toLowerCase()
   ) {
     throw new D402PaymentExecutionError(
       "dPayment ID does not match d402 payment ID.",
@@ -256,6 +258,10 @@ async function preparePayment(
     payerAddress,
     creationTx: prepared.tx,
   };
+}
+
+function createPaymentSalt(): Hex32 {
+  return hexlify(randomBytes(32)) as Hex32;
 }
 
 async function sendPaymentAction(
@@ -457,12 +463,13 @@ function extractPaymentAddressFromReceipt(
   paymentRequest: D402PaymentRequest,
   factoryAddress: string,
   payerAddress: string,
+  paymentId: Hex32,
 ): Address {
   const events = new PaymentEvents();
   const createdEvent = findPaymentCreatedEvent({
     logs: receipt.logs,
     factoryAddress,
-    paymentId: paymentRequest.paymentId,
+    paymentId,
     creator: payerAddress,
     payee: paymentRequest.payeeAddress,
     decoder: events,
@@ -474,7 +481,7 @@ function extractPaymentAddressFromReceipt(
     );
   }
 
-  if (createdEvent.paymentId.toLowerCase() !== paymentRequest.paymentId) {
+  if (createdEvent.paymentId.toLowerCase() !== paymentId.toLowerCase()) {
     throw new D402PaymentExecutionError(
       "PaymentCreated event payment id does not match d402 payment id.",
     );

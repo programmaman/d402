@@ -34,7 +34,7 @@ export interface D402CreatedPayment {
   paymentId: Hex32;
   paymentAddress: Address;
   txHash: Hex32;
-  txNonce: bigint;
+  paymentSalt: Hex32;
   payerAddress: Address;
 }
 

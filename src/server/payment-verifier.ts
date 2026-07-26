@@ -5,13 +5,17 @@ import {
   PaymentState,
   ZERO_ADDRESS,
 } from "@rakelabs/dpayments-sdk";
+import { getAddress } from "ethers";
 import type { AbstractProvider } from "ethers";
 import type { PaymentCreatedEvent } from "@rakelabs/dpayments-sdk";
 import type { MulticallConfig } from "@rakelabs/dpayments-sdk";
+import { derivePaymentId } from "../core/index.js";
 import type {
+  Address,
   D402BlockReference,
   DPaymentProof,
   D402PaymentRequest,
+  Hex32,
 } from "../core/index.js";
 import type {
   PaymentState as D402PaymentState,
@@ -26,7 +30,7 @@ type PaymentValidationResult =
 import { getConnectedChainId } from "../runtime/chain.js";
 import { D402_DEFAULT_CONFIRMATIONS } from "../runtime/defaults.js";
 import { getDPaymentsMulticallConfig } from "../runtime/multicall.js";
-import { findPaymentCreatedEvent } from "../runtime/payment-events.js";
+import { findPaymentCreatedEvents } from "../runtime/payment-events.js";
 
 export interface VerifyPaymentInput<Req = Request> {
   request: Req;
@@ -39,11 +43,6 @@ export interface VerifyPaymentInput<Req = Request> {
 export async function verifyPayment<Req>(
   input: VerifyPaymentInput<Req>,
 ): Promise<PaymentVerificationResult> {
-  const localResult = verifyProofMatchesRequest(input.paymentRequest, input.dPaymentProof);
-  if (!localResult.ok) {
-    return localResult;
-  }
-
   return input.verifier({
     request: input.request,
     paymentRequest: input.paymentRequest,
@@ -120,12 +119,10 @@ export function createDPaymentsVerifier(
 
     const settlementResult = await verifySettlementPolicy({
       paymentRequest,
-      dPaymentProof: proof,
       ...(input.settlementReference !== undefined
         ? { settlementReference: input.settlementReference }
         : {}),
       receipt: createdEventResult.receipt,
-      createdEvent: createdEventResult.createdEvent,
       provider: options.provider,
       ...(options.settlementWindow !== undefined
         ? { settlementWindow: options.settlementWindow }
@@ -147,23 +144,13 @@ export function createDPaymentsVerifier(
     }
 
     return verifyPaymentState(
-      paymentRequest,
       proof,
       paymentStateResult.state,
+      createdEventResult.paymentId,
+      createdEventResult.payerAddress,
       createdEventResult.confirmations,
     );
   };
-}
-
-function verifyProofMatchesRequest(
-  paymentRequest: D402PaymentRequest,
-  proof: DPaymentProof,
-): PaymentValidationResult {
-  if (proof.paymentId !== paymentRequest.paymentId) {
-    return { ok: false, reason: "payment-id-mismatch" };
-  }
-
-  return { ok: true };
 }
 
 async function verifyChain(
@@ -228,6 +215,8 @@ async function verifyPaymentCreatedEvent(input: {
       ok: true;
       receipt: TransactionReceipt;
       createdEvent: PaymentCreatedEvent;
+      paymentId: Hex32;
+      payerAddress: Address;
       confirmations?: number;
     }
   | Extract<PaymentVerificationResult, { ok: false }>
@@ -257,23 +246,48 @@ async function verifyPaymentCreatedEvent(input: {
     }
   }
 
-  const createdEvent = findPaymentCreatedEvent({
+  const createdEvents = findPaymentCreatedEvents({
     logs: receipt.logs,
     factoryAddress: FACTORY_ADDRESS,
-    paymentId: input.paymentRequest.paymentId,
-    creator: input.dPaymentProof.payerAddress,
-    payee: input.paymentRequest.payeeAddress,
     decoder: input.events,
   });
 
-  if (createdEvent === undefined) {
+  if (createdEvents.length === 0) {
     return { ok: false, reason: "missing-created-event" };
   }
 
+  const addressedEvents = createdEvents.filter((event) =>
+    sameAddress(event.paymentAddress, input.dPaymentProof.paymentAddress),
+  );
+  if (addressedEvents.length === 0) {
+    return { ok: false, reason: "wrong-payment-address" };
+  }
+  if (addressedEvents.length > 1) {
+    return { ok: false, reason: "onchain-payment-mismatch" };
+  }
+
+  const createdEvent = addressedEvents[0]!;
+  let payerAddress: Address;
+  try {
+    payerAddress = getAddress(createdEvent.creator).toLowerCase() as Address;
+  } catch (cause) {
+    return {
+      ok: false,
+      reason: "onchain-payment-mismatch",
+      cause,
+    };
+  }
+
+  const paymentId = derivePaymentId(
+    input.paymentRequest,
+    payerAddress,
+    input.dPaymentProof.paymentSalt,
+  );
   const eventResult = verifyCreatedEvent(
     input.paymentRequest,
     input.dPaymentProof,
     createdEvent,
+    paymentId,
   );
   if (!eventResult.ok) {
     return eventResult;
@@ -283,16 +297,16 @@ async function verifyPaymentCreatedEvent(input: {
     ok: true,
     receipt,
     createdEvent,
+    paymentId,
+    payerAddress,
     ...(confirmations !== undefined ? { confirmations } : {}),
   };
 }
 
 async function verifySettlementPolicy(input: {
   paymentRequest: D402PaymentRequest;
-  dPaymentProof: DPaymentProof;
   settlementReference?: D402BlockReference;
   receipt: TransactionReceipt;
-  createdEvent: PaymentCreatedEvent;
   provider: AbstractProvider;
   settlementWindow?: number;
 }): Promise<PaymentValidationResult> {
@@ -333,7 +347,6 @@ async function verifySettlementPolicy(input: {
     || Number(input.settlementReference.blockTimestampUnixSec) > creationBlock.timestamp
     || BigInt(input.paymentRequest.settlementTimeUnixSec)
       > BigInt(creationBlock.timestamp) + BigInt(input.settlementWindow)
-    || !sameHex(input.createdEvent.paymentId, input.dPaymentProof.paymentId)
   ) {
     return { ok: false, reason: "reference-settlement-out-of-bounds" };
   }
@@ -345,8 +358,9 @@ function verifyCreatedEvent(
   paymentRequest: D402PaymentRequest,
   proof: DPaymentProof,
   event: PaymentCreatedEvent,
+  expectedPaymentId: Hex32,
 ): PaymentValidationResult {
-  if (!sameHex(event.paymentId, paymentRequest.paymentId)) {
+  if (!sameHex(event.paymentId, expectedPaymentId)) {
     return { ok: false, reason: "payment-id-mismatch" };
   }
 
@@ -372,10 +386,6 @@ function verifyCreatedEvent(
 
   if (event.settlementTime !== BigInt(paymentRequest.settlementTimeUnixSec)) {
     return { ok: false, reason: "wrong-settlement-time" };
-  }
-
-  if (!sameAddress(event.creator, proof.payerAddress)) {
-    return { ok: false, reason: "wrong-payer" };
   }
 
   return { ok: true };
@@ -427,9 +437,10 @@ async function readPaymentState(
 }
 
 function verifyPaymentState(
-  paymentRequest: D402PaymentRequest,
   proof: DPaymentProof,
   paymentState: PaymentState,
+  paymentId: Hex32,
+  payerAddress: Address,
   confirmations?: number,
 ): PaymentVerificationResult {
   const state = toD402PaymentState(paymentState);
@@ -443,25 +454,27 @@ function verifyPaymentState(
   return {
     ok: true,
     payment: buildVerifiedPayment(
-      paymentRequest,
       proof,
       state,
+      paymentId,
+      payerAddress,
       confirmations,
     ),
   };
 }
 
 function buildVerifiedPayment(
-  paymentRequest: D402PaymentRequest,
   proof: DPaymentProof,
   state: D402PaymentState,
+  paymentId: Hex32,
+  payerAddress: Address,
   confirmations?: number,
 ): VerifiedPayment {
   return {
-    paymentId: paymentRequest.paymentId,
+    paymentId,
     paymentAddress: proof.paymentAddress,
     txHash: proof.txHash,
-    payerAddress: proof.payerAddress,
+    payerAddress,
     state,
     ...(confirmations !== undefined ? { confirmations } : {}),
   };

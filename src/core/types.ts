@@ -2,7 +2,7 @@ export type Hex32 = `0x${string}`;
 export type Address = `0x${string}`;
 export type PaymentAddress = Address;
 export type DecimalString = `${bigint}`;
-export type D402Version = 3;
+export type D402Version = 0.3;
 
 export interface D402Versioned {
   version: D402Version;
@@ -40,7 +40,7 @@ export interface D402PaymentRequest extends D402Versioned {
 export interface DPaymentProof extends D402Versioned {
   paymentAddress: PaymentAddress;
   txHash: Hex32;
-  txNonce: DecimalString;
+  paymentSalt: Hex32;
 }
 
 export interface D402PaymentProof {

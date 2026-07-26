@@ -8,7 +8,7 @@ export function parseDPaymentProof(proof: unknown): DPaymentProof {
     version: parsed.version,
     paymentAddress: parsed.paymentAddress,
     txHash: parsed.txHash,
-    txNonce: parsed.txNonce,
+    paymentSalt: parsed.paymentSalt,
   };
 }
 

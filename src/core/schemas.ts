@@ -88,7 +88,7 @@ export const dPaymentProofSchema = z
     version: z.literal(D402_VERSION),
     paymentAddress: addressSchema,
     txHash: hex32Schema,
-    txNonce: decimalStringSchema,
+    paymentSalt: hex32Schema,
   })
   .strict();
 

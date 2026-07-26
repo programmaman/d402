@@ -1,8 +1,10 @@
 import type {
+  Address,
   DPaymentProof,
   D402BlockReference,
   D402PaymentRequest,
   D402PaymentTerms,
+  Hex32,
   PaymentAddress,
 } from "../core/index.js";
 import type { AbstractProvider, Signer } from "ethers";
@@ -60,7 +62,6 @@ export type D402PaymentVerificationFailureReason =
   | "wrong-token"
   | "wrong-amount"
   | "wrong-settlement-time"
-  | "wrong-payer"
   | "insufficient-confirmations"
   | "failed-transaction"
   | "missing-created-event"
@@ -90,10 +91,10 @@ export interface PaymentRequiredReason {
 export type PaymentState = "funded" | "settled" | "disputed" | "resolved";
 
 export interface VerifiedPayment {
-  paymentId: D402PaymentRequest["paymentId"];
+  paymentId: Hex32;
   paymentAddress: PaymentAddress;
   txHash: DPaymentProof["txHash"];
-  payerAddress: DPaymentProof["payerAddress"];
+  payerAddress: Address;
   state: PaymentState;
   confirmations?: number;
 }
