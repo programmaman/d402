@@ -118,19 +118,6 @@ export interface PaymentAppealResult extends PaymentActionResult {
   appealPeriod: PaymentAppealPeriod;
 }
 
-export interface PaymentActions {
-  settlePayment: (paymentAddress: PaymentAddress) => Promise<PaymentActionResult>;
-  refundPayment: (paymentAddress: PaymentAddress) => Promise<PaymentActionResult>;
-  consumePayment: (paymentAddress: PaymentAddress) => Promise<PaymentActionResult>;
-  submitEvidence: (
-    paymentAddress: PaymentAddress,
-    evidenceUri: string,
-  ) => Promise<PaymentActionResult>;
-  appealPayment: (
-    paymentAddress: PaymentAddress,
-  ) => Promise<PaymentAppealResult>;
-}
-
 export type PaymentVerificationResult =
   | { ok: true; payment: VerifiedPayment }
   | {

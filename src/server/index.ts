@@ -4,6 +4,7 @@ export {
   decodeD402PaymentProof,
 } from "./payment-proof.js";
 export { paymentActions } from "./payment-actions.js";
+export type { PaymentActions } from "./payment-actions.js";
 export {
   None,
   Once,
@@ -24,7 +25,6 @@ export type {
   PaymentActionResult,
   PaymentAppealPeriod,
   PaymentAppealResult,
-  PaymentActions,
   PaymentResourceResolver,
   PaymentState,
   PayableTerms,
