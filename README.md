@@ -55,13 +55,35 @@ const provider = new JsonRpcProvider(process.env.RPC_URL);
 const signer = new Wallet(process.env.PAYER_PRIVATE_KEY, provider);
 const client = await createD402Client({ provider, signer });
 
-const response = await client.fetch(
+const { response, payment } = await client.d402Fetch(
   "https://api.example.com/reports/monthly",
 );
+
+if (payment !== undefined) {
+  // Persist payment before using the response when delivery recovery matters.
+  await savePaymentAttempt(payment);
+}
 ```
 
 The client validates the challenge, creates the dPayment, and retries the
-original request with its payment proof.
+original request with its payment proof. `client.fetch()` remains available
+when only the `Response` is needed. Use `client.d402Fetch()` when payment
+attempt data must be retained for recovery; see the API reference for retry
+handling after a paid request fails.
+
+## Local policy and logging
+
+Pass `policy` to constrain unattended or user-approved payment execution.
+Policy configuration is validated when `createD402Client()` is called, before
+any provider or network work. Amount caps must be non-negative integers,
+chain IDs must be positive safe integers, and expiry/settlement windows must
+be non-negative safe integers. Resource regular expressions are evaluated
+without retaining mutable `lastIndex` state between requests.
+
+d402 is silent by default. Set `logger` on the client, server payment config,
+or direct dPayments executor to receive structured lifecycle records. Logger
+failures are intentionally ignored so observability cannot change payment
+behavior. See the [API reference](docs/api.md#logging) for the record shape.
 
 ## Payment identity
 

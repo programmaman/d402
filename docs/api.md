@@ -12,8 +12,9 @@ d402 splits responsibility cleanly:
 - server: verify the proof and run any configured consumption or lifecycle
   action before handing the verified payment to application code
 
-The client does not own recovery logic for a
-rejected response. Recovery is a server concern.
+The client exposes completed payment attempts so applications can persist and
+retry proof delivery after a client-side paid-request failure. Server-side
+fulfillment recovery remains a server concern.
 
 d402 handles the payment handshake and on-chain verification. Your app still
 owns the business decision after verification: what was purchased, whether the
@@ -70,12 +71,56 @@ other post-response recovery flows belong to the server side.
 import {
   createD402Client,
   D402PaymentAction,
+  D402PaymentError,
+  type D402Logger,
 } from "d402/client";
 ```
 
 ### `createD402Client(options)`
 
-Creates a client with a `fetch(input, init)` method.
+Creates a client with these request methods:
+
+- `fetch(input, init)`: a compatibility convenience that returns `Response`.
+- `d402Fetch(input, init)`: returns the HTTP response plus the payment attempt
+  when a payment was required.
+- `retry(payment, input, init)`: resends an existing payment proof. It validates
+  the request binding and never creates another payment.
+
+```ts
+interface D402FetchResponse {
+  response: Response;
+  payment?: D402PaymentAttempt;
+}
+
+interface D402PaymentAttempt {
+  paymentRequest: D402PaymentRequest;
+  payment: D402CreatedPayment;
+  proof: D402PaymentProof;
+}
+```
+
+Use `d402Fetch()` when a completed payment must be recoverable:
+
+```ts
+try {
+  const { response, payment } = await client.d402Fetch(url);
+  if (payment !== undefined) await savePaymentAttempt(payment);
+  return response;
+} catch (error) {
+  if (error instanceof D402PaymentError) {
+    await savePaymentAttempt(error.payment);
+    return (await client.retry(error.payment, url)).response;
+  }
+  throw error;
+}
+```
+
+`D402PaymentError` is thrown only after a payment and proof have been created.
+It exposes `payment`, the original `cause`, and `response` when a paid HTTP
+response was received before the failure. For example, a transport failure has
+no response; a settlement action failure does. `fetch()` throws the same error
+in this situation, but `d402Fetch()` is the API that returns payment data on a
+successful request.
 
 Important options:
 
@@ -90,6 +135,8 @@ Important options:
 - `onAccepted`: action after accepted protected response.
 - `onRejected`: escape hatch for unusual client-side behavior after a rejected response.
 - `executor`: custom payment executor for tests or alternate payment creation.
+- `logger`: optional structured record sink for payment execution. It is silent
+  by default, and exceptions or rejected promises from the logger are ignored.
 - `resource`: optional stable resource string or resolver. Defaults to the
   retried request URL and should match the server's resource configuration.
 
@@ -114,6 +161,11 @@ settlement time is too close to the current time; it is an optional payer-side
 safety policy, not a protocol requirement. Challenge expiration and
 resource/method binding are always checked, even when no policy is configured.
 
+The local configuration is checked when `createD402Client()` is constructed:
+`maxAmount` must be a non-negative integer, every `allowedChains` entry must
+be a positive safe integer, and both expiry and settlement windows must be
+non-negative safe integers. This happens before provider or network work.
+
 ### Client Actions
 
 ```ts
@@ -125,6 +177,28 @@ Accepted responses may `KeepOpen` or `Settle`.
 Rejected responses are typically kept open. If your app needs recovery after a
 rejected response, handle that on the server side. `onRejected` is an escape
 hatch, not a primary application flow.
+
+### Logging
+
+Both `d402/client` and `d402/server` export these types:
+
+```ts
+type D402Logger = (record: D402LogRecord) => void | Promise<void>;
+
+interface D402LogRecord {
+  level: "debug" | "info" | "error";
+  event: string;
+  message: string;
+  context?: Readonly<Record<string, unknown>>;
+}
+```
+
+The logger is a record sink rather than an adapter for a particular logging
+library. d402 does not write to the console when it is omitted. It catches
+both synchronous logger errors and rejected logger promises. Context is
+limited to lifecycle identifiers such as action, payment ID/address, wallet
+address, transaction hash, and safe error name/code/message; it excludes
+signed transactions, credentials, evidence URIs, and arbitrary error objects.
 
 ## `d402/server`
 
@@ -160,6 +234,8 @@ Important options:
 - `paymentConfig.settlementWindow`: derive settlement time from latest block timestamp.
 - `paymentConfig.settlementTimeUnixSec`: explicit settlement time.
 - `paymentConfig.cache`: latest-block cache for settlement-window derivation.
+- `paymentConfig.logger`: optional structured record sink for server payment
+  actions. It has the same failure-isolated behavior as the client logger.
 - `terms`: static terms or a function of the request.
 - `handler`: protected handler.
 - `verify`: optional custom verifier.
@@ -200,6 +276,10 @@ await actions.appealPayment(paymentAddress);
 The configuration requires `provider` and `signer`; `confirmations` is
 optional. Reuse the returned object for payable consumers, lifecycle workers,
 and recovery flows that use that configuration.
+
+`paymentActions()` currently creates an independent action object for each
+call. Retain and share that object where one configured signer is used by
+routes and workers.
 
 ## Custom Verifiers and Consumers
 

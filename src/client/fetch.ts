@@ -1,10 +1,16 @@
 import type { AbstractProvider } from "ethers";
 
 import { D402_PAYMENT_PROOF_HEADER } from "../server/constants.js";
-import { D402ConfigurationError } from "./errors.js";
+import {
+  D402ConfigurationError,
+  D402PaymentError,
+} from "./errors.js";
 import { createDPaymentsExecutor } from "./payment-executor.js";
 import { buildDPaymentProof, encodeD402PaymentProof } from "./payment-proof.js";
-import { validatePaymentPolicy } from "./policy.js";
+import {
+  validatePaymentPolicy,
+  validatePolicyConfiguration,
+} from "./policy.js";
 import {
   assertNoExistingProof,
   parsePaymentRequiredResponse,
@@ -19,8 +25,11 @@ import { getConnectedChainId } from "../runtime/chain.js";
 import type {
   CreateD402ClientOptions,
   D402Client,
+  D402FetchResponse,
+  D402PaymentAttempt,
   D402ResponseValidator,
 } from "./types.js";
+import type { D402PaymentProof } from "../core/index.js";
 import {
   D402DefaultPaymentActions,
   D402DefaultResponseValidator,
@@ -29,6 +38,10 @@ import {
 export function createD402Client(
   options: CreateD402ClientOptions,
 ): Promise<D402Client> {
+  if (options.policy !== undefined) {
+    validatePolicyConfiguration(options.policy);
+  }
+
   const fetchImpl = resolveFetch(options.fetch);
   const proofHeaderName = options.proofHeaderName ?? D402_PAYMENT_PROOF_HEADER;
   const provider = (
@@ -45,14 +58,49 @@ export function createD402Client(
   const onAccepted = options.onAccepted ?? D402DefaultPaymentActions.OnAccepted;
   const onRejected = options.onRejected ?? D402DefaultPaymentActions.OnRejected;
 
-  return Promise.resolve({
-    async fetch(input, init) {
+  async function sendPaidRequest(
+    payment: D402PaymentAttempt,
+    request: Request,
+  ): Promise<D402FetchResponse> {
+    let response: Response | undefined;
+
+    try {
+      const paidRequest = withPaymentProofHeader(
+        request,
+        proofHeaderName,
+        encodeD402PaymentProof(payment.proof),
+      );
+      response = await fetchImpl(paidRequest);
+      const responseDecision = await onResponse.validate({
+        paymentRequest: payment.paymentRequest,
+        payment: payment.payment,
+        response: response.clone(),
+      });
+
+      await resolvePaymentAfterAcceptance({
+        payment: payment.payment,
+        responseDecision,
+        executor,
+        onAccepted,
+        onRejected,
+      });
+
+      return { response, payment };
+    } catch (cause) {
+      throw new D402PaymentError({ payment, response, cause });
+    }
+  }
+
+  async function d402Fetch(
+    input: RequestInfo | URL,
+    init?: RequestInit,
+  ): Promise<D402FetchResponse> {
       const prepared = prepareReusableRequest(input, init);
       assertNoExistingProof(prepared.initial, proofHeaderName);
 
       const unpaidResponse = await fetchImpl(prepared.initial);
       if (unpaidResponse.status !== 402) {
-        return unpaidResponse;
+        return { response: unpaidResponse };
       }
 
       const challenge = await parsePaymentRequiredResponse(unpaidResponse);
@@ -85,34 +133,48 @@ export function createD402Client(
         txHash: payment.txHash,
         paymentSalt: payment.paymentSalt,
       });
-      const paidRequest = withPaymentProofHeader(
-        prepared.retry,
-        proofHeaderName,
-        encodeD402PaymentProof({
-          dPaymentProof,
+      const proof: D402PaymentProof = {
+        dPaymentProof,
           ...(challenge.settlementReference !== undefined
             ? { settlementReference: challenge.settlementReference }
             : {}),
-        }),
-      );
-
-      const paidResponse = await fetchImpl(paidRequest);
-      const responseDecision = await onResponse.validate({
+      };
+      const paymentAttempt: D402PaymentAttempt = {
         paymentRequest,
         payment,
-        response: paidResponse.clone(),
-      });
+        proof,
+      };
 
-      await resolvePaymentAfterAcceptance({
-        payment,
-        responseDecision,
-        executor,
-        onAccepted,
-        onRejected,
-      });
+      return sendPaidRequest(paymentAttempt, prepared.retry);
+  }
 
-      return paidResponse;
+  async function retry(
+    payment: D402PaymentAttempt,
+    input: RequestInfo | URL,
+    init?: RequestInit,
+  ): Promise<D402FetchResponse> {
+    const prepared = prepareReusableRequest(input, init);
+    assertNoExistingProof(prepared.initial, proofHeaderName);
+    const expectedResource = await resolveClientResource(
+      prepared.retry,
+      options.resource,
+    );
+    validatePaymentRequestBinding({
+      paymentRequest: payment.paymentRequest,
+      request: prepared.retry,
+      expectedResource,
+    });
+    validatePaymentRequestFreshness(payment.paymentRequest);
+
+    return sendPaidRequest(payment, prepared.retry);
+  }
+
+  return Promise.resolve({
+    async fetch(input, init) {
+      return (await d402Fetch(input, init)).response;
     },
+    d402Fetch,
+    retry,
   });
 }
 

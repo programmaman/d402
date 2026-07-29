@@ -201,6 +201,11 @@ The proof does not claim `paymentId` or `payerAddress`. The server authenticates
 the actual payer from the trusted factory's `PaymentCreated.creator` and derives
 the expected ID from the request, authenticated creator, and proof salt.
 
+When a challenge carries a `settlementReference`, the client echoes that exact
+reference in its proof. Verification resolves the referenced block by hash and
+rejects a missing or mismatched reference; it does not substitute a newer block
+or reinterpret the settlement time.
+
 The server checks that:
 
 - the proof parses and its salt derives the expected payment ID

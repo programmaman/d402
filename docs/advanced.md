@@ -347,3 +347,24 @@ await actions.appealPayment(paymentAddress);
 
 Pass the same object to `Once(actions)` when a payable route needs canonical
 on-chain one-shot consumption.
+
+## Structured lifecycle logging
+
+d402 does not log by default. Supply a `logger` record sink when a client or
+server worker needs payment lifecycle visibility:
+
+```ts
+import type { D402Logger } from "d402/server";
+
+const logger: D402Logger = (record) => {
+  applicationLogger[record.level](record.context, record.message);
+};
+
+const actions = paymentActions({ provider, signer, logger });
+```
+
+The same option is accepted by `createD402Client()` and
+`createDPaymentsExecutor()`. d402 isolates logging from payment behavior:
+thrown logger errors and rejected logger promises are ignored. Records include
+stable event names and shallow safe context, never signed transaction payloads,
+credentials, evidence URIs, or arbitrary error properties.

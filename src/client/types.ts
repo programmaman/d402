@@ -1,10 +1,37 @@
 import type { AbstractProvider, Signer } from "ethers";
 
-import type { Address, D402PaymentRequest, Hex32 } from "../core/index.js";
+import type {
+  Address,
+  D402PaymentProof,
+  D402PaymentRequest,
+  Hex32,
+} from "../core/index.js";
 import type { D402Logger } from "../runtime/logger.js";
 
 export interface D402Client {
   fetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response>;
+  d402Fetch(
+    input: RequestInfo | URL,
+    init?: RequestInit,
+  ): Promise<D402FetchResponse>;
+  retry(
+    payment: D402PaymentAttempt,
+    input: RequestInfo | URL,
+    init?: RequestInit,
+  ): Promise<D402FetchResponse>;
+}
+
+/** A completed payment and its proof, suitable for persistence and retry. */
+export interface D402PaymentAttempt {
+  readonly paymentRequest: D402PaymentRequest;
+  readonly payment: D402CreatedPayment;
+  readonly proof: D402PaymentProof;
+}
+
+/** The HTTP response and, when payment was required, the payment used for it. */
+export interface D402FetchResponse {
+  readonly response: Response;
+  readonly payment?: D402PaymentAttempt;
 }
 
 export type D402ClientResourceResolver =

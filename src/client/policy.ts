@@ -93,7 +93,19 @@ export function validatePaymentPolicy(input: {
   }
 }
 
-function validatePolicyConfiguration(policy: D402ClientPolicy): void {
+export function validatePolicyConfiguration(policy: D402ClientPolicy): void {
+  if (
+    policy.maxExpiryWindowSec !== undefined &&
+    (
+      !Number.isSafeInteger(policy.maxExpiryWindowSec) ||
+      policy.maxExpiryWindowSec < 0
+    )
+  ) {
+    throw new D402PolicyViolationError(
+      `maxExpiryWindowSec must be a non-negative safe integer, got ${policy.maxExpiryWindowSec}.`,
+    );
+  }
+
   if (
     policy.minSettlementWindowSec !== undefined &&
     (!Number.isSafeInteger(policy.minSettlementWindowSec) ||
@@ -101,6 +113,34 @@ function validatePolicyConfiguration(policy: D402ClientPolicy): void {
   ) {
     throw new D402PolicyViolationError(
       `minSettlementWindowSec must be a non-negative safe integer, got ${policy.minSettlementWindowSec}.`,
+    );
+  }
+
+  if (policy.maxAmount !== undefined) {
+    let maxAmount: bigint;
+    try {
+      maxAmount = BigInt(policy.maxAmount);
+    } catch {
+      throw new D402PolicyViolationError(
+        `maxAmount must be a non-negative integer, got ${policy.maxAmount}.`,
+      );
+    }
+
+    if (maxAmount < 0n) {
+      throw new D402PolicyViolationError(
+        `maxAmount must be a non-negative integer, got ${policy.maxAmount}.`,
+      );
+    }
+  }
+
+  if (
+    policy.allowedChains !== undefined &&
+    policy.allowedChains.some(
+      (chainId) => !Number.isSafeInteger(chainId) || chainId < 1,
+    )
+  ) {
+    throw new D402PolicyViolationError(
+      "allowedChains entries must be positive safe integers.",
     );
   }
 }
@@ -128,6 +168,17 @@ function matchesAllowedResource(
       return allowed === resource;
     }
 
-    return allowed.test(resource);
+    return matchesRegExp(allowed, resource);
   });
+}
+
+function matchesRegExp(pattern: RegExp, resource: string): boolean {
+  const previous = pattern.lastIndex;
+  pattern.lastIndex = 0;
+
+  try {
+    return pattern.test(resource);
+  } finally {
+    pattern.lastIndex = previous;
+  }
 }

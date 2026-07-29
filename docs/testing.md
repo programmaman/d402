@@ -45,6 +45,14 @@ node --input-type=module -e "await Promise.all(['d402','d402/core','d402/client'
 
 This catches missing build output and broken package export mappings.
 
+## Behavior to Cover in an Integration
+
+For a payment client integration, test malformed local policy at construction
+time, before any provider or network request. Include a stateful (`g` or `y`)
+resource regular expression if policy is reused: d402 restores its `lastIndex`
+so matching is deterministic. If you configure a logger, also verify that a
+throwing or rejected logger does not alter the payment result.
+
 ## Check an Example
 
 The projects under `examples/` exercise the public package API. Install and

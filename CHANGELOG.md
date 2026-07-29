@@ -2,6 +2,17 @@
 
 All notable public changes to d402 are documented here.
 
+## Unreleased
+
+- Client policy configuration is now validated when a client is constructed.
+  Amount, chain ID, and time-window limits reject malformed local values before
+  provider or network work, and stateful resource regular expressions match
+  deterministically.
+- Added an optional, default-silent structured logger record sink for client
+  and server payment actions. Logger failures are isolated from payment flows.
+- Removed the deprecated `acceptSuccessfulResponse`,
+  `D402ResponseValidationError`, and `paymentProofSchema` exports.
+
 ## 0.3.0-rc.0 - 2026-07-28
 
 This prerelease contains the intended protocol and API surface for V0.3. The
