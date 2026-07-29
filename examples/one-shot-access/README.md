@@ -1,8 +1,10 @@
 # One-Shot Access Example
 
 This example shows how to consume a verified payment on-chain before serving a
-download. `consumer: Once(...)` provides an atomic replay lock without an
-application database, Redis lock, sticky session, or shared cache.
+download. The server creates `actions = paymentActions({ provider, signer })`
+and passes them to `consumer: Once(actions)`. This provides an atomic replay
+lock without an application database, Redis lock, sticky session, or shared
+cache.
 
 ## Setup
 

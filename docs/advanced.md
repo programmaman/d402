@@ -60,7 +60,8 @@ order ID in `agreement.id`.
 
 ## Datastore-Free One-Shot Consumption
 
-Use `Once` when one payment should authorize at most one operation:
+Use `Once` when one payment should authorize at most one operation. Construct
+the server payment actions once and inject them into the consumer:
 
 ```ts
 import { Once, payable, paymentActions } from "d402/server";
@@ -332,7 +333,7 @@ await response.wait();
 ```
 
 The d402 server action helper also exposes common server-side lifecycle actions
-for workers and recovery flows:
+for consumers, workers, and recovery flows:
 
 ```ts
 const actions = paymentActions({ provider, signer });
@@ -343,3 +344,6 @@ await actions.consumePayment(paymentAddress);
 await actions.submitEvidence(paymentAddress, "ipfs://QmEvidence");
 await actions.appealPayment(paymentAddress);
 ```
+
+Pass the same object to `Once(actions)` when a payable route needs canonical
+on-chain one-shot consumption.

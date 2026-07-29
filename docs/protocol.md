@@ -251,7 +251,8 @@ submit dispute evidence should use
 [`@rakelabs/evidence-publisher`](https://www.npmjs.com/package/@rakelabs/evidence-publisher)
 or provide an equivalent evidence-storage integration. The publisher produces
 the evidence manifest and a content-addressed URI; d402 submits that URI
-on-chain through `paymentActions().submitEvidence(paymentAddress, evidenceUri)`.
+on-chain through `actions.submitEvidence(paymentAddress, evidenceUri)`, where
+`actions` is returned by `paymentActions({ provider, signer })`.
 
 This keeps IPFS and pinning-provider concerns out of the payment SDK while
 allowing applications to publish evidence before submitting its URI. Until a

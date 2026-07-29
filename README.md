@@ -124,7 +124,8 @@ as an opaque, trimmed string.
 ## Reusable and single-use payments
 
 Routes are reusable by default. To atomically claim a verified payment before
-running the handler:
+running the handler, create the server payment actions once and pass them to
+`Once`:
 
 ```ts
 import { Once, payable, paymentActions } from "d402/server";
@@ -138,6 +139,9 @@ const route = payable({
   handler,
 });
 ```
+
+The same `actions` object exposes settlement, refund, evidence, and appeal
+methods for server lifecycle workers.
 
 `Once` provides an at-most-once authorization claim. It does not guarantee
 exactly-once handler completion: if the process crashes after consumption,

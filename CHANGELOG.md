@@ -40,6 +40,9 @@ release verification.
 
 - Added matching client and server resource resolvers for reverse proxies,
   gateways, and coordinated application namespaces.
+- `paymentActions(config)` returns the reusable server `PaymentActions`
+  interface, and `Once(actions)` receives that object instead of constructing
+  payment actions from provider and signer options.
 - Payment-request expiry is enforced even when client policy is omitted.
 - A complete custom payment executor can run without an unused ethers provider
   when chain-dependent client policy is disabled.

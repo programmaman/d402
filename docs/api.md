@@ -183,9 +183,9 @@ dPayment events, reads live payment state, and checks the request/proof match.
 Its `VerifiedPayment` result includes observed confirmations and creation block
 number/hash. These fields are optional for custom verifiers.
 
-### `paymentActions(options)`
+### `paymentActions(config)`
 
-Creates server-side lifecycle action helpers for settlement and recovery jobs:
+Creates a `PaymentActions` object containing the server-side lifecycle methods:
 
 ```ts
 const actions = paymentActions({ provider, signer });
@@ -197,9 +197,9 @@ await actions.submitEvidence(paymentAddress, "ipfs://QmEvidence");
 await actions.appealPayment(paymentAddress);
 ```
 
-Create one actions instance per signing account and reuse it anywhere that
-account performs server payment actions. Each instance owns that account's
-nonce manager and serialized broadcast queue.
+The configuration requires `provider` and `signer`; `confirmations` is
+optional. Reuse the returned object for payable consumers, lifecycle workers,
+and recovery flows that use that configuration.
 
 ## Custom Verifiers and Consumers
 
@@ -221,7 +221,9 @@ const verify: PaymentVerifier = async (input) => {
 };
 ```
 
-Use `Once(actions)` for canonical on-chain consumption:
+`Once` accepts any object implementing the `consumePayment` portion of
+`PaymentActions`. Use the concrete actions object for canonical on-chain
+consumption:
 
 ```ts
 const actions = paymentActions({ provider, signer });
