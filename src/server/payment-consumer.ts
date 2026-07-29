@@ -1,7 +1,7 @@
 import { decodeDPaymentError } from "@rakelabs/dpayments-sdk";
 
-import type { PaymentActions } from "./payment-actions.js";
 import type {
+  PaymentActions,
   PaymentVerificationResult,
   VerifiedPayment,
 } from "./types.js";
