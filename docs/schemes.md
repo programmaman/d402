@@ -52,7 +52,9 @@ Routes are reusable by default. Add `Once` only when a payment may authorize at
 most one protected operation:
 
 ```ts
-import { Once, payable } from "d402/server";
+import { Once, payable, paymentActions } from "d402/server";
+
+const actions = paymentActions({ provider, signer: payee });
 
 const route = payable({
   paymentConfig: {
@@ -60,7 +62,7 @@ const route = payable({
     signer: payee,
     identifier: "client",
   },
-  consumer: Once({ provider, signer: payee }),
+  consumer: Once(actions),
   terms,
   handler,
 });

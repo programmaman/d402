@@ -127,12 +127,14 @@ Routes are reusable by default. To atomically claim a verified payment before
 running the handler:
 
 ```ts
-import { Once, payable } from "d402/server";
+import { Once, payable, paymentActions } from "d402/server";
+
+const actions = paymentActions({ provider, signer: payee });
 
 const route = payable({
   paymentConfig: { provider, signer: payee },
   terms,
-  consumer: Once({ provider, signer: payee }),
+  consumer: Once(actions),
   handler,
 });
 ```

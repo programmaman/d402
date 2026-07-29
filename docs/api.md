@@ -164,7 +164,8 @@ Important options:
 - `handler`: protected handler.
 - `verify`: optional custom verifier.
 - `consumer`: optional payment-consumption policy. Use
-  `Once({ provider, signer })` to consume a verified payment before the
+  `Once(actions)` with a shared `paymentActions({ provider, signer })` instance
+  to consume a verified payment before the
   protected handler runs, or `None` to state the reusable policy explicitly.
   Routes are reusable by default. `Once` is an at-most-once authorization
   claim, not an exactly-once handler or delivery guarantee.
@@ -196,6 +197,10 @@ await actions.submitEvidence(paymentAddress, "ipfs://QmEvidence");
 await actions.appealPayment(paymentAddress);
 ```
 
+Create one actions instance per signing account and reuse it anywhere that
+account performs server payment actions. Each instance owns that account's
+nonce manager and serialized broadcast queue.
+
 ## Custom Verifiers and Consumers
 
 Use a custom verifier to authenticate payments through alternate chain
@@ -216,8 +221,14 @@ const verify: PaymentVerifier = async (input) => {
 };
 ```
 
-Use `Once({ provider, signer })` for canonical on-chain consumption. A custom
-database consumer must claim the payment atomically:
+Use `Once(actions)` for canonical on-chain consumption:
+
+```ts
+const actions = paymentActions({ provider, signer });
+const consumer = Once(actions);
+```
+
+A custom database consumer must claim the payment atomically:
 
 ```ts
 import type { PaymentConsumer } from "d402/server";

@@ -63,7 +63,9 @@ order ID in `agreement.id`.
 Use `Once` when one payment should authorize at most one operation:
 
 ```ts
-import { Once, payable } from "d402/server";
+import { Once, payable, paymentActions } from "d402/server";
+
+const actions = paymentActions({ provider, signer: payee });
 
 const route = payable({
   paymentConfig: {
@@ -71,10 +73,7 @@ const route = payable({
     signer: payee,
     identifier: "client",
   },
-  consumer: Once({
-    provider,
-    signer: payee,
-  }),
+  consumer: Once(actions),
   terms,
   handler: async () =>
     Response.json(await fulfillOnce()),
