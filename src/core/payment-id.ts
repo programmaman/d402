@@ -1,6 +1,7 @@
 import canonicalize from "canonicalize";
 import { keccak256, toUtf8Bytes } from "ethers";
 
+import { D402_CANONICAL_SALT } from "./constants.js";
 import { normalizePaymentRequest } from "./payment-request.js";
 import { addressSchema, hex32Schema } from "./schemas.js";
 import type {
@@ -28,6 +29,14 @@ export function derivePaymentId(
     && requestedPaymentSalt !== effectivePaymentSalt
   ) {
     throw new Error("paymentSalt does not match payment request");
+  }
+  if (
+    requestedPaymentSalt === undefined
+    && effectivePaymentSalt === D402_CANONICAL_SALT
+  ) {
+    throw new Error(
+      "client-identified payment cannot use the canonical salt",
+    );
   }
 
   const canonical = canonicalize({

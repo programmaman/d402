@@ -102,6 +102,8 @@ export interface VerifiedPayment {
   payerAddress: Address;
   state: PaymentState;
   confirmations?: number;
+  creationBlockNumber?: number;
+  creationBlockHash?: Hex32;
 }
 
 export interface PaymentActionResult {

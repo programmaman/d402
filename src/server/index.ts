@@ -1,5 +1,6 @@
 export { payable } from "./payable.js";
 export { createDPaymentsVerifier } from "./payment-verifier.js";
+export type { DPaymentsVerifierOptions } from "./payment-verifier.js";
 export {
   decodeD402PaymentProof,
 } from "./payment-proof.js";

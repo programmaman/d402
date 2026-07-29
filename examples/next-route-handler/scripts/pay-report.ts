@@ -14,7 +14,7 @@ const targetUrl = `${baseUrl}/api/reports/123`;
 const client = await createD402Client({
   provider,
   signer,
-  paymentConfirmations: 1,
+  confirmations: 1,
   policy: {
     allowedChains: [chainId],
     allowedPayees: [payeeAddress],
@@ -22,7 +22,6 @@ const client = await createD402Client({
     allowedResources: [new RegExp(`^${escapeRegExp(baseUrl)}/api/reports/[^/]+$`)],
     maxAmount: "1000000000000000",
     maxExpiryWindowSec: 300,
-    maxSettlementWindowSec: 3600,
     requireAgreementHash: true,
   },
 });

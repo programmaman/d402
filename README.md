@@ -1,22 +1,9 @@
-# d402 SDK
+# d402
 
-d402 is an HTTP 402 payment protocol backed by dPayment on-chain state.
-It supports EVM deployments on Gnosis and Ethereum.
-Servers publish payment terms in a `402 application/d402+json` response. Clients
-decide whether the terms are acceptable, create a dPayment, retry the
-request with a payment proof header, and receive the protected response after
-server verification.
-
-The package is split by role:
-
-- `d402/core` - shared request/proof parsing and terms hashing
-- `d402/client` - paying client and payment-proof retry flow
-- `d402/server` - payable routes, verification, and server-side actions
-- `d402/autosigner` - reserved entry point for future unattended payment flows
-
-See [why d402 is better suited for payment-gated HTTP resources than x402 or
-Visa Trusted Agent Protocol](docs/comparisons.md) for the protocol comparison
-and threat-model analysis.
+d402 turns HTTP `402 Payment Required` responses into verifiable
+[dPayments](https://www.npmjs.com/package/@rakelabs/dpayments-sdk). A server
+returns payment terms, a client creates the matching on-chain payment, and the
+server verifies the proof before running the protected handler.
 
 ## Install
 
@@ -24,15 +11,7 @@ and threat-model analysis.
 npm install d402 ethers
 ```
 
-You also need an RPC provider for the target chain and dPayment contracts
-available on that chain. d402 currently supports Gnosis and Ethereum. Native-token
-payments use `tokenAddress: null`; ERC-20 payments use the ERC-20 token address.
-
-## Protect An Order Payment Route
-
-Wrap `POST /orders/:orderId/pay` with `payable`. This example charges for an
-order that already has a durable business ID, so the same terms can be
-reconstructed when the client retries after paying.
+## Protect a resource
 
 ```ts
 import { JsonRpcProvider } from "ethers";
@@ -40,366 +19,150 @@ import { payable } from "d402/server";
 
 const provider = new JsonRpcProvider(process.env.RPC_URL);
 
-export const POST = payable({
+const paidReport = payable({
   paymentConfig: {
     provider,
     confirmations: 2,
   },
-
-  // Resolves whichever /orders/:orderId/pay route was requested.
-  terms: async (request) => {
-    const order = await orders.findByPaymentUrl(request.url);
-
-    if (!order || order.status !== "awaiting_payment") {
-      throw new Error("Order is not payable");
-    }
-
-    return {
-      chainId: 100,
-      payeeAddress: "0x2222222222222222222222222222222222222222",
-      tokenAddress: null,
-      netAmount: order.totalWei,
-      settlementTimeUnixSec: order.settlementTimeUnixSec,
-      agreement: {
-        id: `order:${order.id}`,
-      },
-      expiresAtUnixSec: Math.floor(Date.now() / 1000) + 300,
-    };
+  terms: {
+    chainId: 100,
+    payeeAddress: "0x2222222222222222222222222222222222222222",
+    tokenAddress: null,
+    netAmount: "1000000000000000",
+    settlementTimeUnixSec: "4102444800",
+    agreement: {
+      id: "report:monthly:v1",
+    },
+    expiresAtUnixSec: Math.floor(Date.now() / 1000) + 300,
   },
-
-  // Runs only after d402 verifies the on-chain payment.
-  handler: async (_request, context) => {
-    await orders.markPaidIfUnpaid(
-      context.paymentRequest.agreement.id,
-      context.payment?.paymentAddress,
-    );
-
-    return Response.json({
-      ok: true,
-      paymentId: context.paymentRequest.paymentId,
-      paymentAddress: context.payment?.paymentAddress,
-      state: context.payment?.state,
-    });
-  },
+  handler: (_request, context) =>
+    Response.json({
+      report: "protected data",
+      paymentId: context.payment.paymentId,
+    }),
 });
 ```
 
-The payment resource defaults to the incoming request URL and must match the
-URL being retried. Configure `paymentConfig.resource` only when the payment is
-for a different stable resource identifier. Put internal product IDs, order
-IDs, or version labels in `agreement.id`.
+`terms` may also be an async function of the incoming request.
 
-`agreement.id` identifies the agreement instance being paid for. For commerce
-routes, use the existing business identity, such as `order:${orderId}` or
-`subscription:${subscriptionId}`. For APIs, derive it from the protected
-resource, such as `report-access:v1:${reportId}`. The application can decide
-whether that payment is reusable or should mark the resource as fulfilled after
-verification. d402 does not generate a default agreement nonce.
-
-Payment creation and server verification default to one included block.
-The server may return `402` with an insufficient-confirmations reason until the
-payment reaches that threshold. Set `confirmations` explicitly when stronger
-finality is appropriate.
-
-If the app wants settlement timing relative to the latest block instead of a
-fixed timestamp, set `paymentConfig.settlementWindow` and omit
-`settlementTimeUnixSec`. d402 will derive the settlement time from the chain.
-
-## Pay a Protected API Resource
-
-The same client pays reports, data, and other protected API resources. The
-policy is the client's safety check: payment creation happens only after the
-server's payment request matches these limits.
+## Pay for a resource
 
 ```ts
 import { JsonRpcProvider, Wallet } from "ethers";
-import { createD402Client, D402PaymentAction } from "d402/client";
+import { createD402Client } from "d402/client";
 
 const provider = new JsonRpcProvider(process.env.RPC_URL);
 const signer = new Wallet(process.env.PAYER_PRIVATE_KEY, provider);
+const client = await createD402Client({ provider, signer });
+
+const response = await client.fetch(
+  "https://api.example.com/reports/monthly",
+);
+```
+
+The client validates the challenge, creates the dPayment, and retries the
+original request with its payment proof.
+
+## Payment identity
+
+d402 supports two existing server configurations.
+
+### Server identity
+
+This is the default:
+
+```ts
+paymentConfig: {
+  provider,
+  identifier: "server",
+}
+```
+
+ Identical terms and the same authenticated payer derive
+the same payment identity.
+
+### Client identity
+
+Use a fresh payment identity for each client payment:
+
+```ts
+paymentConfig: {
+  provider,
+  identifier: "client",
+}
+```
+
+The server omits the request salt. The standard client generates fresh
+32-byte entropy and carries it in the proof. Separate clients paying identical
+terms from the same payer therefore create independent payment identities.
+
+## Custom resource identity
+
+By default, both sides bind payment to the request URL. When a gateway,
+reverse proxy, or application namespace uses another stable identifier,
+configure the same resource on both sides:
+
+```ts
+const resource = "report:monthly:v1";
+
+const route = payable({
+  paymentConfig: { provider, resource },
+  terms,
+  handler,
+});
 
 const client = await createD402Client({
   provider,
   signer,
-  confirmations: 2,
-  policy: {
-    allowedChains: [100],
-    allowedPayees: ["0x2222222222222222222222222222222222222222"],
-    allowedTokens: [null],
-    allowedResources: [/^https:\/\/api\.example\.com\/reports\/[^/]+$/],
-    maxAmount: "10000",
-    maxExpiryWindowSec: 300,
-    minSettlementWindowSec: 60,
-    requireAgreementHash: true,
-  },
-  onAccepted: D402PaymentAction.KeepOpen,
+  resource,
 });
-
-const response = await client.fetch("https://api.example.com/reports/123");
-const body = await response.json();
 ```
 
-The same client call works for any report URL; the server decides the price and
-agreement from the requested resource.
+Both options also accept a resolver function. d402 treats the resolved resource
+as an opaque, trimmed string.
 
-The happy path is:
+## Reusable and single-use payments
 
-1. Send the original request.
-2. If the response is not `402`, return it unchanged.
-3. Parse the d402 payment request from the `402` response.
-4. Validate method, resource, chain, payee, token, amount, expiry, settlement,
-   and agreement policy.
-5. Create a dPayment.
-6. Retry the same request with `D402-Payment-Proof`.
-7. Return the protected response.
-
-## Store Payment Metadata And Settle Later
-
-In a real app, the server keeps a payment record for later settlement or refund
-handling, and the client either keeps the payment open or settles it after the
-response comes back.
-
-This route protects every report in `/reports/:id`, not just one fixed report.
+Routes are reusable by default. To atomically claim a verified payment before
+running the handler:
 
 ```ts
-import { JsonRpcProvider, Wallet } from "ethers";
-import { payable, paymentActions } from "d402/server";
+import { Once, payable } from "d402/server";
 
-const provider = new JsonRpcProvider(process.env.RPC_URL);
-const payee = new Wallet(process.env.PAYEE_PRIVATE_KEY, provider);
-
-type PaymentRecord = {
-  paymentId: string;
-  paymentAddress: `0x${string}`;
-  payerAddress: `0x${string}`;
-  state: string;
-  settledAt: Date | null;
-};
-
-const paymentStore = {
-  // Store the payment record when the protected response is generated.
-  async upsert(record: PaymentRecord) {
-    // Replace with your DB client: Prisma, SQL, Drizzle, etc.
-  },
-  // Return payments that are ready to be settled by a background worker.
-  async listReadyForSettlement() {
-    return [] as PaymentRecord[];
-  },
-  // Mark the payment as settled after the on-chain action succeeds.
-  async markSettled(paymentId: string, settledAt: Date) {
-    // Replace with an UPDATE in your DB.
-  },
-};
-
-export const GET = payable({
-  paymentConfig: {
-    provider,
-    settlementWindow: 3600,
-    confirmations: 2,
-  },
-  terms: async (request) => {
-    const report = await reports.findByUrl(request.url);
-
-    if (!report) {
-      throw new Error("Report not found");
-    }
-
-    return {
-      chainId: 100,
-      payeeAddress: payee.address,
-      tokenAddress: null,
-      netAmount: report.priceWei,
-      agreement: { id: `report-access:v1:${report.id}` },
-      expiresAtUnixSec: Math.floor(Date.now() / 1000) + 300,
-    };
-  },
-  handler: async (request, context) => {
-    const report = await reports.findByUrl(request.url);
-
-    if (!report) {
-      throw new Error("Report not found");
-    }
-
-    await paymentStore.upsert({
-      paymentId: context.paymentRequest.paymentId,
-      paymentAddress: context.payment?.paymentAddress as `0x${string}`,
-      payerAddress: context.payment?.payerAddress as `0x${string}`,
-      state: context.payment?.state ?? "open",
-      settledAt: null,
-    });
-
-    return Response.json({
-      report: report.id,
-      data: report.data,
-    });
-  },
-});
-
-async function settleReadyPayments() {
-  // Settle ready payments in a background job or queue worker.
-  const actions = paymentActions({
-    provider,
-    signer: payee,
-  });
-
-  for (const payment of await paymentStore.listReadyForSettlement()) {
-    if (payment.settledAt !== null) {
-      continue;
-    }
-
-    await actions.settlePayment(payment.paymentAddress);
-    await paymentStore.markSettled(payment.paymentId, new Date());
-  }
-}
-```
-
-That pattern is the common one: the payment opens the gate, the server records
-the on-chain identifiers, and a later worker settles or refunds based on your
-business rules. When you use `settlementWindow`, the server derives the
-settlement time from the latest block and the settlement job can act once that
-window has passed.
-
-d402 handles the payment handshake and verification. The app still owns the
-business layer around that verified payment: what it buys, whether it is
-reusable, how it is stored, and what later settlement or refund behavior should
-look like.
-
-Clients can also be configured to auto-settle after they inspect the protected
-response, or to keep the payment open. That lets the protocol support
-negotiation-style flows instead of only one-shot payment-and-finish
-interactions. Refunds are handled on the server side.
-
-## Add Custom Validation Or Refund Logic
-
-Start with the happy path. Add these hooks only when the app needs extra policy
-or recovery behavior.
-
-Use `onResponse` when the client must inspect the protected response before
-auto-settling a payment.
-
-```ts
-const client = await createD402Client({
-  provider,
-  signer,
-  onAccepted: D402PaymentAction.Settle,
-  onResponse: {
-    async validate({ response }) {
-      if (!response.ok) {
-        return { accepted: false, reason: `HTTP ${response.status}` };
-      }
-
-      const body = await response.clone().json();
-      return body.fulfilled === true
-        ? { accepted: true }
-        : { accepted: false, reason: "server did not fulfill request" };
-    },
-  },
+const route = payable({
+  paymentConfig: { provider, signer: payee },
+  terms,
+  consumer: Once({ provider, signer: payee }),
+  handler,
 });
 ```
 
-Use `paymentActions()` on the server side when a worker or recovery path needs
-to settle, refund, consume, submit evidence, or appeal a verified payment.
+`Once` provides an at-most-once authorization claim. It does not guarantee
+exactly-once handler completion: if the process crashes after consumption,
+application-owned idempotency or durable result storage must provide recovery.
 
-```ts
-import { paymentActions } from "d402/server";
+## Integration boundaries
 
-const actions = paymentActions({
-  provider,
-  signer: payeeSigner,
-  confirmations: 2,
-});
+Integrators can supply:
 
-await actions.refundPayment(paymentAddress);
-await actions.consumePayment(paymentAddress);
-```
+- Dynamic payment terms and resource resolvers.
+- A custom client payment executor.
+- A custom server payment verifier.
+- A custom payment consumer.
+- Custom payment-required and verification-error response builders.
+- Their own persistence, queues, caches, locks, and fulfillment model.
 
-### Publish Evidence
-
-d402 does not own evidence storage or IPFS pinning. Use the companion
-[`@rakelabs/evidence-publisher`](https://www.npmjs.com/package/@rakelabs/evidence-publisher)
-package to create and publish an evidence manifest, then submit the resulting
-URI through `paymentActions().submitEvidence()`:
-
-```ts
-import { createEvidencePublisher } from "@rakelabs/evidence-publisher";
-
-const publisher = await createEvidencePublisher();
-const evidence = await publisher.publish({
-  title: `d402 evidence for ${paymentId}`,
-  description: "Service was not delivered for the protected resource.",
-  attachment: {
-    bytes: evidenceBytes,
-    fileName: "evidence.json",
-    mediaType: "application/json",
-    fileTypeExtension: "json",
-  },
-});
-
-await actions.submitEvidence(paymentAddress, evidence.document.uri);
-```
-
-The publisher handles evidence packaging and storage. d402 remains storage
-agnostic and handles the payment and on-chain evidence-submission boundary.
-
-## Wire Format
-
-Servers return d402 payment terms with a structured JSON media type:
-
-For example, a report API can describe one protected report request like this:
-
-```http
-HTTP/1.1 402 Payment Required
-Content-Type: application/d402+json
-Cache-Control: no-store
-```
-
-```json
-{
-  "paymentRequest": {
-    "version": 2,
-    "resource": "https://api.example.com/reports/123",
-    "method": "GET",
-    "chainId": 100,
-    "payeeAddress": "0x2222222222222222222222222222222222222222",
-    "tokenAddress": null,
-    "netAmount": "10000",
-    "settlementTimeUnixSec": "4102444800",
-    "agreement": {
-      "id": "report-access:v1:123",
-      "hash": "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-      "uri": "ipfs://agreement"
-    },
-    "expiresAtUnixSec": 4102441200,
-    "termsHash": "0x...",
-    "paymentId": "0x..."
-  },
-  "reason": {
-    "code": "missing-proof",
-    "category": "proof",
-    "retryable": true,
-    "message": "Payment proof is required."
-  }
-}
-```
-
-Clients retry with:
-
-```http
-D402-Payment-Proof: <base64url-json-proof>
-```
-
-See [docs/protocol.md](docs/protocol.md) for the field-level protocol details.
-See [docs/disputes.md](docs/disputes.md) for the dispute lifecycle, evidence
-flow, appeals, and resolution responsibilities.
+These are application and deployment choices, not protocol requirements.
 
 ## Documentation
 
-- [Protocol](docs/protocol.md): payment request/proof format, status codes, and failure reasons
-- [Disputes](docs/disputes.md): dispute lifecycle, evidence, appeals, and resolution outcomes
-- [API reference](docs/api.md): exported functions, options, and types by entry point
-- [Signing modes](docs/signing.md): browser wallets, services, agents, and guardrails
-- [Advanced server patterns](docs/advanced.md): resource binding, one-shot consumption, reuse, settlement jobs
-- [Endpoint patterns](docs/endpoint-patterns.md): orders, reports, public APIs, jobs, subscriptions, metering, and async fulfillment
-- [Transaction-derived identity](docs/transaction-identity.md): proposed unique payment instances for anonymous and high-volume APIs
-- [Protocol comparisons](docs/comparisons.md): d402 compared with x402 and Visa Trusted Agent Protocol
-- [Runnable examples](examples/README.md): Express, Next.js, and one-shot access examples
+- [Protocol](docs/protocol.md)
+- [API reference](docs/api.md)
+- [Integration patterns](docs/schemes.md)
+- [Advanced server patterns](docs/advanced.md)
+- [Disputes](docs/disputes.md)
+- [Testing a clone](docs/testing.md)
+
+## License
+
+Apache-2.0

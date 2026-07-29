@@ -1,5 +1,8 @@
 export { createD402Client } from "./fetch.js";
 export { createDPaymentsExecutor } from "./payment-executor.js";
+export type {
+  CreateDPaymentsExecutorOptions,
+} from "./payment-executor.js";
 export { acceptSuccessfulResponse } from "./acceptance.js";
 export {
   buildDPaymentProof,
@@ -21,6 +24,7 @@ export type {
   CreateD402ClientOptions,
   D402Client,
   D402ClientPolicy,
+  D402ClientResourceResolver,
   D402CreatedPayment,
   D402PaymentActionResolution,
   D402PaymentActionResult,

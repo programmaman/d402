@@ -10,7 +10,7 @@ const protectReport = payable({
   paymentConfig: {
     provider,
     resource: (request) => request.url,
-    minConfirmations: 1,
+    confirmations: 1,
   },
   terms: (request) => {
     const url = new URL(request.url);
@@ -35,7 +35,7 @@ const protectReport = payable({
     return Response.json({
       ok: true,
       report: { id, title: `Report ${id}` },
-      paymentId: context.paymentRequest.paymentId,
+      paymentId: context.payment.paymentId,
     });
   },
 });

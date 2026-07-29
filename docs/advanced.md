@@ -1,8 +1,9 @@
 # Advanced d402 Server Patterns
 
 d402 verifies HTTP payment proofs and gives the app a verified payment context.
-Your app owns access policy, storage, scheduling, retries, and any chain reads
-beyond proof verification.
+Your app owns access policy, scheduling, retries, and any chain reads beyond
+proof verification. Application storage is optional when an endpoint only
+needs d402's on-chain one-shot authorization.
 
 That boundary is intentional. d402 proves that a payment matching the request
 was created and is currently usable. Your app still decides what entitlement
@@ -50,58 +51,165 @@ const route = payable({
 });
 ```
 
-The client requires the payment request resource to match the URL it retries.
-Use a stable public URL pattern and constrain it with client policy. If each
-request needs a distinct payment identity, put a stable request or order ID in
-`agreement.id`, such as `report-access:v1:${requestId}`. d402 does not generate
-a default agreement nonce.
+The client defaults to matching the URL it retries. When the server uses a
+custom identifier, pass the same string or resolver as the client's `resource`
+option. Use a stable public URL pattern or opaque application identifier and
+constrain it with client policy. If each request needs a distinct payment
+identity, use `paymentConfig.identifier: "client"` or put a stable request or
+order ID in `agreement.id`.
 
-## One-Shot Consumption
+## Datastore-Free One-Shot Consumption
 
-Use this when one payment should unlock exactly one operation.
+Use `Once` when one payment should authorize at most one operation:
 
 ```ts
+import { Once, payable } from "d402/server";
+
 const route = payable({
-  paymentConfig,
-  terms,
-  handler: async (_request, context) => {
-    if (!context.payment) {
-      return Response.json({ ok: false }, { status: 402 });
-    }
-
-    const consumptionKey = [
-      context.paymentRequest.chainId,
-      context.payment.paymentId,
-      context.payment.paymentAddress,
-      context.payment.txHash,
-    ].join(":");
-
-    const inserted = await db.consumedPayments.insertIfAbsent(consumptionKey);
-    if (!inserted) {
-      return Response.json(
-        { error: "payment-already-consumed" },
-        { status: 409 },
-      );
-    }
-
-    return Response.json(await fulfillOnce());
+  paymentConfig: {
+    provider,
+    signer: payee,
+    identifier: "client",
   },
+  consumer: Once({
+    provider,
+    signer: payee,
+  }),
+  terms,
+  handler: async () =>
+    Response.json(await fulfillOnce()),
 });
 ```
 
-The insert must be atomic. Two simultaneous requests with the same proof should
-not both pass.
+`payable()` verifies the proof and then consumes the payment on-chain before
+calling the handler. Only the payee can perform that transition. If two server
+instances receive the same proof concurrently, only one consumption
+transaction can succeed and only that instance reaches the handler.
 
-The important thing to persist is the verified payment identity, not the payer
-address by itself. A key built from `chainId`, `paymentId`, `paymentAddress`,
-and `txHash` is what prevents the same payment proof from unlocking the route
-twice. `payerAddress` is required proof data and is authenticated against the
-trusted factory event. Applications can use the verified value for app policy,
-audits, or account binding.
+The other request is rejected with `422 payment-already-consumed`. The replay
+lock therefore works across processes, containers, regions, restarts, and
+deployments without:
+
+- A consumed-payment database table;
+- Redis or another distributed lock;
+- Sticky sessions;
+- A shared in-memory cache;
+- Coordination between server replicas.
+
+This is a major distinction between payment identity and payment use.
+Verification proves that a payment exists for the declared terms. Consumption
+atomically claims that payment for fulfillment.
+
+`Once` works with both identity modes. Client identity is normally appropriate
+for anonymous pay-per-use endpoints because every purchase receives a fresh
+payment identity. Server identity is appropriate when the payment belongs to a
+stable invoice, order, or other agreement. After a server-identified payment is
+consumed, the same payer needs different hashed terms, such as a new
+`agreement.id`, to make a genuinely new purchase.
+
+### What `Once` does not provide
+
+An on-chain claim does not guarantee exactly-once handler completion. If the
+process crashes after consumption succeeds but before delivery completes, the
+payment remains consumed. Use durable application storage when the product
+needs operation recovery, result retrieval, accounting, or an audit trail.
+
+That storage is no longer the protocol replay lock. It records the business
+outcome associated with the verified payment:
+
+```ts
+handler: async (_request, context) => {
+  const result = await operations.createOrRecover({
+    paymentId: context.payment.paymentId,
+    paymentAddress: context.payment.paymentAddress,
+    payerAddress: context.payment.payerAddress,
+  });
+
+  return Response.json(result);
+}
+```
+
+`payerAddress` is not supplied by the proof. The verifier authenticates it from
+the trusted factory event and exposes it through `context.payment`.
+
+Consumption also does not settle the payment, reduce refund rights, restrict
+disputes, or bypass the arbiter. It records only that the payee claimed the
+payment for fulfillment.
+
+## Database-Backed Consumption
+
+`Once` is the canonical choice when the chain should be the shared source of
+truth. A database-backed `PaymentConsumer` is also valid when the application
+wants to own the replay policy.
+
+```ts
+import type { PaymentConsumer } from "d402/server";
+
+function DatabaseOnce(chainId: number): PaymentConsumer {
+  return {
+    async consume(payment) {
+      const inserted = await db.consumedPayments.insertIfAbsent({
+        chainId,
+        paymentId: payment.paymentId,
+        paymentAddress: payment.paymentAddress,
+        txHash: payment.txHash,
+      });
+
+      return inserted
+        ? { ok: true, payment }
+        : {
+            ok: false,
+            reason: "payment-already-consumed",
+          };
+    },
+  };
+}
+
+const route = payable({
+  paymentConfig,
+  consumer: DatabaseOnce(chainId),
+  terms,
+  handler,
+});
+```
+
+`insertIfAbsent` must be one atomic operation backed by a unique constraint.
+A read followed by a separate insert is unsafe because two replicas can both
+observe the payment as unused.
+
+The two approaches make different operational tradeoffs:
+
+| Consumer | Shared authority | Advantages | Costs |
+| --- | --- | --- | --- |
+| `Once` | The dPayment contract | No application datastore; coordinates every replica through chain state; survives application database loss | Requires a payee transaction, gas, and confirmation latency |
+| Database consumer | The integrator's database | No consumption transaction; can create an operation or outbox record atomically with the claim | Every replica must share a strongly consistent database; other deployments cannot observe the claim |
+| No consumer / `None` | None | Reusable access with no claim latency | The same proof may authorize repeated requests |
+
+A database consumer is useful when:
+
+- The product already requires a durable job or fulfillment record;
+- The claim and an application outbox record should be committed together;
+- Consumption latency or transaction cost is unacceptable;
+- The application needs a policy richer than a boolean, such as a quota.
+
+Canonical `Once` is useful when:
+
+- A payment must be globally consumed without shared application
+  infrastructure;
+- Multiple services or regions should agree from chain state alone;
+- The replay lock must survive loss or replacement of the application
+  datastore.
+
+Choose one authoritative replay lock deliberately. If the route uses `Once`
+and also stores an application record, treat the database as recovery and
+business state. There is no atomic transaction spanning the blockchain and the
+database, so the application must be able to reconcile a successful on-chain
+claim with a missing or incomplete application record.
 
 ## Reusable Access
 
-Do not add a consumption store when reuse is the product behavior.
+Omit `consumer` when reuse is the product behavior. Routes are reusable by
+default; `consumer: None` may state that policy explicitly.
 
 Good fits:
 

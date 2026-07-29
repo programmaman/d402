@@ -63,11 +63,6 @@ export function validatePaymentPolicy(input: {
   }
 
   const now = Math.floor(Date.now() / 1000);
-  if (paymentRequest.expiresAtUnixSec <= now) {
-    throw new D402PolicyViolationError(
-      `Payment request is expired: expiresAtUnixSec=${paymentRequest.expiresAtUnixSec}, now=${now}.`,
-    );
-  }
 
   if (
     policy.maxExpiryWindowSec !== undefined &&

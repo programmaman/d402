@@ -9,10 +9,10 @@ d402 splits responsibility cleanly:
 
 - client: evaluate the 402, create the payment, retry with proof, then keep the
   payment open or settle after the response
-- server: verify the proof, persist the payment record, and later settle,
-  refund, or handle evidence/appeals from the server signer
+- server: verify the proof and run any configured consumption or lifecycle
+  action before handing the verified payment to application code
 
-That split matters because the client does not own recovery logic for a
+The client does not own recovery logic for a
 rejected response. Recovery is a server concern.
 
 d402 handles the payment handshake and on-chain verification. Your app still
@@ -26,7 +26,7 @@ Shared protocol primitives.
 
 ```ts
 import {
-  hashPaymentTerms,
+  derivePaymentId,
   parseDPaymentProof,
   parseD402PaymentProof,
   parsePaymentRequest,
@@ -35,7 +35,8 @@ import {
 
 Exports:
 
-- `hashPaymentTerms(terms)`: returns the deterministic `termsHash`.
+- `derivePaymentId(request, payerAddress, paymentSalt)`: derives the v0.3
+  identity after strict normalization and salt-agreement checks.
 - `parsePaymentRequest(value)`: validates and normalizes wire payment requests.
 - `parseDPaymentProof(value)`: validates and normalizes an underlying dPayment proof.
 - `parseD402PaymentProof(value)`: validates and normalizes a complete d402 payment proof.
@@ -78,7 +79,8 @@ Creates a client with a `fetch(input, init)` method.
 
 Important options:
 
-- `provider`: ethers provider used for chain/policy validation.
+- `provider`: ethers provider used by the default executor and chain policy.
+  It is optional when a complete custom executor is supplied without policy.
 - `signer`: ethers signer used to create dPayment transactions.
 - `fetch`: optional fetch implementation. Defaults to global `fetch`.
 - `proofHeaderName`: optional proof header override. Defaults to `D402-Payment-Proof`.
@@ -88,6 +90,8 @@ Important options:
 - `onAccepted`: action after accepted protected response.
 - `onRejected`: escape hatch for unusual client-side behavior after a rejected response.
 - `executor`: custom payment executor for tests or alternate payment creation.
+- `resource`: optional stable resource string or resolver. Defaults to the
+  retried request URL and should match the server's resource configuration.
 
 ### Client Policy
 
@@ -107,7 +111,8 @@ interface D402ClientPolicy {
 Policy is checked before payment creation. Use it for both user-approved and
 unattended signers. `minSettlementWindowSec` rejects terms whose absolute
 settlement time is too close to the current time; it is an optional payer-side
-safety policy, not a protocol requirement.
+safety policy, not a protocol requirement. Challenge expiration and
+resource/method binding are always checked, even when no policy is configured.
 
 ### Client Actions
 
@@ -128,7 +133,6 @@ Server-side payable routes and verification.
 Server responsibility:
 
 - verify payment proofs and on-chain state
-- persist payment records for later settlement or refund handling
 - run settlement, refund, consumption, evidence, or appeal actions with a server signer
 
 ```ts
@@ -162,18 +166,21 @@ Important options:
 - `consumer`: optional payment-consumption policy. Use
   `Once({ provider, signer })` to consume a verified payment before the
   protected handler runs, or `None` to state the reusable policy explicitly.
-  Routes are reusable by default.
+  Routes are reusable by default. `Once` is an at-most-once authorization
+  claim, not an exactly-once handler or delivery guarantee.
 - `proofHeaderName`: optional proof header override.
 - `buildPaymentRequiredResponse`: optional 402 response builder.
 
-The resource defaults to the incoming request URL and must match the URL the
-client retries. Configure `paymentConfig.resource` only when the payment is
-for another stable resource identifier.
+The resource defaults to the incoming request URL. When using another stable
+identifier, configure `paymentConfig.resource` on the server and `resource` on
+the client to resolve the same opaque string.
 
 ### `createDPaymentsVerifier(options)`
 
 Creates the default on-chain verifier. It reads transaction receipts, decodes
 dPayment events, reads live payment state, and checks the request/proof match.
+Its `VerifiedPayment` result includes observed confirmations and creation block
+number/hash. These fields are optional for custom verifiers.
 
 ### `paymentActions(options)`
 
@@ -189,10 +196,11 @@ await actions.submitEvidence(paymentAddress, "ipfs://QmEvidence");
 await actions.appealPayment(paymentAddress);
 ```
 
-## Custom Verifiers
+## Custom Verifiers and Consumers
 
-Use a custom verifier to add app policy such as one-shot consumption,
-account binding, or allowlists.
+Use a custom verifier to authenticate payments through alternate chain
+indexing or to add verification policy. Use `PaymentConsumer` for single-use or
+other post-verification authorization policies.
 
 ```ts
 const baseVerifier = createDPaymentsVerifier({ provider, confirmations: 2 });
@@ -203,14 +211,42 @@ const verify: PaymentVerifier = async (input) => {
     return result;
   }
 
-  const consumed = await db.payments.wasConsumed(input.dPaymentProof.paymentAddress);
-  if (consumed) {
-    return { ok: false, reason: "payment-already-consumed" };
-  }
-
+  await enforceAccountPolicy(result.payment);
   return result;
 };
 ```
+
+Use `Once({ provider, signer })` for canonical on-chain consumption. A custom
+database consumer must claim the payment atomically:
+
+```ts
+import type { PaymentConsumer } from "d402/server";
+
+const databaseOnce: PaymentConsumer = {
+  async consume(payment) {
+    const inserted = await db.consumedPayments.insertIfAbsent({
+      chainId,
+      paymentId: payment.paymentId,
+      paymentAddress: payment.paymentAddress,
+    });
+
+    return inserted
+      ? { ok: true, payment }
+      : { ok: false, reason: "payment-already-consumed" };
+  },
+};
+
+const route = payable({
+  paymentConfig,
+  verify,
+  consumer: databaseOnce,
+  terms,
+  handler,
+});
+```
+
+Do not implement consumption as a verifier read followed by a later write.
+That check is not atomic and permits concurrent replay.
 
 ## `d402/autosigner`
 

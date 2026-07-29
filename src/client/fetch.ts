@@ -9,7 +9,9 @@ import {
   assertNoExistingProof,
   parsePaymentRequiredResponse,
   prepareReusableRequest,
+  resolveClientResource,
   validatePaymentRequestBinding,
+  validatePaymentRequestFreshness,
   withPaymentProofHeader,
 } from "./request.js";
 import { resolvePaymentAfterAcceptance } from "./resolution.js";
@@ -29,9 +31,14 @@ export function createD402Client(
 ): Promise<D402Client> {
   const fetchImpl = resolveFetch(options.fetch);
   const proofHeaderName = options.proofHeaderName ?? D402_PAYMENT_PROOF_HEADER;
-  const provider = resolveProvider(options);
+  const provider = (
+    options.provider ?? options.signer?.provider ?? undefined
+  ) as AbstractProvider | undefined;
+  const policyProvider = options.policy === undefined
+    ? undefined
+    : requireProvider(provider, "policy validation");
   const connectedChainIdPromise = options.policy !== undefined
-    ? getConnectedChainId(provider)
+    ? getConnectedChainId(policyProvider!)
     : null;
   const executor = options.executor ?? createDefaultExecutor(options, provider);
   const onResponse = resolveResponseValidator(options.onResponse);
@@ -50,14 +57,20 @@ export function createD402Client(
 
       const challenge = await parsePaymentRequiredResponse(unpaidResponse);
       const paymentRequest = challenge.paymentRequest;
+      const expectedResource = await resolveClientResource(
+        prepared.retry,
+        options.resource,
+      );
       validatePaymentRequestBinding({
         paymentRequest,
         request: prepared.retry,
+        expectedResource,
       });
+      validatePaymentRequestFreshness(paymentRequest);
 
       if (options.policy !== undefined) {
         const connectedChainId = await (
-          connectedChainIdPromise ?? getConnectedChainId(provider)
+          connectedChainIdPromise ?? getConnectedChainId(policyProvider!)
         );
         validatePaymentPolicy({
           paymentRequest,
@@ -123,21 +136,22 @@ function resolveResponseValidator(
   return validator ?? D402DefaultResponseValidator;
 }
 
-function resolveProvider(options: CreateD402ClientOptions): AbstractProvider {
-  const provider = options.provider ?? options.signer?.provider;
-
+function requireProvider(
+  provider: AbstractProvider | null | undefined,
+  purpose: string,
+): AbstractProvider {
   if (provider === null || provider === undefined) {
     throw new D402ConfigurationError(
-      "createD402Client requires a provider or signer.provider when policy validation is enabled.",
+      `createD402Client requires a provider or signer.provider for ${purpose}.`,
     );
   }
 
-  return provider as AbstractProvider;
+  return provider;
 }
 
 function createDefaultExecutor(
   options: CreateD402ClientOptions,
-  provider: AbstractProvider,
+  provider: AbstractProvider | null | undefined,
 ) {
   if (options.signer === undefined) {
     throw new D402ConfigurationError(
@@ -147,7 +161,7 @@ function createDefaultExecutor(
 
   const executorOptions = {
     signer: options.signer,
-    provider,
+    provider: requireProvider(provider, "the default payment executor"),
     ...(options.confirmations !== undefined
       ? { confirmations: options.confirmations }
       : {}),

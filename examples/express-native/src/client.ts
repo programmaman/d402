@@ -14,7 +14,7 @@ const targetUrl = `http://localhost:${port}/reports/123`;
 const client = await createD402Client({
   provider,
   signer,
-  paymentConfirmations: 1,
+  confirmations: 1,
   policy: {
     allowedChains: [chainId],
     allowedPayees: [payeeAddress],
@@ -22,7 +22,6 @@ const client = await createD402Client({
     allowedResources: [/^http:\/\/localhost:\d+\/reports\/\w+$/],
     maxAmount: "1000000000000000",
     maxExpiryWindowSec: 300,
-    maxSettlementWindowSec: 3600,
     requireAgreementHash: true,
   },
   onAccepted: D402PaymentAction.KeepOpen,

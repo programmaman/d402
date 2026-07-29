@@ -14,7 +14,7 @@ const protectedReport = payable({
   paymentConfig: {
     provider,
     resource: (request) => request.url,
-    minConfirmations: 1,
+    confirmations: 1,
   },
   terms: (request) => ({
     chainId,
@@ -40,7 +40,7 @@ const protectedReport = payable({
         generatedAt: new Date().toISOString(),
       },
       payment: {
-        paymentId: context.paymentRequest.paymentId,
+        paymentId: context.payment.paymentId,
         paymentAddress: context.payment.paymentAddress,
         state: context.payment.state,
       },

@@ -1,7 +1,13 @@
 import type { D402BlockReference, D402PaymentRequest } from "../core/index.js";
 import { parsePaymentRequest } from "../core/index.js";
 import { blockReferenceSchema } from "../core/schemas.js";
-import {D402PaymentRequestParseError, D402RequestReplayError} from "./errors.js";
+import {
+  D402ConfigurationError,
+  D402PaymentRequestParseError,
+  D402PolicyViolationError,
+  D402RequestReplayError,
+} from "./errors.js";
+import type { D402ClientResourceResolver } from "./types.js";
 
 export interface PreparedD402Request {
   initial: Request;
@@ -69,6 +75,7 @@ export async function parsePaymentRequiredResponse(
 export function validatePaymentRequestBinding(input: {
   paymentRequest: D402PaymentRequest;
   request: Request;
+  expectedResource?: string;
 }): void {
   const { paymentRequest, request } = input;
 
@@ -81,11 +88,43 @@ export function validatePaymentRequestBinding(input: {
     );
   }
 
-  if (paymentRequest.resource !== request.url) {
+  const expectedResource = input.expectedResource ?? request.url;
+  if (paymentRequest.resource !== expectedResource) {
     throw new D402PaymentRequestParseError(
-      `Payment request resource does not match original request: got ${request.url}.`,
+      `Payment request resource does not match expected resource: got ${expectedResource}.`,
     );
   }
+}
+
+export function validatePaymentRequestFreshness(
+  paymentRequest: D402PaymentRequest,
+  nowUnixSec = Math.floor(Date.now() / 1000),
+): void {
+  if (paymentRequest.expiresAtUnixSec <= nowUnixSec) {
+    throw new D402PolicyViolationError(
+      `Payment request is expired: expiresAtUnixSec=${paymentRequest.expiresAtUnixSec}, now=${nowUnixSec}.`,
+    );
+  }
+}
+
+export async function resolveClientResource(
+  request: Request,
+  resolver?: D402ClientResourceResolver,
+): Promise<string> {
+  const resolved = resolver === undefined
+    ? request.url
+    : typeof resolver === "function"
+      ? await resolver(request.clone())
+      : resolver;
+  const resource = resolved.trim();
+
+  if (resource.length === 0) {
+    throw new D402ConfigurationError(
+      "Client payment resource must not be blank.",
+    );
+  }
+
+  return resource;
 }
 
 export function assertNoExistingProof(

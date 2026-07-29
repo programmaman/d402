@@ -6,6 +6,10 @@ export interface D402Client {
   fetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response>;
 }
 
+export type D402ClientResourceResolver =
+  | string
+  | ((request: Request) => string | Promise<string>);
+
 export interface CreateD402ClientOptions {
   signer?: Signer;
   provider?: AbstractProvider;
@@ -17,6 +21,7 @@ export interface CreateD402ClientOptions {
   onAccepted?: D402AcceptedPaymentAction;
   onRejected?: D402RejectedPaymentAction;
   executor?: D402PaymentExecutor;
+  resource?: D402ClientResourceResolver;
 }
 
 export interface D402ClientPolicy {

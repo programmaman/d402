@@ -1,22 +1,29 @@
 import "dotenv/config";
 
 import express from "express";
-import { JsonRpcProvider } from "ethers";
+import { JsonRpcProvider, Wallet } from "ethers";
 
-import { payable } from "d402/server";
-import { consumeOnce } from "./store.js";
+import { Once, payable } from "d402/server";
 
 const port = Number(process.env.PORT ?? "3000");
 const chainId = Number(requireEnv("CHAIN_ID"));
-const payeeAddress = requireEnv("PAYEE_ADDRESS") as `0x${string}`;
 const provider = new JsonRpcProvider(requireEnv("RPC_URL"));
+const payee = new Wallet(requireEnv("PAYEE_PRIVATE_KEY"), provider);
+const payeeAddress = payee.address as `0x${string}`;
 
 const protectedDownload = payable({
   paymentConfig: {
     provider,
+    signer: payee,
     resource: (request) => request.url,
-    minConfirmations: 1,
+    confirmations: 1,
+    identifier: "client",
   },
+  consumer: Once({
+    provider,
+    signer: payee,
+    confirmations: 1,
+  }),
   terms: (request) => ({
     chainId,
     payeeAddress,
@@ -30,21 +37,6 @@ const protectedDownload = payable({
     expiresAtUnixSec: Math.floor(Date.now() / 1000) + 300,
   }),
   handler: async (_request, context) => {
-    if (context.payment === undefined) {
-      return Response.json({ error: "payment context missing" }, { status: 500 });
-    }
-
-    const consumptionKey = [
-      context.paymentRequest.chainId,
-      context.payment.paymentId,
-      context.payment.paymentAddress,
-      context.payment.txHash,
-    ].join(":");
-
-    if (!consumeOnce(consumptionKey)) {
-      return Response.json({ error: "payment-already-consumed" }, { status: 409 });
-    }
-
     return Response.json({
       ok: true,
       downloadUrl: "https://storage.example.test/downloads/report-123.pdf",

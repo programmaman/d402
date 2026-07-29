@@ -24,6 +24,7 @@ import {
 } from "ethers";
 
 import {
+  D402_CANONICAL_SALT,
   derivePaymentId,
 } from "../core/index.js";
 import type {
@@ -261,7 +262,11 @@ async function preparePayment(
 }
 
 function createPaymentSalt(): Hex32 {
-  return hexlify(randomBytes(32)) as Hex32;
+  let paymentSalt: Hex32;
+  do {
+    paymentSalt = hexlify(randomBytes(32)) as Hex32;
+  } while (paymentSalt === D402_CANONICAL_SALT);
+  return paymentSalt;
 }
 
 async function sendPaymentAction(

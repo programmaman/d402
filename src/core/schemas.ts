@@ -68,13 +68,13 @@ export const paymentRequestSchema = z
       .min(1, { message: "must not be blank" })
       .transform((value) => value.toUpperCase())
       .optional(),
-    chainId: z.number().int().positive(),
+    chainId: z.number().int().positive().safe(),
     payeeAddress: addressSchema,
     tokenAddress: z.union([addressSchema, z.null()]),
     netAmount: positiveDecimalStringSchema,
     settlementTimeUnixSec: positiveDecimalStringSchema,
     agreement: agreementSchema,
-    expiresAtUnixSec: z.number().int().positive(),
+    expiresAtUnixSec: z.number().int().positive().safe(),
     paymentSalt: z.literal(D402_CANONICAL_SALT).optional(),
   })
   .strict()

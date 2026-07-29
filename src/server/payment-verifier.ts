@@ -9,7 +9,10 @@ import { getAddress } from "ethers";
 import type { AbstractProvider } from "ethers";
 import type { PaymentCreatedEvent } from "@rakelabs/dpayments-sdk";
 import type { MulticallConfig } from "@rakelabs/dpayments-sdk";
-import { derivePaymentId } from "../core/index.js";
+import {
+  D402_CANONICAL_SALT,
+  derivePaymentId,
+} from "../core/index.js";
 import type {
   Address,
   D402BlockReference,
@@ -54,6 +57,15 @@ export function verifyPaymentSalt(
   if (
     paymentRequest.paymentSalt !== undefined
     && paymentRequest.paymentSalt !== dPaymentProof.paymentSalt
+  ) {
+    return {
+      ok: false,
+      reason: "payment-id-mismatch",
+    };
+  }
+  if (
+    paymentRequest.paymentSalt === undefined
+    && dPaymentProof.paymentSalt === D402_CANONICAL_SALT
   ) {
     return {
       ok: false,
@@ -180,6 +192,7 @@ export function createDPaymentsVerifier(
       paymentStateResult.state,
       createdEventResult.paymentId,
       createdEventResult.payerAddress,
+      createdEventResult.receipt,
       createdEventResult.confirmations,
     );
   };
@@ -473,6 +486,7 @@ function verifyPaymentState(
   paymentState: PaymentState,
   paymentId: Hex32,
   payerAddress: Address,
+  receipt: TransactionReceipt,
   confirmations?: number,
 ): PaymentVerificationResult {
   const state = toD402PaymentState(paymentState);
@@ -490,6 +504,7 @@ function verifyPaymentState(
       state,
       paymentId,
       payerAddress,
+      receipt,
       confirmations,
     ),
   };
@@ -500,6 +515,7 @@ function buildVerifiedPayment(
   state: D402PaymentState,
   paymentId: Hex32,
   payerAddress: Address,
+  receipt: TransactionReceipt,
   confirmations?: number,
 ): VerifiedPayment {
   return {
@@ -508,6 +524,10 @@ function buildVerifiedPayment(
     txHash: proof.txHash,
     payerAddress,
     state,
+    creationBlockNumber: receipt.blockNumber,
+    ...(receipt.blockHash !== undefined
+      ? { creationBlockHash: receipt.blockHash as Hex32 }
+      : {}),
     ...(confirmations !== undefined ? { confirmations } : {}),
   };
 }

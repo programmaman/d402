@@ -2,6 +2,73 @@
 
 All notable public changes to d402 are documented here.
 
+## 0.3.0-rc.0 - 2026-07-28
+
+This prerelease contains the intended protocol and API surface for V0.3. The
+stable `0.3.0` release remains pending production contract deployment and final
+release verification.
+
+### Payment identity
+
+- Added server-selected payment identity through
+  `paymentConfig.identifier: "server" | "client"`.
+- Server identity is the default. The server emits the canonical d402 salt and
+  identical terms from the same authenticated payer reconstruct the same
+  payment ID.
+- Client identity omits the request salt and the standard client generates
+  fresh 32-byte entropy for each payment attempt.
+- Application terms can no longer inject a payment salt.
+- The server rejects canonical-salt disagreement before custom verification or
+  RPC work.
+- Payment IDs are derived from normalized payment terms, the payer
+  authenticated by the canonical factory event, and the effective payment
+  salt.
+
+### Protocol
+
+- Finalized wire protocol version `0.3`.
+- Removed `paymentId` and `termsHash` from payment requests.
+- Removed `paymentId` and `payerAddress` from transported proofs.
+- Proofs carry the payment address, creation transaction hash, effective
+  payment salt, and optional settlement reference.
+- Reserved the canonical d402 salt for server identity so a client-identified
+  payment cannot silently behave like a server-identified payment.
+- Verification results now expose the payment creation block number and hash
+  when available.
+
+### Client and server APIs
+
+- Added matching client and server resource resolvers for reverse proxies,
+  gateways, and coordinated application namespaces.
+- Payment-request expiry is enforced even when client policy is omitted.
+- A complete custom payment executor can run without an unused ethers provider
+  when chain-dependent client policy is disabled.
+- Exported custom executor options, client resource resolver types, and server
+  verifier options.
+- Retained exact URL and method binding as the default behavior.
+
+### Integration patterns
+
+- Documented server and client identity modes, reusable payments, canonical
+  on-chain `Once` consumption, database-backed consumers, sponsored payments,
+  deposits, refunds, escrow, metering, subscriptions, and asynchronous jobs.
+- Canonical `Once` consumption can coordinate one-shot authorization across
+  replicas without an application datastore, Redis lock, sticky session, or
+  shared cache.
+- Clarified that consumption is an at-most-once authorization claim, not an
+  exactly-once handler or delivery guarantee.
+- Updated shipped examples to use the V0.3 API and on-chain one-shot
+  consumption.
+
+### Upgrade note
+
+- Upgrade d402 clients and servers together.
+- Custom request or proof implementations must adopt the V0.3 identity and
+  proof shapes.
+- Use server identity for stable invoices, orders, and reusable entitlements.
+- Use client identity when identical terms should permit independent payment
+  attempts.
+
 ## 0.2.1
 
 ### Payment consumption
