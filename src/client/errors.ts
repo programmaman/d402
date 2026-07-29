@@ -26,13 +26,6 @@ export class D402PaymentExecutionError extends D402ClientError {
   }
 }
 
-export class D402ResponseValidationError extends D402ClientError {
-  constructor(message: string) {
-    super(message);
-    this.name = "D402ResponseValidationError";
-  }
-}
-
 export class D402RequestReplayError extends D402ClientError {
   constructor(message: string) {
     super(message);

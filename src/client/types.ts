@@ -1,6 +1,7 @@
 import type { AbstractProvider, Signer } from "ethers";
 
 import type { Address, D402PaymentRequest, Hex32 } from "../core/index.js";
+import type { D402Logger } from "../runtime/logger.js";
 
 export interface D402Client {
   fetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response>;
@@ -22,6 +23,7 @@ export interface CreateD402ClientOptions {
   onRejected?: D402RejectedPaymentAction;
   executor?: D402PaymentExecutor;
   resource?: D402ClientResourceResolver;
+  logger?: D402Logger;
 }
 
 export interface D402ClientPolicy {

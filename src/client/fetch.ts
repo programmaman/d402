@@ -165,6 +165,9 @@ function createDefaultExecutor(
     ...(options.confirmations !== undefined
       ? { confirmations: options.confirmations }
       : {}),
+    ...(options.logger !== undefined
+      ? { logger: options.logger }
+      : {}),
   };
 
   return createDPaymentsExecutor(executorOptions);

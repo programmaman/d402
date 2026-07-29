@@ -8,6 +8,7 @@ import type {
   PaymentAddress,
 } from "../core/index.js";
 import type { AbstractProvider, Signer } from "ethers";
+import type { D402Logger } from "../runtime/logger.js";
 import type { PaymentConsumer } from "./payment-consumer.js";
 
 export type PaymentResourceResolver<Req = Request> =
@@ -27,6 +28,7 @@ export interface PaymentConfig<Req = Request> {
   settlementTimeUnixSec?: number;
   cache?: boolean | number;
   identifier?: PaymentIdentifier;
+  logger?: D402Logger;
 }
 
 export interface PayableTerms {

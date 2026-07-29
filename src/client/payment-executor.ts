@@ -38,7 +38,9 @@ import {
 } from "./errors.js";
 import { D402_DEFAULT_CONFIRMATIONS } from "../runtime/defaults.js";
 import { createPinnedDPayments } from "../runtime/dpayments.js";
+import { emitLog, NoopLogger } from "../runtime/logger.js";
 import { findPaymentCreatedEvent } from "../runtime/payment-events.js";
+import type { D402Logger } from "../runtime/logger.js";
 import type {
   D402CreatedPayment,
   D402PaymentActionResult,
@@ -49,13 +51,18 @@ export interface CreateDPaymentsExecutorOptions {
   signer: Signer;
   provider: AbstractProvider;
   confirmations?: number;
+  logger?: D402Logger;
 }
 
 export function createDPaymentsExecutor(
   options: CreateDPaymentsExecutorOptions,
 ): D402PaymentExecutor {
   const signer = new NonceManager(options.signer);
-  const queuedOptions = { ...options, signer };
+  const queuedOptions = {
+    ...options,
+    signer,
+    logger: options.logger ?? NoopLogger,
+  };
   let broadcastQueue: Promise<unknown> = Promise.resolve();
 
   async function broadcastInQueue<T>(
@@ -220,7 +227,10 @@ async function preparePayment(
   paymentId: Hex32,
 ): Promise<PreparedDpayment> {
   const payerAddress = await options.signer.getAddress();
-  const dpayments = await createDPayments(options, payerAddress);
+  const dpayments = await createPinnedDPayments({
+    provider: options.provider,
+    walletAddress: payerAddress,
+  });
   const prepared = paymentRequest.tokenAddress === null
     ? await dpayments.factory.prepareCreateEthPayment({
         paymentId,
@@ -277,8 +287,16 @@ async function sendPaymentAction(
 ): Promise<D402PaymentActionResult> {
   try {
     const walletAddress = await options.signer.getAddress();
-    logPaymentActionStart(action, payment, walletAddress);
-    const dpayments = await createDPayments(options, walletAddress);
+    logPaymentActionStart(
+      options.logger ?? NoopLogger,
+      action,
+      payment,
+      walletAddress,
+    );
+    const dpayments = await createPinnedDPayments({
+      provider: options.provider,
+      walletAddress,
+    });
     const dPayment = dpayments.dPayment(payment.paymentAddress);
     const tx = action === "settle"
       ? dPayment.settle(walletAddress)
@@ -290,18 +308,30 @@ async function sendPaymentAction(
       response,
       options.confirmations ?? D402_DEFAULT_CONFIRMATIONS,
     );
-    console.log("[client] payment action confirmed", {
-      action,
-      paymentId: payment.paymentId,
-      paymentAddress: payment.paymentAddress,
-      walletAddress,
-      txHash: receipt.hash,
+    emitLog(options.logger ?? NoopLogger, {
+      level: "info",
+      event: "payment.action.confirmed",
+      message: "Payment action confirmed.",
+      context: {
+        action,
+        paymentId: payment.paymentId,
+        paymentAddress: payment.paymentAddress,
+        walletAddress,
+        txHash: receipt.hash,
+      },
     });
 
     return { txHash: receipt.hash as Hex32 };
   } catch (cause) {
-    logPaymentActionFailure(action, payment, cause);
-    throw paymentExecutionError("Could not settle dPayment.", cause);
+    const decoded = decodeDPaymentError(cause);
+    logPaymentActionFailure(
+      options.logger ?? NoopLogger,
+      action,
+      payment,
+      cause,
+      decoded,
+    );
+    throw paymentExecutionError("Could not settle dPayment.", cause, decoded);
   }
 }
 
@@ -312,24 +342,34 @@ async function raisePaymentDispute(
 ): Promise<D402PaymentActionResult> {
   try {
     const walletAddress = await options.signer.getAddress();
-    logPaymentActionStart("dispute", payment, walletAddress);
-    const dpayments = await createDPayments(options, walletAddress);
+    logPaymentActionStart(options.logger ?? NoopLogger, "dispute", payment, walletAddress);
+    const dpayments = await createPinnedDPayments({
+      provider: options.provider,
+      walletAddress,
+    });
     const dPayment = dpayments.dPayment(payment.paymentAddress);
     const current = await dPayment.read();
-    console.log("[client] dispute precheck", {
-      paymentId: payment.paymentId,
-      paymentAddress: payment.paymentAddress,
-      walletAddress,
-      state: current.state,
+    emitLog(options.logger ?? NoopLogger, {
+      level: "debug",
+      event: "payment.dispute.precheck",
+      message: "Payment dispute precheck completed.",
+      context: {
+        paymentId: payment.paymentId,
+        paymentAddress: payment.paymentAddress,
+        walletAddress,
+        state: current.state,
+      },
     });
     const prepared = await dPayment.prepareRaiseDispute(walletAddress);
-    console.log("[client] dispute transaction prepared", {
-      paymentId: payment.paymentId,
-      paymentAddress: payment.paymentAddress,
-      walletAddress,
-      txTo: prepared.tx.to,
-      txValue: prepared.tx.value,
-      chainId: prepared.tx.chainId,
+    emitLog(options.logger ?? NoopLogger, {
+      level: "debug",
+      event: "payment.dispute.prepared",
+      message: "Payment dispute transaction prepared.",
+      context: {
+        paymentId: payment.paymentId,
+        paymentAddress: payment.paymentAddress,
+        walletAddress,
+      },
     });
     const response = await broadcastInQueue(() =>
       sendPreparedTx(options.provider, options.signer, prepared.tx),
@@ -338,19 +378,32 @@ async function raisePaymentDispute(
       response,
       options.confirmations ?? D402_DEFAULT_CONFIRMATIONS,
     );
-    console.log("[client] payment dispute confirmed", {
-      paymentId: payment.paymentId,
-      paymentAddress: payment.paymentAddress,
-      walletAddress,
-      txHash: receipt.hash,
+    emitLog(options.logger ?? NoopLogger, {
+      level: "info",
+      event: "payment.dispute.confirmed",
+      message: "Payment dispute confirmed.",
+      context: {
+        paymentId: payment.paymentId,
+        paymentAddress: payment.paymentAddress,
+        walletAddress,
+        txHash: receipt.hash,
+      },
     });
 
     return { txHash: receipt.hash as Hex32 };
   } catch (cause) {
-    logPaymentActionFailure("dispute", payment, cause);
+    const decoded = decodeDPaymentError(cause);
+    logPaymentActionFailure(
+      options.logger ?? NoopLogger,
+      "dispute",
+      payment,
+      cause,
+      decoded,
+    );
     throw paymentExecutionError(
       "Could not raise dPayment dispute.",
       cause,
+      decoded,
     );
   }
 }
@@ -367,8 +420,16 @@ async function submitPaymentEvidence(
 
   try {
     const walletAddress = await options.signer.getAddress();
-    logPaymentActionStart("submit-evidence", payment, walletAddress);
-    const dpayments = await createDPayments(options, walletAddress);
+    logPaymentActionStart(
+      options.logger ?? NoopLogger,
+      "submit-evidence",
+      payment,
+      walletAddress,
+    );
+    const dpayments = await createPinnedDPayments({
+      provider: options.provider,
+      walletAddress,
+    });
     const dPayment = dpayments.dPayment(payment.paymentAddress);
     const tx = dPayment.submitEvidence(evidenceUri, walletAddress);
     const response = await broadcastInQueue(() =>
@@ -379,43 +440,45 @@ async function submitPaymentEvidence(
       options.confirmations ?? D402_DEFAULT_CONFIRMATIONS,
     );
 
-    console.log("[client] payment evidence submission confirmed", {
-      paymentId: payment.paymentId,
-      paymentAddress: payment.paymentAddress,
-      walletAddress,
-      evidenceUri,
-      txHash: receipt.hash,
+    emitLog(options.logger ?? NoopLogger, {
+      level: "info",
+      event: "payment.evidence.confirmed",
+      message: "Payment evidence submission confirmed.",
+      context: {
+        paymentId: payment.paymentId,
+        paymentAddress: payment.paymentAddress,
+        walletAddress,
+        txHash: receipt.hash,
+      },
     });
 
     return { txHash: receipt.hash as Hex32 };
   } catch (cause) {
-    logPaymentActionFailure("submit-evidence", payment, cause);
+    const decoded = decodeDPaymentError(cause);
+    logPaymentActionFailure(
+      options.logger ?? NoopLogger,
+      "submit-evidence",
+      payment,
+      cause,
+      decoded,
+    );
     throw paymentExecutionError(
       "Could not submit dPayment evidence.",
       cause,
+      decoded,
     );
   }
-}
-
-async function createDPayments(
-  options: CreateDPaymentsExecutorOptions,
-  walletAddress: string,
-): Promise<DPayments> {
-  return createPinnedDPayments({
-    provider: options.provider,
-    walletAddress,
-  });
 }
 
 function paymentExecutionError(
   message: string,
   cause: unknown,
+  decoded = decodeDPaymentError(cause),
 ): D402PaymentExecutionError {
   if (cause instanceof D402PaymentExecutionError) {
     return cause;
   }
 
-  const decoded = decodeDPaymentError(cause);
   const decodedMessage = decoded !== null && "error" in decoded
     ? `${message} dPayments reverted with ${decoded.error}.`
     : message;
@@ -526,76 +589,63 @@ function unreachable(value: never): never {
 }
 
 function logPaymentActionStart(
+  logger: D402Logger,
   action: "settle" | "dispute" | "submit-evidence",
   payment: D402CreatedPayment,
   walletAddress: string,
 ): void {
-  console.log("[client] payment action started", {
-    action,
-    paymentId: payment.paymentId,
-    paymentAddress: payment.paymentAddress,
-    walletAddress,
+  emitLog(logger, {
+    level: "debug",
+    event: "payment.action.started",
+    message: "Payment action started.",
+    context: {
+      action,
+      paymentId: payment.paymentId,
+      paymentAddress: payment.paymentAddress,
+      walletAddress,
+    },
   });
 }
 
 function logPaymentActionFailure(
+  logger: D402Logger,
   action: "settle" | "dispute" | "submit-evidence",
   payment: D402CreatedPayment,
   cause: unknown,
+  decoded: ReturnType<typeof decodeDPaymentError>,
 ): void {
-  console.error("[client] payment action failed", {
-    action,
-    paymentId: payment.paymentId,
-    paymentAddress: payment.paymentAddress,
-    error: describeError(cause),
+  emitLog(logger, {
+    level: "error",
+    event: "payment.action.failed",
+    message: "Payment action failed.",
+    context: {
+      action,
+      paymentId: payment.paymentId,
+      paymentAddress: payment.paymentAddress,
+      ...safeErrorContext(cause),
+      ...(decoded !== null && "error" in decoded
+        ? { dpaymentsError: decoded.error }
+        : {}),
+    },
   });
 }
 
-function describeError(error: unknown): Record<string, unknown> {
-  if (error === null || typeof error !== "object") {
-    return { value: error };
-  }
+function safeErrorContext(error: unknown): Readonly<Record<string, unknown>> {
+  if (error === null || typeof error !== "object") return {};
 
-  const result: Record<string, unknown> = {};
   const known = error as {
     name?: unknown;
     message?: unknown;
     code?: unknown;
-    reason?: unknown;
-    shortMessage?: unknown;
-    data?: unknown;
-    info?: unknown;
-    transaction?: unknown;
-    cause?: unknown;
   };
 
-  if (known.name !== undefined) {
-    result.name = known.name;
-  }
-  if (known.message !== undefined) {
-    result.message = known.message;
-  }
-  if (known.code !== undefined) {
-    result.code = known.code;
-  }
-  if (known.reason !== undefined) {
-    result.reason = known.reason;
-  }
-  if (known.shortMessage !== undefined) {
-    result.shortMessage = known.shortMessage;
-  }
-  if (known.data !== undefined) {
-    result.data = known.data;
-  }
-  if (known.transaction !== undefined) {
-    result.transaction = known.transaction;
-  }
-  if (known.info !== undefined) {
-    result.info = known.info;
-  }
-  if (known.cause !== undefined) {
-    result.cause = describeError(known.cause);
-  }
-
-  return result;
+  return {
+    ...(typeof known.name === "string" ? { errorName: known.name } : {}),
+    ...(typeof known.message === "string"
+      ? { errorMessage: known.message }
+      : {}),
+    ...(typeof known.code === "string" || typeof known.code === "number"
+      ? { errorCode: known.code }
+      : {}),
+  };
 }

@@ -115,5 +115,3 @@ export const d402PaymentProofSchema = z
     settlementReference: blockReferenceSchema.optional(),
   })
   .strict();
-
-export const paymentProofSchema = dPaymentProofSchema;

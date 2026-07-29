@@ -3,7 +3,7 @@ import {
   D402PaymentActionError,
   D402PaymentExecutionError,
 } from "./errors.js";
-import { D402DefaultPaymentActions, D402PaymentAction } from "./types.js";
+import { D402PaymentAction } from "./types.js";
 import type {
   D402AcceptedPaymentAction,
   D402CreatedPayment,
@@ -16,15 +16,12 @@ import type {
 export async function resolvePaymentAfterAcceptance(input: {
   payment: D402CreatedPayment;
   responseDecision: D402ResponseDecision;
-  onAccepted?: D402AcceptedPaymentAction;
-  onRejected?: D402RejectedPaymentAction;
+  onAccepted: D402AcceptedPaymentAction;
+  onRejected: D402RejectedPaymentAction;
   executor: D402PaymentExecutor;
 }): Promise<D402PaymentActionResolution> {
-  const onAccepted = input.onAccepted ?? D402DefaultPaymentActions.OnAccepted;
-  const onRejected = input.onRejected ?? D402DefaultPaymentActions.OnRejected;
-
   if (input.responseDecision.accepted) {
-    if (onAccepted === D402PaymentAction.KeepOpen) {
+    if (input.onAccepted === D402PaymentAction.KeepOpen) {
       return { action: "kept-open" };
     }
 
@@ -42,11 +39,11 @@ export async function resolvePaymentAfterAcceptance(input: {
     }
   }
 
-  if (onRejected === D402PaymentAction.KeepOpen) {
+  if (input.onRejected === D402PaymentAction.KeepOpen) {
     return { action: "kept-open" };
   }
 
-  if (onRejected === D402PaymentAction.RequestRefund) {
+  if (input.onRejected === D402PaymentAction.RequestRefund) {
     if (input.executor.requestRefund === undefined) {
       throw new D402ConfigurationError(
         "onRejected is set to request-refund, but executor.requestRefund is not configured. Provide an executor with requestRefund or keep the payment open.",

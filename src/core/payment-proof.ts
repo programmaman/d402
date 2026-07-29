@@ -16,7 +16,12 @@ export function parseD402PaymentProof(proof: unknown): D402PaymentProof {
   const parsed = d402PaymentProofSchema.parse(proof);
 
   return {
-    dPaymentProof: parseDPaymentProof(parsed.dPaymentProof),
+    dPaymentProof: {
+      version: parsed.dPaymentProof.version,
+      paymentAddress: parsed.dPaymentProof.paymentAddress,
+      txHash: parsed.dPaymentProof.txHash,
+      paymentSalt: parsed.dPaymentProof.paymentSalt,
+    },
     ...(parsed.settlementReference !== undefined
       ? { settlementReference: parsed.settlementReference }
       : {}),

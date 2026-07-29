@@ -3,7 +3,11 @@ export { createDPaymentsExecutor } from "./payment-executor.js";
 export type {
   CreateDPaymentsExecutorOptions,
 } from "./payment-executor.js";
-export { acceptSuccessfulResponse } from "./acceptance.js";
+export type {
+  D402Logger,
+  D402LogLevel,
+  D402LogRecord,
+} from "../runtime/logger.js";
 export {
   buildDPaymentProof,
   encodeD402PaymentProof,
@@ -16,7 +20,6 @@ export {
   D402PaymentRequestParseError,
   D402PolicyViolationError,
   D402RequestReplayError,
-  D402ResponseValidationError,
 } from "./errors.js";
 
 export type {

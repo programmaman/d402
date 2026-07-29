@@ -9,12 +9,14 @@ import type {
 import type { Hex32, PaymentAddress } from "../core/index.js";
 import { D402_DEFAULT_CONFIRMATIONS } from "../runtime/defaults.js";
 import { createPinnedDPayments } from "../runtime/dpayments.js";
+import { emitLog, NoopLogger } from "../runtime/logger.js";
 import type {
   PaymentActionResult,
   PaymentAppealResult,
   PaymentActions,
   PaymentConfig,
 } from "./types.js";
+import type { D402Logger } from "../runtime/logger.js";
 
 export function paymentActions(config: PaymentConfig): PaymentActions {
   if (config.signer === undefined) {
@@ -22,9 +24,13 @@ export function paymentActions(config: PaymentConfig): PaymentActions {
       "paymentConfig.signer is required for payment actions so the server can broadcast settlement, refund, consumption, evidence, or appeal transactions.",
     );
   }
-  const actionConfig = {
+  const actionConfig: PaymentConfig & {
+    signer: Signer;
+    logger: D402Logger;
+  } = {
     ...config,
     signer: config.signer,
+    logger: config.logger ?? NoopLogger,
   };
 
   return {
@@ -47,15 +53,20 @@ export function paymentActions(config: PaymentConfig): PaymentActions {
 }
 
 async function sendPaymentAction(
-  config: PaymentConfig & { signer: Signer },
+  config: PaymentConfig & { signer: Signer; logger: D402Logger },
   paymentAddress: PaymentAddress,
   action: "settle" | "refund" | "consume",
 ): Promise<PaymentActionResult> {
   const walletAddress = await config.signer.getAddress();
-  console.log("[server] payment action started", {
-    action,
-    paymentAddress,
-    walletAddress,
+  emitLog(config.logger, {
+    level: "debug",
+    event: "payment.action.started",
+    message: "Payment action started.",
+    context: {
+      action,
+      paymentAddress,
+      walletAddress,
+    },
   });
   const dpayments = await createQuickDPayments(config.provider, walletAddress);
   const dPayment = dpayments.dPayment(paymentAddress);
@@ -70,26 +81,35 @@ async function sendPaymentAction(
     tx,
     config.confirmations ?? D402_DEFAULT_CONFIRMATIONS,
   );
-  console.log("[server] payment action confirmed", {
-    action,
-    paymentAddress,
-    walletAddress,
-    txHash: receipt.hash,
+  emitLog(config.logger, {
+    level: "info",
+    event: "payment.action.confirmed",
+    message: "Payment action confirmed.",
+    context: {
+      action,
+      paymentAddress,
+      walletAddress,
+      txHash: receipt.hash,
+    },
   });
 
   return { txHash: receipt.hash as Hex32 };
 }
 
 async function sendEvidenceAction(
-  config: PaymentConfig & { signer: Signer },
+  config: PaymentConfig & { signer: Signer; logger: D402Logger },
   paymentAddress: PaymentAddress,
   evidenceUri: string,
 ): Promise<PaymentActionResult> {
   const walletAddress = await config.signer.getAddress();
-  console.log("[server] evidence submission started", {
-    paymentAddress,
-    walletAddress,
-    evidenceUri,
+  emitLog(config.logger, {
+    level: "debug",
+    event: "payment.evidence.started",
+    message: "Payment evidence submission started.",
+    context: {
+      paymentAddress,
+      walletAddress,
+    },
   });
   const dpayments = await createQuickDPayments(config.provider, walletAddress);
   const dPayment = dpayments.dPayment(paymentAddress);
@@ -100,23 +120,33 @@ async function sendEvidenceAction(
     tx,
     config.confirmations ?? D402_DEFAULT_CONFIRMATIONS,
   );
-  console.log("[server] evidence submission confirmed", {
-    paymentAddress,
-    walletAddress,
-    txHash: receipt.hash,
+  emitLog(config.logger, {
+    level: "info",
+    event: "payment.evidence.confirmed",
+    message: "Payment evidence submission confirmed.",
+    context: {
+      paymentAddress,
+      walletAddress,
+      txHash: receipt.hash,
+    },
   });
 
   return { txHash: receipt.hash as Hex32 };
 }
 
 async function sendAppealAction(
-  config: PaymentConfig & { signer: Signer },
+  config: PaymentConfig & { signer: Signer; logger: D402Logger },
   paymentAddress: PaymentAddress,
 ): Promise<PaymentAppealResult> {
   const walletAddress = await config.signer.getAddress();
-  console.log("[server] appeal started", {
-    paymentAddress,
-    walletAddress,
+  emitLog(config.logger, {
+    level: "debug",
+    event: "payment.appeal.started",
+    message: "Payment appeal started.",
+    context: {
+      paymentAddress,
+      walletAddress,
+    },
   });
   const dpayments = await createQuickDPayments(config.provider, walletAddress);
   const dPayment = dpayments.dPayment(paymentAddress);
@@ -130,12 +160,18 @@ async function sendAppealAction(
     prepared.tx,
     config.confirmations ?? D402_DEFAULT_CONFIRMATIONS,
   );
-  console.log("[server] appeal confirmed", {
-    paymentAddress,
-    walletAddress,
-    txHash: receipt.hash,
-    appealFeeWei: prepared.appealFeeWei,
-    appealPeriod: prepared.appealPeriod,
+  emitLog(config.logger, {
+    level: "info",
+    event: "payment.appeal.confirmed",
+    message: "Payment appeal confirmed.",
+    context: {
+      paymentAddress,
+      walletAddress,
+      txHash: receipt.hash,
+      appealFeeWei: prepared.appealFeeWei.toString(),
+      appealPeriodStart: prepared.appealPeriod.start.toString(),
+      appealPeriodEnd: prepared.appealPeriod.end.toString(),
+    },
   });
 
   return {
