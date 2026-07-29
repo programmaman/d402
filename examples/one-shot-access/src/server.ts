@@ -3,13 +3,18 @@ import "dotenv/config";
 import express from "express";
 import { JsonRpcProvider, Wallet } from "ethers";
 
-import { Once, payable } from "d402/server";
+import { Once, payable, paymentActions } from "d402/server";
 
 const port = Number(process.env.PORT ?? "3000");
 const chainId = Number(requireEnv("CHAIN_ID"));
 const provider = new JsonRpcProvider(requireEnv("RPC_URL"));
 const payee = new Wallet(requireEnv("PAYEE_PRIVATE_KEY"), provider);
 const payeeAddress = payee.address as `0x${string}`;
+const actions = paymentActions({
+  provider,
+  signer: payee,
+  confirmations: 1,
+});
 
 const protectedDownload = payable({
   paymentConfig: {
@@ -19,11 +24,7 @@ const protectedDownload = payable({
     confirmations: 1,
     identifier: "client",
   },
-  consumer: Once({
-    provider,
-    signer: payee,
-    confirmations: 1,
-  }),
+  consumer: Once(actions),
   terms: (request) => ({
     chainId,
     payeeAddress,

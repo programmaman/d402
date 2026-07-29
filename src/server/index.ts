@@ -10,7 +10,6 @@ export {
   None,
   Once,
   type PaymentConsumer,
-  type OncePaymentConsumerOptions,
 } from "./payment-consumer.js";
 export type {
   PayableContext,

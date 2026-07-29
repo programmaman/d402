@@ -1,17 +1,10 @@
 import { decodeDPaymentError } from "@rakelabs/dpayments-sdk";
-import type { AbstractProvider, Signer } from "ethers";
 
-import { paymentActions } from "./payment-actions.js";
+import type { PaymentActions } from "./payment-actions.js";
 import type {
   PaymentVerificationResult,
   VerifiedPayment,
 } from "./types.js";
-
-export interface OncePaymentConsumerOptions {
-  provider: AbstractProvider;
-  signer: Signer;
-  confirmations?: number;
-}
 
 export interface PaymentConsumer {
   consume(payment: VerifiedPayment): Promise<PaymentVerificationResult>;
@@ -26,10 +19,8 @@ export const None: PaymentConsumer = {
 };
 
 export function Once(
-  options: OncePaymentConsumerOptions,
+  actions: Pick<PaymentActions, "consumePayment">,
 ): PaymentConsumer {
-  const actions = paymentActions(options);
-
   return {
     async consume(
       payment: VerifiedPayment,

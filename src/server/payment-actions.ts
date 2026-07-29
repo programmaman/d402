@@ -17,42 +17,19 @@ import type {
 } from "./types.js";
 
 class PaymentActions {
-  private static instance: PaymentActions | undefined;
-
   private readonly provider: AbstractProvider;
-  private readonly originalSigner: Signer;
   private readonly signer: NonceManager;
   private readonly confirmations: number;
   private readonly walletAddress: Promise<Address>;
   private broadcastQueue: Promise<unknown> = Promise.resolve();
 
-  private constructor(config: PaymentConfig & { signer: Signer }) {
+  constructor(config: PaymentConfig & { signer: Signer }) {
     this.provider = config.provider;
-    this.originalSigner = config.signer;
     this.signer = new NonceManager(config.signer);
     this.confirmations = config.confirmations ?? D402_DEFAULT_CONFIRMATIONS;
     this.walletAddress = this.signer.getAddress().then(
       (address) => address as Address,
     );
-  }
-
-  static getInstance(config: PaymentConfig): PaymentActions {
-    if (config.signer === undefined) {
-      throw new Error(
-        "paymentConfig.signer is required for payment actions so the server can broadcast settlement, refund, consumption, evidence, or appeal transactions.",
-      );
-    }
-
-    if (PaymentActions.instance === undefined) {
-      PaymentActions.instance = new PaymentActions({
-        ...config,
-        signer: config.signer,
-      });
-    } else {
-      PaymentActions.instance.assertCompatible(config);
-    }
-
-    return PaymentActions.instance;
   }
 
   settlePayment(
@@ -120,20 +97,6 @@ class PaymentActions {
       appealFeeWei: prepared.appealFeeWei,
       appealPeriod: prepared.appealPeriod,
     };
-  }
-
-  private assertCompatible(config: PaymentConfig): void {
-    const confirmations = config.confirmations ?? D402_DEFAULT_CONFIRMATIONS;
-
-    if (
-      config.provider !== this.provider
-      || config.signer !== this.originalSigner
-      || confirmations !== this.confirmations
-    ) {
-      throw new Error(
-        "paymentActions has already been initialized with a different configuration.",
-      );
-    }
   }
 
   private async sendPaymentAction(
@@ -227,7 +190,16 @@ class PaymentActions {
 }
 
 export function paymentActions(config: PaymentConfig): PaymentActions {
-  return PaymentActions.getInstance(config);
+  if (config.signer === undefined) {
+    throw new Error(
+      "paymentConfig.signer is required for payment actions so the server can broadcast settlement, refund, consumption, evidence, or appeal transactions.",
+    );
+  }
+
+  return new PaymentActions({
+    ...config,
+    signer: config.signer,
+  });
 }
 
 export type { PaymentActions };
