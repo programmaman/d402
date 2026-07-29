@@ -179,33 +179,3 @@ function compareReference(left: D402BlockReference, right: D402BlockReference): 
     && left.blockHash.toLowerCase() === right.blockHash.toLowerCase()
     && left.blockTimestampUnixSec === right.blockTimestampUnixSec;
 }
-
-/** @deprecated Use BlockReferenceCache. */
-export interface LatestBlockTimestampCache {
-  get(provider: AbstractProvider): Promise<bigint | null>;
-}
-
-/** @deprecated Use createBlockReferenceCache. */
-export function createLatestBlockTimestampCache(ttlMs: number): LatestBlockTimestampCache {
-  let cachedAtMs = 0;
-  let cachedTimestamp: bigint | null = null;
-  let pending: Promise<bigint | null> | null = null;
-  return {
-    async get(provider) {
-      const nowMs = Date.now();
-      if (cachedTimestamp !== null && nowMs - cachedAtMs < ttlMs) return cachedTimestamp;
-      if (pending !== null) return pending;
-      pending = provider.getBlock("latest").then((block) => {
-        if (block === null) return null;
-        cachedTimestamp = BigInt(block.timestamp);
-        cachedAtMs = Date.now();
-        return cachedTimestamp;
-      }).catch(() => null);
-      try {
-        return await pending;
-      } finally {
-        pending = null;
-      }
-    },
-  };
-}

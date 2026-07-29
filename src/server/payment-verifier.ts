@@ -366,15 +366,16 @@ async function verifySettlementPolicy(input: {
     return { ok: false, reason: "provider-error", cause };
   }
 
-  if (referenceBlock !== null) {
-    if (
-      referenceBlock.number !== input.settlementReference.blockNumber
-      || referenceBlock.hash?.toLowerCase() !== input.settlementReference.blockHash.toLowerCase()
-      || referenceBlock.timestamp !== Number(input.settlementReference.blockTimestampUnixSec)
-    ) {
-      return { ok: false, reason: "reference-block-mismatch" };
-    }
-    return { ok: true };
+  if (referenceBlock === null) {
+    return { ok: false, reason: "reference-block-mismatch" };
+  }
+
+  if (
+    referenceBlock.number !== input.settlementReference.blockNumber
+    || referenceBlock.hash?.toLowerCase() !== input.settlementReference.blockHash.toLowerCase()
+    || referenceBlock.timestamp !== Number(input.settlementReference.blockTimestampUnixSec)
+  ) {
+    return { ok: false, reason: "reference-block-mismatch" };
   }
 
   let creationBlock;
@@ -384,15 +385,23 @@ async function verifySettlementPolicy(input: {
     return { ok: false, reason: "provider-error", cause };
   }
   if (creationBlock === null) {
-    return { ok: false, reason: "provider-error", cause: new Error("creation block unavailable") };
+    return {
+      ok: false,
+      reason: "provider-error",
+      cause: new Error("Payment creation block is unavailable."),
+    };
   }
 
   if (
-    input.settlementReference.blockNumber > input.receipt.blockNumber
-    || Number(input.settlementReference.blockTimestampUnixSec) > creationBlock.timestamp
-    || BigInt(input.paymentRequest.settlementTimeUnixSec)
-      > BigInt(creationBlock.timestamp) + BigInt(input.settlementWindow)
+    referenceBlock.number > input.receipt.blockNumber
+    || referenceBlock.timestamp > creationBlock.timestamp
   ) {
+    return { ok: false, reason: "reference-settlement-out-of-bounds" };
+  }
+
+  const expectedSettlementTime = BigInt(referenceBlock.timestamp)
+    + BigInt(input.settlementWindow);
+  if (BigInt(input.paymentRequest.settlementTimeUnixSec) !== expectedSettlementTime) {
     return { ok: false, reason: "reference-settlement-out-of-bounds" };
   }
 

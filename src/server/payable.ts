@@ -131,17 +131,15 @@ export function payable<Req extends Request = Request>(
       if (!resolvedReference.ok) {
         return buildVerificationErrorResponse(options, resolvedReference.reason);
       }
-      if (resolvedReference.resolution === "verified") {
-        authenticatedSettlementReference = settlement.settlementReference;
-      }
+      authenticatedSettlementReference = resolvedReference.reference;
     }
 
     const verification = await verifyPayment({
       request,
       paymentRequest,
       dPaymentProof,
-      ...(settlement.settlementReference !== undefined
-        ? { settlementReference: settlement.settlementReference }
+      ...(authenticatedSettlementReference !== undefined
+        ? { settlementReference: authenticatedSettlementReference }
         : {}),
       verifier,
     });

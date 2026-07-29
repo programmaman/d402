@@ -4,8 +4,7 @@ import { createBlockReferenceCache } from "./cache.js";
 import type { BlockReferenceCache } from "./cache.js";
 
 export type SettlementReferenceResolution =
-  | { ok: true; resolution: "verified"; reference: D402BlockReference }
-  | { ok: true; resolution: "unavailable"; reference: D402BlockReference }
+  | { ok: true; reference: D402BlockReference }
   | {
       ok: false;
       reason: "reference-block-mismatch" | "reference-provider-error";
@@ -19,12 +18,9 @@ export async function resolveSettlementReference(
 ): Promise<SettlementReferenceResolution> {
   const lookup = await (cache ?? createBlockReferenceCache(0)).getByHash(provider, expected);
   if (lookup.ok) {
-    return { ok: true, resolution: "verified", reference: lookup.reference };
+    return { ok: true, reference: lookup.reference };
   }
-  if (lookup.reason === "not-found") {
-    return { ok: true, resolution: "unavailable", reference: expected };
-  }
-  if (lookup.reason === "mismatch") {
+  if (lookup.reason === "not-found" || lookup.reason === "mismatch") {
     return { ok: false, reason: "reference-block-mismatch" };
   }
   return { ok: false, reason: "reference-provider-error", cause: lookup.cause };

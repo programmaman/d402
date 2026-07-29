@@ -5,7 +5,7 @@ import type {
   Hex32,
 } from "../core/index.js";
 import type { PayableTerms } from "./types.js";
-import type { BlockReferenceCache, LatestBlockTimestampCache } from "./cache.js";
+import type { BlockReferenceCache } from "./cache.js";
 
 export interface SettlementConfig {
   provider: AbstractProvider;
@@ -84,24 +84,6 @@ export function resolveProofSettlementTerms(
     mode: "fixed",
     terms: withSettlementTime(terms, fixedSettlementTime(paymentConfig, terms)),
   };
-}
-
-/** @deprecated Use resolveChallengeSettlementTerms. */
-export async function resolveSettlementTerms(
-  paymentConfig: SettlementConfig,
-  terms: PayableTerms,
-  latestBlockCache: LatestBlockTimestampCache | null,
-): Promise<ResolvedPayableTerms> {
-  validateSettlementTimingConfiguration(paymentConfig, terms);
-  if (paymentConfig.settlementWindow !== undefined && latestBlockCache !== null) {
-    const timestamp = await latestBlockCache.get(paymentConfig.provider);
-    if (timestamp === null) {
-      throw new Error("unable to read latest block while deriving settlementTimeUnixSec");
-    }
-    return withSettlementTime(terms, addWindow(String(timestamp), paymentConfig.settlementWindow));
-  }
-  const result = await resolveChallengeSettlementTerms(paymentConfig, terms, null);
-  return result.terms;
 }
 
 function fixedSettlementTime(
