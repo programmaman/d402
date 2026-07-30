@@ -5,6 +5,11 @@ through the `ethers` signer that the app provides.
 
 This lets the same client work for web3 users, web2 services, and agents.
 
+Server-side terms resolution is independent of signing. In framework routes,
+resolver callbacks can inspect `context.originalRequest` for framework metadata
+and read `context.bodyRequest` without consuming the request later passed to
+the protected handler.
+
 ## Web3 Wallets
 
 Use your app's wallet connector to get an ethers signer. Browser wallets,

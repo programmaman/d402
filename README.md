@@ -168,8 +168,37 @@ terms: {
 ```
 
 d402 treats the resolved resource as an opaque, trimmed string. The terms
-resolver and `terms.resource` each receive their own request clone, so either
-may read a request body without consuming the handler's request.
+resolver and `terms.resource` each receive their own request clone as both the
+first argument and `context.bodyRequest`. Framework integrations can read
+subtype-specific metadata from `context.originalRequest`:
+
+```ts
+import type { NextRequest } from "next/server";
+
+const route = payable<NextRequest>({
+  paymentConfig: { provider },
+  terms: async (
+    _request,
+    { originalRequest, bodyRequest },
+  ) => {
+    const body = await bodyRequest.json() as {
+      reportId: string;
+    };
+
+    return {
+      ...terms,
+      agreement: {
+        id:
+          `report:${originalRequest.nextUrl.pathname}:${body.reportId}`,
+      },
+    };
+  },
+  handler,
+});
+```
+
+Read bodies from the clone, not `originalRequest`, so the original body remains
+available to the protected handler.
 
 ## Reusable and single-use payments
 

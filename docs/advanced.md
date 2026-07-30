@@ -59,6 +59,43 @@ constrain it with client policy. If each request needs a distinct payment
 identity, use `paymentConfig.identifier: "client"` or put a stable request or
 order ID in `agreement.id`.
 
+### Framework request metadata and request bodies
+
+Use resolver context when a framework extends the standard `Request` type:
+
+```ts
+import type { NextRequest } from "next/server";
+
+const route = payable<NextRequest>({
+  paymentConfig: { provider },
+  terms: async (
+    _request,
+    { originalRequest, bodyRequest },
+  ) => {
+    const body = await bodyRequest.json() as {
+      reportId: string;
+    };
+
+    return {
+      ...terms,
+      resource:
+        `report:${originalRequest.nextUrl.pathname}:${body.reportId}`,
+    };
+  },
+  handler: async (request) => {
+    const body = await request.json();
+    return Response.json({
+      path: request.nextUrl.pathname,
+      body,
+    });
+  },
+});
+```
+
+The first resolver argument and `bodyRequest` are the same dedicated clone.
+Each resolver receives a fresh clone. Use `originalRequest` for framework
+metadata and the clone for body reads so the handler retains its body.
+
 ## Datastore-Free One-Shot Consumption
 
 Use `Once` when one payment should authorize at most one operation. Construct

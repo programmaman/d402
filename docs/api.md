@@ -269,6 +269,25 @@ The resource defaults to the incoming request URL. When using another stable
 identifier, configure `terms.resource` on the server and `resource` on the
 client to resolve the same opaque string.
 
+Terms and resource callbacks receive a body-safe clone as their first argument
+and a `PayableResolverContext<Req>` as their second:
+
+```ts
+interface PayableResolverContext<
+  Req extends Request = Request,
+> {
+  readonly originalRequest: Req;
+  readonly bodyRequest: Request;
+}
+```
+
+`originalRequest` is the exact request passed to the payable route, preserving
+framework-specific properties such as `NextRequest.nextUrl`. `bodyRequest` is
+the same clone passed as the callback's first argument. Terms and resource
+callbacks receive separate clones, so each can read the body without consuming
+the handler's request. Existing one-argument callbacks retain their clone-based
+behavior.
+
 ### `paymentActions(config)`
 
 Creates a `PaymentActions` object containing the server-side lifecycle methods:
