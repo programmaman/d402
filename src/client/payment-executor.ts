@@ -18,7 +18,7 @@ import type {
 } from "ethers";
 import {
   hexlify,
-  NonceManager,
+  isError,
   randomBytes,
 } from "ethers";
 
@@ -30,6 +30,7 @@ import type {
   Address,
   D402PaymentRequest,
   Hex32,
+  PaymentAddress,
 } from "../core/index.js";
 import {
   D402ConfigurationError,
@@ -43,6 +44,7 @@ import {
 import type {
   D402PaymentExecutionError,
   D402PaymentExecutionErrorInput,
+  D402PaymentOperation,
 } from "../runtime/payment-execution-error.js";
 import { findPaymentCreatedEvent } from "../runtime/payment-events.js";
 import type { D402Logger } from "../runtime/logger.js";
@@ -62,10 +64,8 @@ export interface CreateDPaymentsExecutorOptions {
 export function createDPaymentsExecutor(
   options: CreateDPaymentsExecutorOptions,
 ): D402PaymentExecutor {
-  const signer = new NonceManager(options.signer);
-  const queuedOptions = {
+  const executorOptions = {
     ...options,
-    signer,
     logger: options.logger ?? NoopLogger,
   };
   let broadcastQueue: Promise<unknown> = Promise.resolve();
@@ -76,13 +76,7 @@ export function createDPaymentsExecutor(
     const previous = broadcastQueue;
     const current = (async () => {
       await previous.catch(() => {});
-
-      try {
-        return await operation();
-      } catch (error) {
-        signer.reset();
-        throw error;
-      }
+      return operation();
     })();
 
     broadcastQueue = current;
@@ -92,14 +86,14 @@ export function createDPaymentsExecutor(
   return {
     async createPayment(paymentRequest) {
       return createDPaymentsPayment(
-        queuedOptions,
+        executorOptions,
         paymentRequest,
         broadcastInQueue,
       );
     },
     async settlePayment(payment) {
       return sendPaymentAction(
-        queuedOptions,
+        executorOptions,
         payment,
         "settle",
         broadcastInQueue,
@@ -107,14 +101,14 @@ export function createDPaymentsExecutor(
     },
     async disputePayment(payment) {
       return raisePaymentDispute(
-        queuedOptions,
+        executorOptions,
         payment,
         broadcastInQueue,
       );
     },
     async submitEvidence(payment, evidenceUri) {
       return submitPaymentEvidence(
-        queuedOptions,
+        executorOptions,
         payment,
         evidenceUri,
         broadcastInQueue,
@@ -184,6 +178,9 @@ async function createDPaymentsPayment(
           options.provider,
           options.signer,
           preparedPayment.approvalTx,
+          "create",
+          undefined,
+          options.logger ?? NoopLogger,
         ),
       );
       await waitForSuccessfulReceipt(approvalResponse, confirmations);
@@ -194,6 +191,9 @@ async function createDPaymentsPayment(
         options.provider,
         options.signer,
         preparedPayment.creationTx,
+        "create",
+        undefined,
+        options.logger ?? NoopLogger,
       ),
     );
     const receipt = await waitForSuccessfulReceipt(
@@ -310,7 +310,14 @@ async function sendPaymentAction(
       ? dPayment.settle(walletAddress)
       : unreachable(action);
     const response = await broadcastInQueue(() =>
-      sendPreparedTx(options.provider, options.signer, tx),
+      sendPreparedTx(
+        options.provider,
+        options.signer,
+        tx,
+        action,
+        payment.paymentAddress,
+        options.logger ?? NoopLogger,
+      ),
     );
     const receipt = await waitForSuccessfulReceipt(
       response,
@@ -384,7 +391,14 @@ async function raisePaymentDispute(
       },
     });
     const response = await broadcastInQueue(() =>
-      sendPreparedTx(options.provider, options.signer, prepared.tx),
+      sendPreparedTx(
+        options.provider,
+        options.signer,
+        prepared.tx,
+        "dispute",
+        payment.paymentAddress,
+        options.logger ?? NoopLogger,
+      ),
     );
     const receipt = await waitForSuccessfulReceipt(
       response,
@@ -449,7 +463,14 @@ async function submitPaymentEvidence(
     const dPayment = dpayments.dPayment(payment.paymentAddress);
     const tx = dPayment.submitEvidence(evidenceUri, walletAddress);
     const response = await broadcastInQueue(() =>
-      sendPreparedTx(options.provider, options.signer, tx),
+      sendPreparedTx(
+        options.provider,
+        options.signer,
+        tx,
+        "submit-evidence",
+        payment.paymentAddress,
+        options.logger ?? NoopLogger,
+      ),
     );
     const receipt = await waitForSuccessfulReceipt(
       response,
@@ -496,18 +517,50 @@ async function sendPreparedTx(
   provider: AbstractProvider,
   signer: Signer,
   tx: PreparedTx,
+  operation: D402PaymentOperation,
+  paymentAddress: PaymentAddress | undefined,
+  logger: D402Logger,
 ): Promise<TransactionResponse> {
-  const request = toTransactionRequest(tx);
-  const from = await signer.getAddress();
-  const gasLimit = await provider.estimateGas({
-    ...request,
-    from,
-  });
+  async function attempt(): Promise<TransactionResponse> {
+    const request = toTransactionRequest(tx);
+    const from = await signer.getAddress();
+    const gasLimit = await provider.estimateGas({
+      ...request,
+      from,
+    });
 
-  return signer.sendTransaction({
-    ...request,
-    gasLimit,
-  });
+    return signer.sendTransaction({
+      ...request,
+      gasLimit,
+    });
+  }
+
+  try {
+    return await attempt();
+  } catch (error) {
+    if (!isError(error, "NONCE_EXPIRED")) {
+      throw error;
+    }
+
+    emitLog(logger, {
+      level: "warn",
+      event: "payment.transaction.retry",
+      message: "Retrying transaction after an expired nonce.",
+      context: {
+        operation,
+        paymentAddress,
+        transactionError: "NONCE_EXPIRED",
+      },
+    });
+
+    // Let ethers' short-lived provider cache expire before asking the
+    // integrator's signer to select a nonce for the one recovery attempt.
+    await new Promise((resolve) => {
+      setTimeout(resolve, 300);
+    });
+
+    return attempt();
+  }
 }
 
 async function waitForSuccessfulReceipt(
@@ -631,6 +684,9 @@ function logPaymentActionFailure(
       ...safeErrorContext(cause),
       ...(error.dpaymentsError !== undefined
         ? { dpaymentsError: error.dpaymentsError }
+        : {}),
+      ...(error.transactionError !== undefined
+        ? { transactionError: error.transactionError }
         : {}),
     },
   });

@@ -1,10 +1,11 @@
 import type { PreparedTx } from "@rakelabs/dpayments-sdk";
 import type {
-  AbstractProvider,
   Signer,
   TransactionReceipt,
   TransactionRequest,
+  TransactionResponse,
 } from "ethers";
+import { isError } from "ethers";
 
 import type { Hex32, PaymentAddress } from "../core/index.js";
 import { D402_DEFAULT_CONFIRMATIONS } from "../runtime/defaults.js";
@@ -29,6 +30,10 @@ type ResolvedPaymentConfig = PaymentConfig & {
   logger: D402Logger;
 };
 
+type BroadcastInQueue = <Result>(
+  operation: () => Promise<Result>,
+) => Promise<Result>;
+
 export function paymentActions(config: PaymentConfig): PaymentActions {
   if (config.signer === undefined) {
     throw new Error(
@@ -43,6 +48,20 @@ export function paymentActions(config: PaymentConfig): PaymentActions {
     signer: config.signer,
     logger: config.logger ?? NoopLogger,
   };
+  let broadcastQueue: Promise<unknown> = Promise.resolve();
+
+  async function broadcastInQueue<Result>(
+    operation: () => Promise<Result>,
+  ): Promise<Result> {
+    const previous = broadcastQueue;
+    const current = (async () => {
+      await previous.catch(() => {});
+      return operation();
+    })();
+
+    broadcastQueue = current;
+    return current;
+  }
 
   return {
     settlePayment(payment) {
@@ -50,7 +69,12 @@ export function paymentActions(config: PaymentConfig): PaymentActions {
         actionConfig,
         "settle",
         payment,
-        () => sendPaymentAction(actionConfig, payment, "settle"),
+        () => sendPaymentAction(
+          actionConfig,
+          payment,
+          "settle",
+          broadcastInQueue,
+        ),
       );
     },
     refundPayment(payment) {
@@ -58,7 +82,12 @@ export function paymentActions(config: PaymentConfig): PaymentActions {
         actionConfig,
         "refund",
         payment,
-        () => sendPaymentAction(actionConfig, payment, "refund"),
+        () => sendPaymentAction(
+          actionConfig,
+          payment,
+          "refund",
+          broadcastInQueue,
+        ),
       );
     },
     consumePayment(payment) {
@@ -66,7 +95,12 @@ export function paymentActions(config: PaymentConfig): PaymentActions {
         actionConfig,
         "consume",
         payment,
-        () => sendPaymentAction(actionConfig, payment, "consume"),
+        () => sendPaymentAction(
+          actionConfig,
+          payment,
+          "consume",
+          broadcastInQueue,
+        ),
       );
     },
     submitEvidence(payment, evidenceUri) {
@@ -74,7 +108,12 @@ export function paymentActions(config: PaymentConfig): PaymentActions {
         actionConfig,
         "submit-evidence",
         payment,
-        () => sendEvidenceAction(actionConfig, payment, evidenceUri),
+        () => sendEvidenceAction(
+          actionConfig,
+          payment,
+          evidenceUri,
+          broadcastInQueue,
+        ),
       );
     },
     appealPayment(payment) {
@@ -82,7 +121,11 @@ export function paymentActions(config: PaymentConfig): PaymentActions {
         actionConfig,
         "appeal",
         payment,
-        () => sendAppealAction(actionConfig, payment),
+        () => sendAppealAction(
+          actionConfig,
+          payment,
+          broadcastInQueue,
+        ),
       );
     },
   };
@@ -114,6 +157,9 @@ async function executePaymentOperation<Result>(
         ...(error.dpaymentsError !== undefined
           ? { dpaymentsError: error.dpaymentsError }
           : {}),
+        ...(error.transactionError !== undefined
+          ? { transactionError: error.transactionError }
+          : {}),
       },
     });
     throw error;
@@ -124,6 +170,7 @@ async function sendPaymentAction(
   config: ResolvedPaymentConfig,
   paymentAddress: PaymentAddress,
   action: "settle" | "refund" | "consume",
+  broadcastInQueue: BroadcastInQueue,
 ): Promise<PaymentActionResult> {
   const walletAddress = await config.signer.getAddress();
   emitLog(config.logger, {
@@ -144,10 +191,11 @@ async function sendPaymentAction(
       ? dPayment.voluntaryRefund(walletAddress)
       : dPayment.consume(walletAddress);
   const receipt = await sendPreparedTx(
-    config.provider,
-    config.signer,
+    config,
     tx,
-    config.confirmations ?? D402_DEFAULT_CONFIRMATIONS,
+    action,
+    paymentAddress,
+    broadcastInQueue,
   );
   emitLog(config.logger, {
     level: "info",
@@ -168,6 +216,7 @@ async function sendEvidenceAction(
   config: ResolvedPaymentConfig,
   paymentAddress: PaymentAddress,
   evidenceUri: string,
+  broadcastInQueue: BroadcastInQueue,
 ): Promise<PaymentActionResult> {
   const walletAddress = await config.signer.getAddress();
   emitLog(config.logger, {
@@ -183,10 +232,11 @@ async function sendEvidenceAction(
   const dPayment = dpayments.dPayment(paymentAddress);
   const tx = dPayment.submitEvidence(evidenceUri, walletAddress);
   const receipt = await sendPreparedTx(
-    config.provider,
-    config.signer,
+    config,
     tx,
-    config.confirmations ?? D402_DEFAULT_CONFIRMATIONS,
+    "submit-evidence",
+    paymentAddress,
+    broadcastInQueue,
   );
   emitLog(config.logger, {
     level: "info",
@@ -205,6 +255,7 @@ async function sendEvidenceAction(
 async function sendAppealAction(
   config: ResolvedPaymentConfig,
   paymentAddress: PaymentAddress,
+  broadcastInQueue: BroadcastInQueue,
 ): Promise<PaymentAppealResult> {
   const walletAddress = await config.signer.getAddress();
   emitLog(config.logger, {
@@ -223,10 +274,11 @@ async function sendAppealAction(
     walletAddress,
   );
   const receipt = await sendPreparedTx(
-    config.provider,
-    config.signer,
+    config,
     prepared.tx,
-    config.confirmations ?? D402_DEFAULT_CONFIRMATIONS,
+    "appeal",
+    paymentAddress,
+    broadcastInQueue,
   );
   emitLog(config.logger, {
     level: "info",
@@ -250,25 +302,57 @@ async function sendAppealAction(
 }
 
 async function sendPreparedTx(
-  provider: AbstractProvider,
-  signer: Signer,
+  config: ResolvedPaymentConfig,
   tx: PreparedTx,
-  confirmations: number,
+  operation: D402PaymentOperation,
+  paymentAddress: PaymentAddress,
+  broadcastInQueue: BroadcastInQueue,
 ): Promise<TransactionReceipt> {
-  const request = toTransactionRequest(tx);
-  const from = await signer.getAddress();
-  const gasLimit = await provider.estimateGas({
-    ...request,
-    from,
+  const response = await broadcastInQueue(async () => {
+    async function attempt(): Promise<TransactionResponse> {
+      const request = toTransactionRequest(tx);
+      const from = await config.signer.getAddress();
+      const gasLimit = await config.provider.estimateGas({
+        ...request,
+        from,
+      });
+
+      return config.signer.sendTransaction({
+        ...request,
+        gasLimit,
+      });
+    }
+
+    try {
+      return await attempt();
+    } catch (error) {
+      if (!isError(error, "NONCE_EXPIRED")) {
+        throw error;
+      }
+
+      emitLog(config.logger, {
+        level: "warn",
+        event: "payment.transaction.retry",
+        message: "Retrying transaction after an expired nonce.",
+        context: {
+          operation,
+          paymentAddress,
+          transactionError: "NONCE_EXPIRED",
+        },
+      });
+
+      // Let ethers' short-lived provider cache expire before asking the
+      // integrator's signer to select a nonce for the one recovery attempt.
+      await new Promise((resolve) => {
+        setTimeout(resolve, 300);
+      });
+
+      return attempt();
+    }
   });
-  // Leave nonce selection to the signer. Ethers providers predating broadcast
-  // cache invalidation can briefly reuse a stale pending nonce or gas estimate
-  // after a fast transaction; upgrade ethers if this read-after-write race occurs.
-  const response = await signer.sendTransaction({
-    ...request,
-    gasLimit,
-  });
-  const receipt = await response.wait(confirmations);
+  const receipt = await response.wait(
+    config.confirmations ?? D402_DEFAULT_CONFIRMATIONS,
+  );
 
   if (receipt === null || receipt.status !== 1) {
     throw new Error(

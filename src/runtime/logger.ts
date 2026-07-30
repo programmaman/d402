@@ -1,4 +1,4 @@
-export type D402LogLevel = "debug" | "info" | "error";
+export type D402LogLevel = "debug" | "info" | "warn" | "error";
 
 export interface D402LogRecord {
   level: D402LogLevel;
