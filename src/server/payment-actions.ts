@@ -34,6 +34,9 @@ type BroadcastInQueue = <Result>(
   operation: () => Promise<Result>,
 ) => Promise<Result>;
 
+const NONCE_RETRY_LIMIT = 3;
+const NONCE_RETRY_BASE_DELAY_MS = 300;
+
 export function paymentActions(config: PaymentConfig): PaymentActions {
   if (config.signer === undefined) {
     throw new Error(
@@ -323,31 +326,38 @@ async function sendPreparedTx(
       });
     }
 
-    try {
-      return await attempt();
-    } catch (error) {
-      if (!isError(error, "NONCE_EXPIRED")) {
-        throw error;
+    for (let retry = 0; ; retry++) {
+      try {
+        return await attempt();
+      } catch (error) {
+        if (
+          !isError(error, "NONCE_EXPIRED") ||
+          retry === NONCE_RETRY_LIMIT
+        ) {
+          throw error;
+        }
+
+        const delayMs =
+          NONCE_RETRY_BASE_DELAY_MS * 2 ** retry +
+          Math.floor(Math.random() * NONCE_RETRY_BASE_DELAY_MS);
+        emitLog(config.logger, {
+          level: "warn",
+          event: "payment.transaction.retry",
+          message: "Retrying transaction after an expired nonce.",
+          context: {
+            operation,
+            paymentAddress,
+            transactionError: "NONCE_EXPIRED",
+            retry: retry + 1,
+            retryLimit: NONCE_RETRY_LIMIT,
+            delayMs,
+          },
+        });
+
+        await new Promise((resolve) => {
+          setTimeout(resolve, delayMs);
+        });
       }
-
-      emitLog(config.logger, {
-        level: "warn",
-        event: "payment.transaction.retry",
-        message: "Retrying transaction after an expired nonce.",
-        context: {
-          operation,
-          paymentAddress,
-          transactionError: "NONCE_EXPIRED",
-        },
-      });
-
-      // Let ethers' short-lived provider cache expire before asking the
-      // integrator's signer to select a nonce for the one recovery attempt.
-      await new Promise((resolve) => {
-        setTimeout(resolve, 300);
-      });
-
-      return attempt();
     }
   });
   const receipt = await response.wait(

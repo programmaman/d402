@@ -349,6 +349,27 @@ await actions.appealPayment(paymentAddress);
 Pass the same object to `Once(actions)` when a payable route needs canonical
 on-chain one-shot consumption.
 
+## Nonce ownership and concurrent broadcasts
+
+d402 leaves nonce selection entirely to the signer supplied by the
+integrator. It does not wrap signers in ethers `NonceManager`, assign explicit
+nonces, or retain nonce state.
+
+Client executors and server action helpers privately order broadcasts made
+through the same object. This is only local race prevention; it is not a
+distributed nonce manager. Independent processes, helpers, and distributed
+signers remain responsible for their own coordination.
+
+If a broadcast fails with `NONCE_EXPIRED`, d402 estimates the transaction
+again against current contract state and makes up to three more attempts.
+Those attempts use bounded exponential backoff with jitter so independent
+executors do not remain synchronized. No other error is retried
+automatically. If another executor already completed the same payment action,
+the fresh estimate can surface the resulting decoded dPayments state error
+without broadcasting an unnecessary transaction. d402 does not treat that
+case as success because it does not possess the other executor's verified
+transaction hash.
+
 ## Structured lifecycle logging
 
 d402 does not log by default. Supply a `logger` record sink when a client or

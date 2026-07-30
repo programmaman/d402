@@ -287,9 +287,15 @@ The configuration requires `provider` and `signer`; `confirmations` is
 optional. Reuse the returned object for payable consumers, lifecycle workers,
 and recovery flows that use that configuration.
 
-`paymentActions()` currently creates an independent action object for each
-call. Retain and share that object where one configured signer is used by
-routes and workers.
+`paymentActions()` creates an independent action object for each call. Each
+object privately orders its own broadcasts, while nonce selection remains
+entirely with the configured signer. Independent helpers and distributed
+signers therefore remain free to coordinate transactions externally.
+
+d402 does not wrap client or server signers in ethers `NonceManager`. When a
+broadcast fails with `NONCE_EXPIRED`, d402 makes up to three fresh
+gas-estimated attempts using bounded exponential backoff with jitter. Other
+provider, signer, and contract failures are not automatically retried.
 
 Client and server on-chain payment failures use the same
 `D402PaymentExecutionError` constructor, exported from both `d402/client` and
@@ -306,14 +312,17 @@ try {
       operation: error.operation,         // "settle"
       paymentAddress: error.paymentAddress,
       dpaymentsError: error.dpaymentsError, // for example "InvalidState"
+      transactionError: error.transactionError, // for example "NONCE_EXPIRED"
     });
   }
 }
 ```
 
 `dpaymentsError` is present only when the dPayments revert is recognized.
-Provider, signer, and unknown contract failures still use the normalized
-execution error with the original failure available through `cause`.
+`transactionError` contains a machine-readable transaction or provider error
+code when one is available. Provider, signer, and unknown contract failures
+still use the normalized execution error with the original failure available
+through `cause`.
 
 ## Recovery and Consumers
 

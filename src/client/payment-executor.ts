@@ -61,6 +61,9 @@ export interface CreateDPaymentsExecutorOptions {
   logger?: D402Logger;
 }
 
+const NONCE_RETRY_LIMIT = 3;
+const NONCE_RETRY_BASE_DELAY_MS = 300;
+
 export function createDPaymentsExecutor(
   options: CreateDPaymentsExecutorOptions,
 ): D402PaymentExecutor {
@@ -535,31 +538,38 @@ async function sendPreparedTx(
     });
   }
 
-  try {
-    return await attempt();
-  } catch (error) {
-    if (!isError(error, "NONCE_EXPIRED")) {
-      throw error;
+  for (let retry = 0; ; retry++) {
+    try {
+      return await attempt();
+    } catch (error) {
+      if (
+        !isError(error, "NONCE_EXPIRED") ||
+        retry === NONCE_RETRY_LIMIT
+      ) {
+        throw error;
+      }
+
+      const delayMs =
+        NONCE_RETRY_BASE_DELAY_MS * 2 ** retry +
+        Math.floor(Math.random() * NONCE_RETRY_BASE_DELAY_MS);
+      emitLog(logger, {
+        level: "warn",
+        event: "payment.transaction.retry",
+        message: "Retrying transaction after an expired nonce.",
+        context: {
+          operation,
+          paymentAddress,
+          transactionError: "NONCE_EXPIRED",
+          retry: retry + 1,
+          retryLimit: NONCE_RETRY_LIMIT,
+          delayMs,
+        },
+      });
+
+      await new Promise((resolve) => {
+        setTimeout(resolve, delayMs);
+      });
     }
-
-    emitLog(logger, {
-      level: "warn",
-      event: "payment.transaction.retry",
-      message: "Retrying transaction after an expired nonce.",
-      context: {
-        operation,
-        paymentAddress,
-        transactionError: "NONCE_EXPIRED",
-      },
-    });
-
-    // Let ethers' short-lived provider cache expire before asking the
-    // integrator's signer to select a nonce for the one recovery attempt.
-    await new Promise((resolve) => {
-      setTimeout(resolve, 300);
-    });
-
-    return attempt();
   }
 }
 
