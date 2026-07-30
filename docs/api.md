@@ -82,7 +82,8 @@ Creates a client with these request methods:
 
 - `fetch(input, init)`: a compatibility convenience that returns `Response`.
 - `d402Fetch(input, init)`: returns the HTTP response plus the payment attempt
-  when a payment was required.
+  when a payment was required. It does not invoke `onResponse` or perform a
+  payment action.
 - `retry(payment, input, init)`: resends an existing payment proof. It validates
   the request binding and never creates another payment.
 
@@ -96,6 +97,19 @@ interface D402PaymentAttempt {
   paymentRequest: D402PaymentRequest;
   payment: D402CreatedPayment;
   proof: D402PaymentProof;
+}
+```
+
+`client.executor` is the executor the client uses. When `executor` is supplied
+to `createD402Client()`, it is the same instance. When the client creates the
+default executor from `signer` and `provider`, that created instance is exposed
+there instead. This makes explicit payment actions available in either setup:
+
+```ts
+const { response, payment } = await client.d402Fetch(url);
+
+if (response.ok && payment !== undefined) {
+  await client.executor.settlePayment!(payment.payment);
 }
 ```
 
@@ -118,9 +132,9 @@ try {
 `D402PaymentError` is thrown only after a payment and proof have been created.
 It exposes `payment`, the original `cause`, and `response` when a paid HTTP
 response was received before the failure. For example, a transport failure has
-no response; a settlement action failure does. `fetch()` throws the same error
-in this situation, but `d402Fetch()` is the API that returns payment data on a
-successful request.
+no response. `fetch()` also uses this error if its legacy response validation
+or automatic payment action fails. `d402Fetch()` and `retry()` never invoke
+those callbacks or take payment actions.
 
 Important options:
 

@@ -9,6 +9,8 @@ import type {
 import type { D402Logger } from "../runtime/logger.js";
 
 export interface D402Client {
+  /** The executor used by this client for payment creation and payment actions. */
+  readonly executor: Readonly<D402PaymentExecutor>;
   fetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response>;
   d402Fetch(
     input: RequestInfo | URL,

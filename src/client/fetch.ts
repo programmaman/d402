@@ -71,20 +71,6 @@ export function createD402Client(
         encodeD402PaymentProof(payment.proof),
       );
       response = await fetchImpl(paidRequest);
-      const responseDecision = await onResponse.validate({
-        paymentRequest: payment.paymentRequest,
-        payment: payment.payment,
-        response: response.clone(),
-      });
-
-      await resolvePaymentAfterAcceptance({
-        payment: payment.payment,
-        responseDecision,
-        executor,
-        onAccepted,
-        onRejected,
-      });
-
       return { response, payment };
     } catch (cause) {
       throw new D402PaymentError({ payment, response, cause });
@@ -170,8 +156,36 @@ export function createD402Client(
   }
 
   return Promise.resolve({
+    executor,
     async fetch(input, init) {
-      return (await d402Fetch(input, init)).response;
+      const result = await d402Fetch(input, init);
+      if (result.payment === undefined) {
+        return result.response;
+      }
+
+      try {
+        const responseDecision = await onResponse.validate({
+          paymentRequest: result.payment.paymentRequest,
+          payment: result.payment.payment,
+          response: result.response.clone(),
+        });
+
+        await resolvePaymentAfterAcceptance({
+          payment: result.payment.payment,
+          responseDecision,
+          executor,
+          onAccepted,
+          onRejected,
+        });
+      } catch (cause) {
+        throw new D402PaymentError({
+          payment: result.payment,
+          response: result.response,
+          cause,
+        });
+      }
+
+      return result.response;
     },
     d402Fetch,
     retry,
