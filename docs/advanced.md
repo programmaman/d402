@@ -12,9 +12,8 @@ stored, and what recovery path to use if fulfillment later fails.
 
 ## Resource Binding
 
-The payment resource defaults to the incoming request URL. Set
-`paymentConfig.resource` only when the payment is for another stable URL or
-resource identifier.
+The payment resource defaults to the incoming request URL. Set `terms.resource`
+when the payment is for another stable URL or resource identifier.
 
 Use a string when the same payment terms protect one stable URL.
 
@@ -22,9 +21,11 @@ Use a string when the same payment terms protect one stable URL.
 const route = payable({
   paymentConfig: {
     provider,
+  },
+  terms: {
+    ...terms,
     resource: "https://api.example.com/reports/monthly",
   },
-  terms,
   handler,
 });
 ```
@@ -36,7 +37,6 @@ than the literal request URL.
 const route = payable({
   paymentConfig: {
     provider,
-    resource: "report:monthly:123",
   },
   terms: {
     chainId: 100,
@@ -46,6 +46,7 @@ const route = payable({
     settlementTimeUnixSec: "4102444800",
     agreement: { id: "report-access:v1:request-123" },
     expiresAtUnixSec: 4102444800,
+    resource: "report:monthly:123",
   },
   handler,
 });

@@ -1,8 +1,13 @@
 import {
   D402ConfigurationError,
-  D402PaymentActionError,
-  D402PaymentExecutionError,
 } from "./errors.js";
+import {
+  normalizePaymentExecutionError,
+} from "../runtime/payment-execution-error.js";
+import type {
+  D402PaymentExecutionError,
+  D402PaymentOperation,
+} from "../runtime/payment-execution-error.js";
 import { D402PaymentAction } from "./types.js";
 import type {
   D402AcceptedPaymentAction,
@@ -35,7 +40,7 @@ export async function resolvePaymentAfterAcceptance(input: {
       const result = await input.executor.settlePayment(input.payment);
       return { action: "settled", txHash: result.txHash };
     } catch (cause) {
-      throw paymentActionError("Could not settle payment.", cause);
+      throw paymentExecutionError("settle", input.payment, cause);
     }
   }
 
@@ -57,7 +62,7 @@ export async function resolvePaymentAfterAcceptance(input: {
       );
       return { action: "refund-requested", txHash: result.txHash };
     } catch (cause) {
-      throw paymentActionError("Could not request refund.", cause);
+      throw paymentExecutionError("request-refund", input.payment, cause);
     }
   }
 
@@ -74,17 +79,18 @@ export async function resolvePaymentAfterAcceptance(input: {
     );
     return { action: "disputed", txHash: result.txHash };
   } catch (cause) {
-    throw paymentActionError("Could not dispute payment.", cause);
+    throw paymentExecutionError("dispute", input.payment, cause);
   }
 }
 
-function paymentActionError(
-  fallbackMessage: string,
+function paymentExecutionError(
+  operation: D402PaymentOperation,
+  payment: D402CreatedPayment,
   cause: unknown,
-): D402PaymentActionError {
-  const message = cause instanceof D402PaymentExecutionError
-    ? cause.message
-    : fallbackMessage;
-
-  return new D402PaymentActionError(message, { cause });
+): D402PaymentExecutionError {
+  return normalizePaymentExecutionError({
+    operation,
+    paymentAddress: payment.paymentAddress,
+    cause,
+  });
 }

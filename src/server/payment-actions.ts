@@ -10,6 +10,12 @@ import type { Hex32, PaymentAddress } from "../core/index.js";
 import { D402_DEFAULT_CONFIRMATIONS } from "../runtime/defaults.js";
 import { createPinnedDPayments } from "../runtime/dpayments.js";
 import { emitLog, NoopLogger } from "../runtime/logger.js";
+import {
+  normalizePaymentExecutionError,
+} from "../runtime/payment-execution-error.js";
+import type {
+  D402PaymentOperation,
+} from "../runtime/payment-execution-error.js";
 import type {
   PaymentActionResult,
   PaymentAppealResult,
@@ -17,6 +23,11 @@ import type {
   PaymentConfig,
 } from "./types.js";
 import type { D402Logger } from "../runtime/logger.js";
+
+type ResolvedPaymentConfig = PaymentConfig & {
+  signer: Signer;
+  logger: D402Logger;
+};
 
 export function paymentActions(config: PaymentConfig): PaymentActions {
   if (config.signer === undefined) {
@@ -35,25 +46,82 @@ export function paymentActions(config: PaymentConfig): PaymentActions {
 
   return {
     settlePayment(payment) {
-      return sendPaymentAction(actionConfig, payment, "settle");
+      return executePaymentOperation(
+        actionConfig,
+        "settle",
+        payment,
+        () => sendPaymentAction(actionConfig, payment, "settle"),
+      );
     },
     refundPayment(payment) {
-      return sendPaymentAction(actionConfig, payment, "refund");
+      return executePaymentOperation(
+        actionConfig,
+        "refund",
+        payment,
+        () => sendPaymentAction(actionConfig, payment, "refund"),
+      );
     },
     consumePayment(payment) {
-      return sendPaymentAction(actionConfig, payment, "consume");
+      return executePaymentOperation(
+        actionConfig,
+        "consume",
+        payment,
+        () => sendPaymentAction(actionConfig, payment, "consume"),
+      );
     },
     submitEvidence(payment, evidenceUri) {
-      return sendEvidenceAction(actionConfig, payment, evidenceUri);
+      return executePaymentOperation(
+        actionConfig,
+        "submit-evidence",
+        payment,
+        () => sendEvidenceAction(actionConfig, payment, evidenceUri),
+      );
     },
     appealPayment(payment) {
-      return sendAppealAction(actionConfig, payment);
+      return executePaymentOperation(
+        actionConfig,
+        "appeal",
+        payment,
+        () => sendAppealAction(actionConfig, payment),
+      );
     },
   };
 }
 
+async function executePaymentOperation<Result>(
+  config: ResolvedPaymentConfig,
+  operation: D402PaymentOperation,
+  paymentAddress: PaymentAddress,
+  execute: () => Promise<Result>,
+): Promise<Result> {
+  try {
+    return await execute();
+  } catch (cause) {
+    const error = normalizePaymentExecutionError({
+      operation,
+      paymentAddress,
+      cause,
+    });
+    emitLog(config.logger, {
+      level: "error",
+      event: "payment.execution.failed",
+      message: "Payment execution failed.",
+      context: {
+        operation: error.operation,
+        paymentAddress: error.paymentAddress,
+        errorName: error.name,
+        errorCode: error.code,
+        ...(error.dpaymentsError !== undefined
+          ? { dpaymentsError: error.dpaymentsError }
+          : {}),
+      },
+    });
+    throw error;
+  }
+}
+
 async function sendPaymentAction(
-  config: PaymentConfig & { signer: Signer; logger: D402Logger },
+  config: ResolvedPaymentConfig,
   paymentAddress: PaymentAddress,
   action: "settle" | "refund" | "consume",
 ): Promise<PaymentActionResult> {
@@ -97,7 +165,7 @@ async function sendPaymentAction(
 }
 
 async function sendEvidenceAction(
-  config: PaymentConfig & { signer: Signer; logger: D402Logger },
+  config: ResolvedPaymentConfig,
   paymentAddress: PaymentAddress,
   evidenceUri: string,
 ): Promise<PaymentActionResult> {
@@ -135,7 +203,7 @@ async function sendEvidenceAction(
 }
 
 async function sendAppealAction(
-  config: PaymentConfig & { signer: Signer; logger: D402Logger },
+  config: ResolvedPaymentConfig,
   paymentAddress: PaymentAddress,
 ): Promise<PaymentAppealResult> {
   const walletAddress = await config.signer.getAddress();

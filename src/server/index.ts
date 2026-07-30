@@ -5,6 +5,11 @@ export {
   decodeD402PaymentProof,
 } from "./payment-proof.js";
 export { paymentActions } from "./payment-actions.js";
+export {
+  D402PaymentExecutionError,
+  type D402PaymentExecutionErrorInput,
+  type D402PaymentOperation,
+} from "../runtime/payment-execution-error.js";
 export type {
   D402Logger,
   D402LogLevel,

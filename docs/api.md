@@ -226,7 +226,6 @@ Server responsibility:
 ```ts
 import {
   payable,
-  createDPaymentsVerifier,
   None,
   Once,
   paymentActions,
@@ -243,16 +242,20 @@ Wraps a request handler and returns a function that either:
 Important options:
 
 - `paymentConfig.provider`: ethers provider used for verification.
-- `paymentConfig.resource`: optional string or function that returns the resource being purchased. Defaults to the incoming request URL.
 - `paymentConfig.confirmations`: required payment transaction confirmations.
-- `paymentConfig.settlementWindow`: derive settlement time from latest block timestamp.
+- `paymentConfig.settlementWindow`: optional settlement window in seconds for
+  dynamic relative settlement timing.
 - `paymentConfig.settlementTimeUnixSec`: explicit settlement time.
-- `paymentConfig.cache`: latest-block cache for settlement-window derivation.
+- `paymentConfig.cache`: optional cache setting for settlement-window support.
 - `paymentConfig.logger`: optional structured record sink for server payment
   actions. It has the same failure-isolated behavior as the client logger.
-- `terms`: static terms or a function of the request.
+- `terms`: static terms or a function of the request. Its optional `resource`
+  may be a string or function of the request; it defaults to the incoming URL.
 - `handler`: protected handler.
-- `verify`: optional custom verifier.
+- `recovery`: optional authenticated-payment recovery hook. A response returned
+  here skips live-state verification, consumption, and the handler.
+- `verifier`: optional verifier for an authenticated payment. It may accept or
+  reject the current payment state, but cannot replace proof authentication.
 - `consumer`: optional payment-consumption policy. Use
   `Once(actions)` with a shared `paymentActions({ provider, signer })` instance
   to consume a verified payment before the
@@ -263,15 +266,8 @@ Important options:
 - `buildPaymentRequiredResponse`: optional 402 response builder.
 
 The resource defaults to the incoming request URL. When using another stable
-identifier, configure `paymentConfig.resource` on the server and `resource` on
-the client to resolve the same opaque string.
-
-### `createDPaymentsVerifier(options)`
-
-Creates the default on-chain verifier. It reads transaction receipts, decodes
-dPayment events, reads live payment state, and checks the request/proof match.
-Its `VerifiedPayment` result includes observed confirmations and creation block
-number/hash. These fields are optional for custom verifiers.
+identifier, configure `terms.resource` on the server and `resource` on the
+client to resolve the same opaque string.
 
 ### `paymentActions(config)`
 
@@ -295,25 +291,38 @@ and recovery flows that use that configuration.
 call. Retain and share that object where one configured signer is used by
 routes and workers.
 
-## Custom Verifiers and Consumers
-
-Use a custom verifier to authenticate payments through alternate chain
-indexing or to add verification policy. Use `PaymentConsumer` for single-use or
-other post-verification authorization policies.
+Client and server on-chain payment failures use the same
+`D402PaymentExecutionError` constructor, exported from both `d402/client` and
+`d402/server`. It preserves the original error as `cause` and exposes stable
+execution context:
 
 ```ts
-const baseVerifier = createDPaymentsVerifier({ provider, confirmations: 2 });
-
-const verify: PaymentVerifier = async (input) => {
-  const result = await baseVerifier(input);
-  if (!result.ok) {
-    return result;
+try {
+  await actions.settlePayment(paymentAddress);
+} catch (error) {
+  if (error instanceof D402PaymentExecutionError) {
+    console.error({
+      code: error.code,                   // "D402_PAYMENT_EXECUTION_FAILED"
+      operation: error.operation,         // "settle"
+      paymentAddress: error.paymentAddress,
+      dpaymentsError: error.dpaymentsError, // for example "InvalidState"
+    });
   }
-
-  await enforceAccountPolicy(result.payment);
-  return result;
-};
+}
 ```
+
+`dpaymentsError` is present only when the dPayments revert is recognized.
+Provider, signer, and unknown contract failures still use the normalized
+execution error with the original failure available through `cause`.
+
+## Recovery and Consumers
+
+d402 always authenticates payment creation and verifies current on-chain
+identity. `recovery` runs before verification, so an application can return a
+stored result before replay consumption. A custom verifier receives only this
+authenticated context; use it when a route intentionally permits or rejects a
+particular current payment state. Use `PaymentConsumer` for single-use or
+application claims.
 
 `Once` accepts any object implementing the `consumePayment` portion of
 `PaymentActions`. Use the concrete actions object for canonical on-chain
@@ -330,7 +339,7 @@ A custom database consumer must claim the payment atomically:
 import type { PaymentConsumer } from "d402/server";
 
 const databaseOnce: PaymentConsumer = {
-  async consume(payment) {
+  async consume({ payment }) {
     const inserted = await db.consumedPayments.insertIfAbsent({
       chainId,
       paymentId: payment.paymentId,
@@ -338,7 +347,7 @@ const databaseOnce: PaymentConsumer = {
     });
 
     return inserted
-      ? { ok: true, payment }
+      ? { ok: true, result: undefined }
       : { ok: false, reason: "payment-already-consumed" };
   },
 };

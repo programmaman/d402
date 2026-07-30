@@ -45,6 +45,18 @@ const paidReport = payable({
 
 `terms` may also be an async function of the incoming request.
 
+### Dynamic settlement timing
+
+For a settlement time relative to payment creation, configure a settlement
+window instead of an absolute settlement timestamp:
+
+```ts
+paymentConfig: {
+  provider,
+  settlementWindow: 3600,
+}
+```
+
 ## Pay for a resource
 
 ```ts
@@ -128,8 +140,11 @@ configure the same resource on both sides:
 const resource = "report:monthly:v1";
 
 const route = payable({
-  paymentConfig: { provider, resource },
-  terms,
+  paymentConfig: { provider },
+  terms: {
+    ...terms,
+    resource,
+  },
   handler,
 });
 
@@ -140,8 +155,21 @@ const client = await createD402Client({
 });
 ```
 
-Both options also accept a resolver function. d402 treats the resolved resource
-as an opaque, trimmed string.
+`terms.resource` also accepts a resolver for dynamic routes:
+
+```ts
+terms: {
+  ...terms,
+  resource: (request) => {
+    const { pathname } = new URL(request.url);
+    return `order:${pathname}`;
+  },
+}
+```
+
+d402 treats the resolved resource as an opaque, trimmed string. The terms
+resolver and `terms.resource` each receive their own request clone, so either
+may read a request body without consuming the handler's request.
 
 ## Reusable and single-use payments
 

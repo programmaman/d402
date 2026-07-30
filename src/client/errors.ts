@@ -21,13 +21,6 @@ export class D402PolicyViolationError extends D402ClientError {
   }
 }
 
-export class D402PaymentExecutionError extends D402ClientError {
-  constructor(message: string, options?: { cause?: unknown }) {
-    super(message, options);
-    this.name = "D402PaymentExecutionError";
-  }
-}
-
 /**
  * A paid request did not complete after a payment and proof were created.
  * `payment` can be persisted and passed to `client.retry()`.
@@ -57,13 +50,6 @@ export class D402RequestReplayError extends D402ClientError {
   constructor(message: string) {
     super(message);
     this.name = "D402RequestReplayError";
-  }
-}
-
-export class D402PaymentActionError extends D402ClientError {
-  constructor(message: string, options?: { cause?: unknown }) {
-    super(message, options);
-    this.name = "D402PaymentActionError";
   }
 }
 

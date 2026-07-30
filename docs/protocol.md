@@ -81,6 +81,12 @@ nonce. By default, `payable()` emits the canonical salt; configure
 generate a fresh salt. The client derives `paymentId` from the normalized
 request, actual signer address, and effective salt.
 
+## Payment ID
+
+Use `derivePaymentId(paymentRequest, payerAddress, paymentSalt)` from
+`d402/core` when an integration needs a payment ID. The SDK owns the
+normalization and validation rules; applications should not reimplement them.
+
 The two request forms are strict:
 
 - `identifier: "server"` makes the server inject a canonical salt. The
@@ -93,83 +99,6 @@ Application terms cannot provide `paymentSalt`. A saltless request paired with
 the canonical proof salt is invalid, as is a canonical request paired with any
 other proof salt. Salt selection occurs once when the payment is created;
 confirmation waits and paid-request retries reuse the created payment's salt.
-
-## Payment ID
-
-`derivePaymentId(paymentRequest, payerAddress, effectivePaymentSalt)`:
-
-1. Strictly parses and normalizes the payment request.
-2. Removes `expiresAtUnixSec` and the request-level `paymentSalt`.
-3. Requires a canonical request salt to equal the effective salt.
-4. Requires a saltless request to use a noncanonical effective salt.
-5. Adds the normalized, authenticated payer address and effective salt.
-6. Serializes the resulting object with canonical JSON.
-7. UTF-8 encodes the canonical JSON and hashes it with Keccak-256.
-
-
-The identity object has this logical shape:
-
-```ts
-{
-  ...normalizedPaymentRequestWithoutExpiryOrRequestSalt,
-  payerAddress: normalizedAuthenticatedPayer,
-  paymentSalt: normalizedEffectiveSalt,
-}
-```
-
-Challenge expiration is deliberately excluded, so a refreshed challenge for
-the same terms, payer, and salt retains its identity. The request-level
-canonical salt selects server identity but is not hashed twice; the effective
-salt is always included exactly once.
-
-### Payment-ID vectors
-
-Both vectors use these normalized terms and payer:
-
-```json
-{
-  "paymentRequest": {
-    "version": 0.3,
-    "resource": "https://api.example.com/reports/123",
-    "method": "GET",
-    "chainId": 8453,
-    "payeeAddress": "0x2222222222222222222222222222222222222222",
-    "tokenAddress": null,
-    "netAmount": "10000",
-    "settlementTimeUnixSec": "1782600000",
-    "agreement": {
-      "id": "report:123:v1",
-      "hash": "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-      "uri": "ipfs://agreement"
-    },
-    "expiresAtUnixSec": 1782599700
-  },
-  "payerAddress": "0x5555555555555555555555555555555555555555"
-}
-```
-
-Server identity adds the canonical request salt and uses that same effective
-salt:
-
-```json
-{
-  "effectivePaymentSalt": "0xf70865accd1b69835cd1ac81f96bc4351fa9e88b4cf76f91f0661ce3d15e2ac6",
-  "paymentId": "0xb7cf1b368368d9ede156fcd25a1dc7ca4fb1533629412081e2c238d3158e8d20"
-}
-```
-
-Client identity omits the request salt and uses fresh client entropy:
-
-```json
-{
-  "effectivePaymentSalt": "0x7777777777777777777777777777777777777777777777777777777777777777",
-  "paymentId": "0xb224b8743f42355ed43b9458b017c4d023cfe7147dccde54c675b3659b2af265"
-}
-```
-
-Changing only `expiresAtUnixSec` leaves these identities unchanged. A
-saltless request using the canonical salt, or a canonical request using another
-effective salt, is invalid.
 
 ## Payment Proof
 
@@ -197,32 +126,7 @@ interface D402PaymentProof {
 }
 ```
 
-The proof does not claim `paymentId` or `payerAddress`. The server authenticates
-the actual payer from the trusted factory's `PaymentCreated.creator` and derives
-the expected ID from the request, authenticated creator, and proof salt.
-
-When a challenge carries a `settlementReference`, the client echoes that exact
-reference in its proof. Verification resolves the referenced block by hash and
-rejects a missing or mismatched reference; it does not substitute a newer block
-or reinterpret the settlement time.
-
-The server checks that:
-
-- the proof parses and its salt derives the expected payment ID
-- the transaction exists and succeeded
-- the transaction emitted the expected dPayment `PaymentCreated` event
-- the factory, payment address, payee, token, amount, and settlement time match
-- the live payment state is usable
-- the configured confirmation count is met
-
 ## Confirmations and Reorganizations
-
-One included creation receipt is one confirmation. At greater depths, the
-built-in verifier calculates:
-
-```text
-observed head block - creation block + 1
-```
 
 Verification is relative to the canonical chain observed by the configured
 provider at verification time. Confirmation depth reduces reorganization risk

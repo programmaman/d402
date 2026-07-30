@@ -1,5 +1,4 @@
 import {
-  decodeDPaymentError,
   PaymentEvents,
   ZERO_ADDRESS,
 } from "@rakelabs/dpayments-sdk";
@@ -34,11 +33,17 @@ import type {
 } from "../core/index.js";
 import {
   D402ConfigurationError,
-  D402PaymentExecutionError,
 } from "./errors.js";
 import { D402_DEFAULT_CONFIRMATIONS } from "../runtime/defaults.js";
 import { createPinnedDPayments } from "../runtime/dpayments.js";
 import { emitLog, NoopLogger } from "../runtime/logger.js";
+import {
+  normalizePaymentExecutionError,
+} from "../runtime/payment-execution-error.js";
+import type {
+  D402PaymentExecutionError,
+  D402PaymentExecutionErrorInput,
+} from "../runtime/payment-execution-error.js";
 import { findPaymentCreatedEvent } from "../runtime/payment-events.js";
 import type { D402Logger } from "../runtime/logger.js";
 import type {
@@ -166,7 +171,7 @@ async function createDPaymentsPayment(
       preparedPayment.payerAddress.toLowerCase() !==
       payerAddress.toLowerCase()
     ) {
-      throw new D402PaymentExecutionError(
+      throw new Error(
         "Signer address changed during dPayment preparation.",
       );
     }
@@ -211,7 +216,10 @@ async function createDPaymentsPayment(
       payerAddress,
     };
   } catch (cause) {
-    throw paymentExecutionError("Could not create dPayment.", cause);
+    throw paymentExecutionError({
+      operation: "create",
+      cause,
+    });
   }
 }
 
@@ -250,7 +258,7 @@ async function preparePayment(
     prepared.paymentId.toLowerCase() !==
     paymentId.toLowerCase()
   ) {
-    throw new D402PaymentExecutionError(
+    throw new Error(
       "dPayment ID does not match d402 payment ID.",
     );
   }
@@ -323,15 +331,19 @@ async function sendPaymentAction(
 
     return { txHash: receipt.hash as Hex32 };
   } catch (cause) {
-    const decoded = decodeDPaymentError(cause);
+    const error = paymentExecutionError({
+      operation: "settle",
+      paymentAddress: payment.paymentAddress,
+      cause,
+    });
     logPaymentActionFailure(
       options.logger ?? NoopLogger,
       action,
       payment,
       cause,
-      decoded,
+      error,
     );
-    throw paymentExecutionError("Could not settle dPayment.", cause, decoded);
+    throw error;
   }
 }
 
@@ -392,19 +404,19 @@ async function raisePaymentDispute(
 
     return { txHash: receipt.hash as Hex32 };
   } catch (cause) {
-    const decoded = decodeDPaymentError(cause);
+    const error = paymentExecutionError({
+      operation: "dispute",
+      paymentAddress: payment.paymentAddress,
+      cause,
+    });
     logPaymentActionFailure(
       options.logger ?? NoopLogger,
       "dispute",
       payment,
       cause,
-      decoded,
+      error,
     );
-    throw paymentExecutionError(
-      "Could not raise dPayment dispute.",
-      cause,
-      decoded,
-    );
+    throw error;
   }
 }
 
@@ -415,7 +427,11 @@ async function submitPaymentEvidence(
   broadcastInQueue: BroadcastInQueue,
 ): Promise<D402PaymentActionResult> {
   if (evidenceUri.trim().length === 0) {
-    throw new D402PaymentExecutionError("Evidence URI must not be empty.");
+    throw paymentExecutionError({
+      operation: "submit-evidence",
+      paymentAddress: payment.paymentAddress,
+      cause: new Error("Evidence URI must not be empty."),
+    });
   }
 
   try {
@@ -454,36 +470,26 @@ async function submitPaymentEvidence(
 
     return { txHash: receipt.hash as Hex32 };
   } catch (cause) {
-    const decoded = decodeDPaymentError(cause);
+    const error = paymentExecutionError({
+      operation: "submit-evidence",
+      paymentAddress: payment.paymentAddress,
+      cause,
+    });
     logPaymentActionFailure(
       options.logger ?? NoopLogger,
       "submit-evidence",
       payment,
       cause,
-      decoded,
+      error,
     );
-    throw paymentExecutionError(
-      "Could not submit dPayment evidence.",
-      cause,
-      decoded,
-    );
+    throw error;
   }
 }
 
 function paymentExecutionError(
-  message: string,
-  cause: unknown,
-  decoded = decodeDPaymentError(cause),
+  input: D402PaymentExecutionErrorInput,
 ): D402PaymentExecutionError {
-  if (cause instanceof D402PaymentExecutionError) {
-    return cause;
-  }
-
-  const decodedMessage = decoded !== null && "error" in decoded
-    ? `${message} dPayments reverted with ${decoded.error}.`
-    : message;
-
-  return new D402PaymentExecutionError(decodedMessage, { cause });
+  return normalizePaymentExecutionError(input);
 }
 
 async function sendPreparedTx(
@@ -511,7 +517,7 @@ async function waitForSuccessfulReceipt(
   const receipt = await response.wait(confirmations);
 
   if (receipt === null || receipt.status !== 1) {
-    throw new D402PaymentExecutionError("dPayment transaction failed.");
+    throw new Error("dPayment transaction failed.");
   }
 
   return receipt;
@@ -544,25 +550,25 @@ function extractPaymentAddressFromReceipt(
   });
 
   if (createdEvent === undefined) {
-    throw new D402PaymentExecutionError(
+    throw new Error(
       "DPayments create transaction did not emit PaymentCreated.",
     );
   }
 
   if (createdEvent.paymentId.toLowerCase() !== paymentId.toLowerCase()) {
-    throw new D402PaymentExecutionError(
+    throw new Error(
       "PaymentCreated event payment id does not match d402 payment id.",
     );
   }
 
   if (createdEvent.logAddress.toLowerCase() !== factoryAddress.toLowerCase()) {
-    throw new D402PaymentExecutionError(
+    throw new Error(
       "PaymentCreated event factory does not match d402 payment request.",
     );
   }
 
   if (createdEvent.payee.toLowerCase() !== paymentRequest.payeeAddress) {
-    throw new D402PaymentExecutionError(
+    throw new Error(
       "PaymentCreated event payee does not match d402 payment request.",
     );
   }
@@ -571,7 +577,7 @@ function extractPaymentAddressFromReceipt(
     createdEvent.token.toLowerCase() !==
     tokenAddressForChain(paymentRequest.tokenAddress)
   ) {
-    throw new D402PaymentExecutionError(
+    throw new Error(
       "PaymentCreated event token does not match d402 payment request.",
     );
   }
@@ -609,22 +615,22 @@ function logPaymentActionStart(
 
 function logPaymentActionFailure(
   logger: D402Logger,
-  action: "settle" | "dispute" | "submit-evidence",
+  operation: "settle" | "dispute" | "submit-evidence",
   payment: D402CreatedPayment,
   cause: unknown,
-  decoded: ReturnType<typeof decodeDPaymentError>,
+  error: D402PaymentExecutionError,
 ): void {
   emitLog(logger, {
     level: "error",
-    event: "payment.action.failed",
-    message: "Payment action failed.",
+    event: "payment.execution.failed",
+    message: "Payment execution failed.",
     context: {
-      action,
+      operation,
       paymentId: payment.paymentId,
       paymentAddress: payment.paymentAddress,
       ...safeErrorContext(cause),
-      ...(decoded !== null && "error" in decoded
-        ? { dpaymentsError: decoded.error }
+      ...(error.dpaymentsError !== undefined
+        ? { dpaymentsError: error.dpaymentsError }
         : {}),
     },
   });

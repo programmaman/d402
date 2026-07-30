@@ -15,13 +15,16 @@ export {
 export {
   D402ClientError,
   D402ConfigurationError,
-  D402PaymentActionError,
   D402PaymentError,
-  D402PaymentExecutionError,
   D402PaymentRequestParseError,
   D402PolicyViolationError,
   D402RequestReplayError,
 } from "./errors.js";
+export {
+  D402PaymentExecutionError,
+  type D402PaymentExecutionErrorInput,
+  type D402PaymentOperation,
+} from "../runtime/payment-execution-error.js";
 
 export type {
   D402AcceptedPaymentAction,
