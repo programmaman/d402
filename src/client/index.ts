@@ -41,7 +41,5 @@ export type {
   D402ResponseValidator,
 } from "./types.js";
 export {
-  D402DefaultPaymentActions,
-  D402DefaultResponseValidator,
   D402PaymentAction,
 } from "./types.js";

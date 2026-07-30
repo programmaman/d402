@@ -1,8 +1,12 @@
 import { DPayments, FACTORY_ADDRESS } from "@rakelabs/dpayments-sdk";
 import type { AbstractProvider } from "ethers";
 
-import { D402_QUICK_DISPUTABLE_PAYMENT } from "../core/index.js";
 import { getConnectedChainId } from "./chain.js";
+
+const quickDisputablePayment = Object.freeze({
+  address: "0x85ac6fee5f1f57de2b073e4a93edb2ff897290b8",
+  name: "Quick Disputable Payment V1",
+});
 
 const dpaymentsCache = new WeakMap<
   AbstractProvider,
@@ -38,7 +42,7 @@ export async function createPinnedDPayments(
       factoryAddress: FACTORY_ADDRESS,
       provider: options.provider,
       walletAddress: options.walletAddress,
-      impl: D402_QUICK_DISPUTABLE_PAYMENT,
+      impl: quickDisputablePayment,
     }),
   );
 

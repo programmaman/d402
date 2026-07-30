@@ -9,7 +9,6 @@ export {
 } from "./payment-proof.js";
 export {
   D402_CANONICAL_SALT,
-  D402_QUICK_DISPUTABLE_PAYMENT,
 } from "./constants.js";
 export type { D402CanonicalSalt } from "./constants.js";
 export type {

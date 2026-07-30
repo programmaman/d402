@@ -11,20 +11,35 @@ import type {
   PaymentIdentifier,
   PayableTerms,
   PayableTermsResolver,
+  ResolvedPayableTerms,
 } from "./types.js";
 
 export interface BuildServerPaymentRequestInput {
   request: Request;
-  terms: PayableTerms;
-  resource?: D402PaymentTerms["resource"];
+  terms: ResolvedPayableTerms;
   identifier?: PaymentIdentifier;
 }
 
-export async function resolvePayableTerms<Req>(
-  request: Req,
-  resolver: PayableTermsResolver<Req>,
-): Promise<PayableTerms> {
-  return typeof resolver === "function" ? resolver(request) : resolver;
+export async function resolvePayableTerms(
+  request: Request,
+  resolver: PayableTermsResolver,
+): Promise<ResolvedPayableTerms> {
+  const termsRequest = request.clone();
+  const resourceRequest = request.clone();
+  const terms = typeof resolver === "function"
+    ? await resolver(termsRequest)
+    : resolver;
+  const { resource, ...paymentTerms } = terms;
+  const resolvedResource = resource === undefined
+    ? undefined
+    : typeof resource === "function"
+      ? await resource(resourceRequest)
+      : resource;
+
+  return {
+    ...paymentTerms,
+    ...(resolvedResource !== undefined ? { resource: resolvedResource } : {}),
+  };
 }
 
 export function buildPaymentRequest(
@@ -41,7 +56,6 @@ export function buildServerPaymentRequest(
   const completeTerms = completeTermsFromRequest(
     input.request,
     input.terms,
-    input.resource,
     input.identifier,
   );
 
@@ -51,16 +65,15 @@ export function buildServerPaymentRequest(
 function completeTermsFromRequest(
   request: Request,
   terms: PayableTerms,
-  resource: D402PaymentTerms["resource"] | undefined,
   identifier: PaymentIdentifier | undefined,
 ): D402PaymentTerms {
   const partialTerms = terms as Partial<D402PaymentTerms>;
   const settlementTimeUnixSec = partialTerms.settlementTimeUnixSec;
-  const resolvedResource = resource ?? partialTerms.resource ?? request.url;
+  const resolvedResource = partialTerms.resource ?? request.url;
 
   if (resolvedResource === undefined) {
     throw new Error(
-      "resource must be provided by paymentConfig.resource, terms.resource, or the incoming request URL so the server can build a payment request",
+      "resource must be provided by terms.resource or the incoming request URL so the server can build a payment request",
     );
   }
 

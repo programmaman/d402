@@ -2,32 +2,34 @@ import { decodeDPaymentError } from "@rakelabs/dpayments-sdk";
 
 import type {
   PaymentActions,
-  PaymentVerificationResult,
-  VerifiedPayment,
+  PaymentFailure,
+  VerifiedPaymentContext,
 } from "./types.js";
 
-export interface PaymentConsumer {
-  consume(payment: VerifiedPayment): Promise<PaymentVerificationResult>;
+export type PaymentConsumerResult<Result> =
+  | { ok: true; result: Result }
+  | PaymentFailure;
+
+export interface PaymentConsumer<Result = void> {
+  consume(
+    context: Readonly<VerifiedPaymentContext>,
+  ): Promise<PaymentConsumerResult<Result>>;
 }
 
-export const None: PaymentConsumer = {
-  consume(
-    payment: VerifiedPayment,
-  ): Promise<PaymentVerificationResult> {
-    return Promise.resolve({ ok: true, payment });
+export const None: PaymentConsumer<void> = Object.freeze({
+  consume(): Promise<PaymentConsumerResult<void>> {
+    return Promise.resolve({ ok: true, result: undefined });
   },
-};
+});
 
 export function Once(
   actions: Pick<PaymentActions, "consumePayment">,
-): PaymentConsumer {
+): PaymentConsumer<void> {
   return {
-    async consume(
-      payment: VerifiedPayment,
-    ): Promise<PaymentVerificationResult> {
+    async consume(context): Promise<PaymentConsumerResult<void>> {
       try {
-        await actions.consumePayment(payment.paymentAddress);
-        return { ok: true, payment };
+        await actions.consumePayment(context.payment.paymentAddress);
+        return { ok: true, result: undefined };
       } catch (error) {
         const decoded = decodeDPaymentError(error);
 

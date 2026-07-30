@@ -20,17 +20,17 @@ const protectedDownload = payable({
   paymentConfig: {
     provider,
     signer: payee,
-    resource: (request) => request.url,
     confirmations: 1,
     identifier: "client",
+    settlementWindow: 3600,
   },
   consumer: Once(actions),
   terms: (request) => ({
+    resource: (resourceRequest) => resourceRequest.url,
     chainId,
     payeeAddress,
     tokenAddress: null,
     netAmount: "1000000000000000",
-    settlementTimeUnixSec: `${Math.floor(Date.now() / 1000) + 3600}` as `${bigint}`,
     agreement: {
       id: `one-shot-download:${new URL(request.url).pathname}:v1`,
       hash: "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",

@@ -22,26 +22,20 @@ import type {
 } from "../core/index.js";
 import type {
   PaymentState as D402PaymentState,
-  PaymentVerificationResult,
+  AuthenticatedPayment,
+  AuthenticatedPaymentContext,
+  PaymentAuthenticator,
+  PaymentFailure,
   PaymentVerifier,
-  VerifiedPayment,
 } from "./types.js";
 
 type PaymentValidationResult =
   | { ok: true }
-  | Extract<PaymentVerificationResult, { ok: false }>;
+  | PaymentFailure;
 import { getConnectedChainId } from "../runtime/chain.js";
 import { D402_DEFAULT_CONFIRMATIONS } from "../runtime/defaults.js";
 import { getDPaymentsMulticallConfig } from "../runtime/multicall.js";
 import { findPaymentCreatedEvents } from "../runtime/payment-events.js";
-
-export interface VerifyPaymentInput<Req = Request> {
-  request: Req;
-  paymentRequest: D402PaymentRequest;
-  dPaymentProof: DPaymentProof;
-  settlementReference?: D402BlockReference;
-  verifier: PaymentVerifier<Req>;
-}
 
 type PaymentSaltVerificationResult =
   | { ok: true }
@@ -76,28 +70,7 @@ export function verifyPaymentSalt(
   return { ok: true };
 }
 
-export async function verifyPayment<Req>(
-  input: VerifyPaymentInput<Req>,
-): Promise<PaymentVerificationResult> {
-  const saltResult = verifyPaymentSalt(
-    input.paymentRequest,
-    input.dPaymentProof,
-  );
-  if (!saltResult.ok) {
-    return saltResult;
-  }
-
-  return input.verifier({
-    request: input.request,
-    paymentRequest: input.paymentRequest,
-    dPaymentProof: input.dPaymentProof,
-    ...(input.settlementReference !== undefined
-      ? { settlementReference: input.settlementReference }
-      : {}),
-  });
-}
-
-export interface DPaymentsVerifierOptions {
+export interface DPaymentsAuthenticatorOptions {
   provider: AbstractProvider;
   confirmations?: number;
   settlementWindow?: number;
@@ -105,34 +78,19 @@ export interface DPaymentsVerifierOptions {
   multicall?: MulticallConfig;
 }
 
-export function createDPaymentsVerifier(
-  options: DPaymentsVerifierOptions,
-): PaymentVerifier {
+export function createDPaymentsAuthenticator(
+  options: DPaymentsAuthenticatorOptions,
+): PaymentAuthenticator {
   const events = new PaymentEvents();
   const confirmations = options.confirmations ?? D402_DEFAULT_CONFIRMATIONS;
   let connectedChainId: Promise<number> | undefined;
-  let reader: Promise<PaymentReader> | undefined;
-  const inFlightPaymentStateReads = new Map<
-    string,
-    Promise<PaymentStateReadResult>
-  >();
 
   function getVerifierChainId(): Promise<number> {
     connectedChainId ??= getConnectedChainId(options.provider);
     return connectedChainId;
   }
 
-  function getVerifierReader(): Promise<PaymentReader> {
-    reader ??= getVerifierChainId().then((chainId) =>
-      new PaymentReader(
-        options.provider,
-        options.multicall ?? getDPaymentsMulticallConfig(chainId),
-      ),
-    );
-    return reader;
-  }
-
-  return async function verifyDPaymentsPayment(input): Promise<PaymentVerificationResult> {
+  return async function authenticateDPaymentsPayment(input) {
     const { paymentRequest } = input;
     const proof = input.dPaymentProof;
     const chainResult = await verifyChain(
@@ -174,27 +132,44 @@ export function createDPaymentsVerifier(
     });
     if (!settlementResult.ok) return settlementResult;
 
-    // PaymentCreated authenticates the immutable payment data before this
-    // mutable state read can use the payment address.
-    const paymentStateResult = await getVerifierReader().then((reader) =>
-      readPaymentStateOnce(
-        reader,
-        proof.paymentAddress,
-        inFlightPaymentStateReads,
-      ),
-    );
-    if (!paymentStateResult.ok) {
-      return paymentStateResult;
-    }
-
-    return verifyPaymentState(
+    return {
+      ok: true,
+      payment: buildAuthenticatedPayment(
       proof,
-      paymentStateResult.state,
       createdEventResult.paymentId,
       createdEventResult.payerAddress,
       createdEventResult.receipt,
       createdEventResult.confirmations,
+      ),
+    };
+  };
+}
+
+export interface DPaymentsVerifierOptions {
+  provider: AbstractProvider;
+  /** Trusted private-network or test-chain Multicall3 deployment. */
+  multicall?: MulticallConfig;
+}
+
+export function createDPaymentsVerifier(
+  options: DPaymentsVerifierOptions,
+): PaymentVerifier {
+  let reader: Promise<PaymentReader> | undefined;
+  const inFlightPaymentStateReads = new Map<string, Promise<PaymentStateReadResult>>();
+
+  function getReader(): Promise<PaymentReader> {
+    reader ??= getConnectedChainId(options.provider).then((chainId) =>
+      new PaymentReader(options.provider, options.multicall ?? getDPaymentsMulticallConfig(chainId)),
     );
+    return reader;
+  }
+
+  return async function verifyDPaymentsPayment(context: Readonly<AuthenticatedPaymentContext>) {
+    const state = await getReader().then((currentReader) =>
+      readPaymentStateOnce(currentReader, context.payment.paymentAddress, inFlightPaymentStateReads),
+    );
+    if (!state.ok) return state;
+    return verifyPaymentState(state.state);
   };
 }
 
@@ -264,7 +239,7 @@ async function verifyPaymentCreatedEvent(input: {
       payerAddress: Address;
       confirmations?: number;
     }
-  | Extract<PaymentVerificationResult, { ok: false }>
+  | PaymentFailure
 > {
   const { receipt } = input;
 
@@ -490,14 +465,9 @@ async function readPaymentState(
   }
 }
 
-function verifyPaymentState(
-  proof: DPaymentProof,
-  paymentState: PaymentState,
-  paymentId: Hex32,
-  payerAddress: Address,
-  receipt: TransactionReceipt,
-  confirmations?: number,
-): PaymentVerificationResult {
+function verifyPaymentState(paymentState: PaymentState):
+  | { ok: true; state: D402PaymentState }
+  | PaymentFailure {
   const state = toD402PaymentState(paymentState);
   if (!isUsableForAccess(state)) {
     return {
@@ -506,33 +476,21 @@ function verifyPaymentState(
     };
   }
 
-  return {
-    ok: true,
-    payment: buildVerifiedPayment(
-      proof,
-      state,
-      paymentId,
-      payerAddress,
-      receipt,
-      confirmations,
-    ),
-  };
+  return { ok: true, state };
 }
 
-function buildVerifiedPayment(
+function buildAuthenticatedPayment(
   proof: DPaymentProof,
-  state: D402PaymentState,
   paymentId: Hex32,
   payerAddress: Address,
   receipt: TransactionReceipt,
   confirmations?: number,
-): VerifiedPayment {
+): AuthenticatedPayment {
   return {
     paymentId,
     paymentAddress: proof.paymentAddress,
     txHash: proof.txHash,
     payerAddress,
-    state,
     creationBlockNumber: receipt.blockNumber,
     ...(receipt.blockHash !== undefined
       ? { creationBlockHash: receipt.blockHash as Hex32 }

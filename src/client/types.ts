@@ -107,25 +107,12 @@ export interface D402ResponseValidator {
   }) => D402ResponseDecision | Promise<D402ResponseDecision>;
 }
 
-export const D402DefaultResponseValidator: D402ResponseValidator = {
-  validate({ response }) {
-    if (response.ok) {
-      return { accepted: true };
-    }
-
-    return {
-      accepted: false,
-      reason: `HTTP ${response.status}`,
-    };
-  },
-};
-
-export const D402PaymentAction = {
+export const D402PaymentAction = Object.freeze({
   Settle: "settle",
   RequestRefund: "request-refund",
   Dispute: "dispute",
   KeepOpen: "keep-open",
-} as const;
+} as const);
 
 export type D402PaymentActionValue =
   typeof D402PaymentAction[keyof typeof D402PaymentAction];
@@ -138,14 +125,6 @@ export type D402RejectedPaymentAction =
   | typeof D402PaymentAction.RequestRefund
   | typeof D402PaymentAction.Dispute
   | typeof D402PaymentAction.KeepOpen;
-
-export const D402DefaultPaymentActions = {
-  OnAccepted: D402PaymentAction.KeepOpen,
-  OnRejected: D402PaymentAction.KeepOpen,
-} as const satisfies {
-  OnAccepted: D402AcceptedPaymentAction;
-  OnRejected: D402RejectedPaymentAction;
-};
 
 export interface D402PaymentActionResolution {
   action: "settled" | "refund-requested" | "disputed" | "kept-open";

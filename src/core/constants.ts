@@ -9,10 +9,3 @@ export const D402_CANONICAL_SALT = (
 
 export type D402CanonicalSalt =
   typeof D402_CANONICAL_SALT;
-
-export const D402_QUICK_DISPUTABLE_PAYMENT = {
-
-    address: "0x85ac6fee5f1f57de2b073e4a93edb2ff897290b8",
-    name: "Quick Disputable Payment V1",
-
-} as const;

@@ -13,15 +13,15 @@ const provider = new JsonRpcProvider(requireEnv("RPC_URL"));
 const protectedReport = payable({
   paymentConfig: {
     provider,
-    resource: (request) => request.url,
     confirmations: 1,
+    settlementWindow: 3600,
   },
   terms: (request) => ({
+    resource: (resourceRequest) => resourceRequest.url,
     chainId,
     payeeAddress,
     tokenAddress: null,
     netAmount: "1000000000000000",
-    settlementTimeUnixSec: `${Math.floor(Date.now() / 1000) + 3600}` as `${bigint}`,
     agreement: {
       id: `express-report:${new URL(request.url).pathname}:v1`,
       hash: "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",

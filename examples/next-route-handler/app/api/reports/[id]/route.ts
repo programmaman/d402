@@ -9,18 +9,18 @@ const payeeAddress = requireEnv("PAYEE_ADDRESS") as `0x${string}`;
 const protectReport = payable({
   paymentConfig: {
     provider,
-    resource: (request) => request.url,
     confirmations: 1,
+    settlementWindow: 3600,
   },
   terms: (request) => {
     const url = new URL(request.url);
 
     return {
+      resource: (resourceRequest) => resourceRequest.url,
       chainId,
       payeeAddress,
       tokenAddress: null,
       netAmount: "1000000000000000",
-      settlementTimeUnixSec: `${Math.floor(Date.now() / 1000) + 3600}` as `${bigint}`,
       agreement: {
         id: `next-report:${url.pathname}:v1`,
         hash: "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",

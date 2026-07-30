@@ -30,10 +30,7 @@ import type {
   D402ResponseValidator,
 } from "./types.js";
 import type { D402PaymentProof } from "../core/index.js";
-import {
-  D402DefaultPaymentActions,
-  D402DefaultResponseValidator,
-} from "./types.js";
+import { defaultPaymentActions, defaultResponseValidator } from "./defaults.js";
 
 export function createD402Client(
   options: CreateD402ClientOptions,
@@ -55,8 +52,8 @@ export function createD402Client(
     : null;
   const executor = options.executor ?? createDefaultExecutor(options, provider);
   const onResponse = resolveResponseValidator(options.onResponse);
-  const onAccepted = options.onAccepted ?? D402DefaultPaymentActions.OnAccepted;
-  const onRejected = options.onRejected ?? D402DefaultPaymentActions.OnRejected;
+  const onAccepted = options.onAccepted ?? defaultPaymentActions.OnAccepted;
+  const onRejected = options.onRejected ?? defaultPaymentActions.OnRejected;
 
   async function sendPaidRequest(
     payment: D402PaymentAttempt,
@@ -209,7 +206,7 @@ function resolveFetch(
 function resolveResponseValidator(
   validator?: D402ResponseValidator,
 ): D402ResponseValidator {
-  return validator ?? D402DefaultResponseValidator;
+  return validator ?? defaultResponseValidator;
 }
 
 function requireProvider(

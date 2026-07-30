@@ -2,11 +2,11 @@ import { D402_PAYMENT_REQUEST_CONTENT_TYPE } from "./constants.js";
 import type {
   PaymentVerificationErrorReason,
   PaymentVerificationErrorResponseInit,
-  PaymentVerificationFailureReason,
+  PaymentFailureReason,
 } from "./types.js";
 
 export function buildPaymentVerificationErrorReason(
-  code: PaymentVerificationFailureReason,
+  code: PaymentFailureReason,
 ): PaymentVerificationErrorReason {
   switch (code) {
     case "invalid-proof":

@@ -11,18 +11,17 @@ import type { AbstractProvider, Signer } from "ethers";
 import type { D402Logger } from "../runtime/logger.js";
 import type { PaymentConsumer } from "./payment-consumer.js";
 
-export type PaymentResourceResolver<Req = Request> =
+export type PayableTermsResourceResolver =
   | string
-  | ((request: Req) => string | Promise<string>);
+  | ((request: Request) => string | Promise<string>);
 
 export type PaymentIdentifier =
   | "server"
   | "client";
 
-export interface PaymentConfig<Req = Request> {
+export interface PaymentConfig {
   provider: AbstractProvider;
   signer?: Signer;
-  resource?: PaymentResourceResolver<Req>;
   confirmations?: number;
   settlementWindow?: number;
   settlementTimeUnixSec?: number;
@@ -40,13 +39,17 @@ export interface PayableTerms {
   expiresAtUnixSec: number;
   version?: D402PaymentRequest["version"];
   method?: string;
-  resource?: string;
+  resource?: PayableTermsResourceResolver;
   settlementTimeUnixSec?: D402PaymentTerms["settlementTimeUnixSec"];
 }
 
-export type PayableTermsResolver<Req = Request> =
+export type PayableTermsResolver =
   | PayableTerms
-  | ((request: Req) => PayableTerms | Promise<PayableTerms>);
+  | ((request: Request) => PayableTerms | Promise<PayableTerms>);
+
+export type ResolvedPayableTerms = Omit<PayableTerms, "resource"> & {
+  resource?: string;
+};
 
 export type D402PaymentVerificationFailureReason =
   | "missing-proof"
@@ -76,7 +79,7 @@ export type D402PaymentVerificationFailureReason =
   | "resolved-payment"
   | "provider-error";
 
-export type PaymentVerificationFailureReason =
+export type PaymentFailureReason =
   | D402PaymentVerificationFailureReason
   | (string & {});
 
@@ -141,37 +144,60 @@ export interface PaymentActions {
   ) => Promise<PaymentAppealResult>;
 }
 
-export type PaymentVerificationResult =
-  | { ok: true; payment: VerifiedPayment }
-  | {
-      ok: false;
-      reason: PaymentVerificationFailureReason;
-      message?: string;
-      cause?: unknown;
-    };
+export interface PaymentFailure {
+  ok: false;
+  reason: PaymentFailureReason;
+  message?: string;
+  cause?: unknown;
+}
 
-export interface PaymentVerifierInput<Req = Request> {
+export interface PaymentAuthenticationInput<Req = Request> {
   request: Req;
   paymentRequest: D402PaymentRequest;
   dPaymentProof: DPaymentProof;
   settlementReference?: D402BlockReference;
 }
 
-export type PaymentVerifier<Req = Request> = (
-  input: PaymentVerifierInput<Req>,
-) => PaymentVerificationResult | Promise<PaymentVerificationResult>;
+export interface AuthenticatedPayment {
+  paymentId: Hex32;
+  paymentAddress: PaymentAddress;
+  txHash: DPaymentProof["txHash"];
+  payerAddress: Address;
+  confirmations?: number;
+  creationBlockNumber?: number;
+  creationBlockHash?: Hex32;
+}
 
-export interface PayableContext {
+export interface AuthenticatedPaymentContext {
   paymentRequest: D402PaymentRequest;
   dPaymentProof: DPaymentProof;
-  verification: Extract<PaymentVerificationResult, { ok: true }>;
-  payment: VerifiedPayment;
+  payment: AuthenticatedPayment;
   settlementReference?: D402BlockReference;
 }
 
-export type PayableHandler<Req = Request, Res = Response> = (
+export interface VerifiedPaymentContext extends Omit<AuthenticatedPaymentContext, "payment"> {
+  payment: VerifiedPayment;
+}
+
+export type PaymentAuthenticator<Req = Request> = (
+  input: Readonly<PaymentAuthenticationInput<Req>>,
+) => { ok: true; payment: AuthenticatedPayment } | PaymentFailure | Promise<{ ok: true; payment: AuthenticatedPayment } | PaymentFailure>;
+
+export type PaymentVerifier = (
+  context: Readonly<AuthenticatedPaymentContext>,
+) => { ok: true; state: PaymentState } | PaymentFailure | Promise<{ ok: true; state: PaymentState } | PaymentFailure>;
+
+export type PaymentRecovery = (
+  context: Readonly<AuthenticatedPaymentContext>,
+) => Response | undefined | Promise<Response | undefined>;
+
+export interface PayableContext<Result = void> extends VerifiedPaymentContext {
+  consumerResult: Result;
+}
+
+export type PayableHandler<Req = Request, Result = void, Res = Response> = (
   request: Req,
-  context: PayableContext,
+  context: Readonly<PayableContext<Result>>,
 ) => Res | Promise<Res>;
 
 export interface PaymentRequiredResponseInit {
@@ -193,6 +219,7 @@ export type PaymentRequiredResponseBuilder = (
 export interface PaymentVerificationErrorResponseInit {
   status: 422 | 425 | 503 | 504;
   reason: PaymentVerificationErrorReason;
+  failure: PaymentFailure;
 }
 
 export interface PaymentVerificationErrorResponseBody {
@@ -200,7 +227,7 @@ export interface PaymentVerificationErrorResponseBody {
 }
 
 export interface PaymentVerificationErrorReason {
-  code: PaymentVerificationFailureReason;
+  code: PaymentFailureReason;
   retryable: boolean;
   message?: string;
 }
@@ -209,12 +236,13 @@ export type PaymentVerificationErrorResponseBuilder = (
   init: PaymentVerificationErrorResponseInit,
 ) => Response;
 
-export interface PayableRouteConfig<Req = Request, Res = Response> {
-  paymentConfig: PaymentConfig<Req>;
-  terms: PayableTermsResolver<Req>;
-  handler: PayableHandler<Req, Res>;
-  verify?: PaymentVerifier<Req>;
-  consumer?: PaymentConsumer;
+export interface PayableRouteConfig<Req = Request, Result = void, Res = Response> {
+  paymentConfig: PaymentConfig;
+  terms: PayableTermsResolver;
+  handler: PayableHandler<Req, Result, Res>;
+  verifier?: PaymentVerifier;
+  recovery?: PaymentRecovery;
+  consumer?: PaymentConsumer<Result>;
   proofHeaderName?: string;
   buildPaymentRequiredResponse?: PaymentRequiredResponseBuilder;
   buildPaymentVerificationErrorResponse?: PaymentVerificationErrorResponseBuilder;

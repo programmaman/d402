@@ -4,7 +4,7 @@ import type {
   D402PaymentTerms,
   Hex32,
 } from "../core/index.js";
-import type { PayableTerms } from "./types.js";
+import type { PayableTerms, ResolvedPayableTerms } from "./types.js";
 import type { BlockReferenceCache } from "./cache.js";
 
 export interface SettlementConfig {
@@ -13,16 +13,16 @@ export interface SettlementConfig {
   settlementTimeUnixSec?: number;
 }
 
-export type ResolvedPayableTerms = PayableTerms & {
+export type ResolvedSettlementTerms = ResolvedPayableTerms & {
   settlementTimeUnixSec: D402PaymentTerms["settlementTimeUnixSec"];
 };
 
 export async function resolveChallengeSettlementTerms(
   paymentConfig: SettlementConfig,
-  terms: PayableTerms,
+  terms: ResolvedPayableTerms,
   referenceCache: BlockReferenceCache | null,
 ): Promise<{
-  terms: ResolvedPayableTerms;
+  terms: ResolvedSettlementTerms;
   settlementReference?: D402BlockReference;
 }> {
   validateSettlementTimingConfiguration(paymentConfig, terms);
@@ -52,14 +52,14 @@ export type ProofSettlementResult =
   | {
       ok: true;
       mode: "window" | "fixed";
-      terms: ResolvedPayableTerms;
+      terms: ResolvedSettlementTerms;
       settlementReference?: D402BlockReference;
     }
   | { ok: false; reason: "missing-settlement-reference" };
 
 export function resolveProofSettlementTerms(
   paymentConfig: SettlementConfig,
-  terms: PayableTerms,
+  terms: ResolvedPayableTerms,
   suppliedReference?: D402BlockReference,
 ): ProofSettlementResult {
   validateSettlementTimingConfiguration(paymentConfig, terms);
@@ -88,7 +88,7 @@ export function resolveProofSettlementTerms(
 
 function fixedSettlementTime(
   config: SettlementConfig,
-  terms: PayableTerms,
+  terms: ResolvedPayableTerms,
 ): D402PaymentTerms["settlementTimeUnixSec"] {
   if (config.settlementTimeUnixSec !== undefined) return String(config.settlementTimeUnixSec) as `${bigint}`;
   const termTime = (terms as Partial<Pick<PayableTerms, "settlementTimeUnixSec">>)
@@ -98,9 +98,9 @@ function fixedSettlementTime(
 }
 
 function withSettlementTime(
-  terms: PayableTerms,
+  terms: ResolvedPayableTerms,
   settlementTimeUnixSec: D402PaymentTerms["settlementTimeUnixSec"],
-): ResolvedPayableTerms {
+): ResolvedSettlementTerms {
   return { ...terms, settlementTimeUnixSec };
 }
 

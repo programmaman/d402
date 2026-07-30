@@ -20,13 +20,12 @@ import type {
 } from "../core/index.js";
 import type {
   PayableRouteConfig,
-  PaymentConfig,
+  PaymentFailure,
   PaymentRequiredResponseBuilder,
-  PaymentVerificationFailureReason,
 } from "./types.js";
 import {
+  createDPaymentsAuthenticator,
   createDPaymentsVerifier,
-  verifyPayment,
   verifyPaymentSalt,
 } from "./payment-verifier.js";
 import { None } from "./payment-consumer.js";
@@ -34,7 +33,8 @@ import { None } from "./payment-consumer.js";
 export function payable<Req extends Request = Request>(
   options: PayableRouteConfig<Req>,
 ): (request: Req) => Promise<Response> {
-  const verifier = options.verify ?? createDPaymentsVerifier(options.paymentConfig);
+  const authenticator = createDPaymentsAuthenticator(options.paymentConfig);
+  const verifier = options.verifier ?? createDPaymentsVerifier(options.paymentConfig);
   const consumer = options.consumer ?? None;
   const cacheSetting = options.paymentConfig.cache
     ?? (options.paymentConfig.settlementWindow !== undefined ? true : undefined);
@@ -48,13 +48,10 @@ export function payable<Req extends Request = Request>(
     try {
       proof = readD402PaymentProofFromRequest(request, options.proofHeaderName);
     } catch {
-      return buildVerificationErrorResponse(options, "invalid-proof");
+      return buildVerificationErrorResponse(options, { ok: false, reason: "invalid-proof" });
     }
 
-    const [terms, resource] = await Promise.all([
-      resolvePayableTerms(request, options.terms),
-      resolvePaymentResource(request, options.paymentConfig),
-    ]);
+    const terms = await resolvePayableTerms(request.clone(), options.terms);
     validateSettlementTimingConfiguration(options.paymentConfig, terms);
 
     if (proof === undefined) {
@@ -68,14 +65,13 @@ export function payable<Req extends Request = Request>(
       } catch (cause) {
         return buildVerificationErrorResponse(
           options,
-          isTimeoutError(cause) ? "provider-timeout" : "provider-error",
+          { ok: false, reason: isTimeoutError(cause) ? "provider-timeout" : "provider-error", cause },
         );
       }
 
       const paymentRequest = buildServerPaymentRequest({
         request,
         terms: challengeSettlement.terms,
-        ...(resource !== undefined ? { resource } : {}),
         ...(options.paymentConfig.identifier !== undefined
           ? { identifier: options.paymentConfig.identifier }
           : {}),
@@ -103,13 +99,12 @@ export function payable<Req extends Request = Request>(
       proof.settlementReference,
     );
     if (!settlement.ok) {
-      return buildVerificationErrorResponse(options, settlement.reason);
+      return buildVerificationErrorResponse(options, { ok: false, reason: settlement.reason });
     }
 
     const paymentRequest = buildServerPaymentRequest({
       request,
       terms: settlement.terms,
-      ...(resource !== undefined ? { resource } : {}),
       ...(options.paymentConfig.identifier !== undefined
         ? { identifier: options.paymentConfig.identifier }
         : {}),
@@ -118,7 +113,7 @@ export function payable<Req extends Request = Request>(
 
     const saltResult = verifyPaymentSalt(paymentRequest, dPaymentProof);
     if (!saltResult.ok) {
-      return buildVerificationErrorResponse(options, saltResult.reason);
+      return buildVerificationErrorResponse(options, saltResult);
     }
 
     let authenticatedSettlementReference: D402BlockReference | undefined;
@@ -129,50 +124,56 @@ export function payable<Req extends Request = Request>(
         settlement.settlementReference,
       );
       if (!resolvedReference.ok) {
-        return buildVerificationErrorResponse(options, resolvedReference.reason);
+        return buildVerificationErrorResponse(options, { ok: false, reason: resolvedReference.reason });
       }
       authenticatedSettlementReference = resolvedReference.reference;
     }
 
-    const verification = await verifyPayment({
+    const authentication = await authenticator({
       request,
       paymentRequest,
       dPaymentProof,
       ...(authenticatedSettlementReference !== undefined
         ? { settlementReference: authenticatedSettlementReference }
         : {}),
-      verifier,
     });
 
-    if (!verification.ok) {
-      return buildVerificationErrorResponse(options, verification.reason);
+    if (!authentication.ok) {
+      return buildVerificationErrorResponse(options, authentication);
     }
 
-    const consumption = await consumer.consume(verification.payment);
-    if (!consumption.ok) {
-      return buildVerificationErrorResponse(options, consumption.reason);
-    }
-
-    return options.handler(request, {
+    const authenticated = {
       paymentRequest,
       dPaymentProof,
-      verification,
-      payment: verification.payment,
+      payment: authentication.payment,
       ...(authenticatedSettlementReference !== undefined
         ? { settlementReference: authenticatedSettlementReference }
         : {}),
+    };
+
+    const recovered = await options.recovery?.(authenticated);
+    if (recovered !== undefined) return recovered;
+
+    const verification = await verifier(authenticated);
+    if (!verification.ok) {
+      return buildVerificationErrorResponse(options, verification);
+    }
+
+    const verified = {
+      ...authenticated,
+      payment: { ...authenticated.payment, state: verification.state },
+    };
+
+    const consumption = await consumer.consume(verified);
+    if (!consumption.ok) {
+      return buildVerificationErrorResponse(options, consumption);
+    }
+
+    return options.handler(request, {
+      ...verified,
+      consumerResult: consumption.result,
     });
   };
-}
-
-async function resolvePaymentResource<Req extends Request>(
-  request: Req,
-  paymentConfig: PaymentConfig<Req>,
-): Promise<string | undefined> {
-  if (paymentConfig.resource === undefined) return request.url;
-  return typeof paymentConfig.resource === "function"
-    ? paymentConfig.resource(request)
-    : paymentConfig.resource;
 }
 
 function buildChallengeResponse<Req extends Request>(
@@ -191,18 +192,19 @@ function buildChallengeResponse<Req extends Request>(
 
 function buildVerificationErrorResponse<Req extends Request>(
   options: PayableRouteConfig<Req>,
-  reason: PaymentVerificationFailureReason,
+  failure: PaymentFailure,
 ): Response {
   const builder = options.buildPaymentVerificationErrorResponse
     ?? buildPaymentVerificationErrorResponse;
   return builder({
-    status: statusForVerificationFailure(reason),
-    reason: buildPaymentVerificationErrorReason(reason),
+    status: statusForVerificationFailure(failure.reason),
+    reason: buildPaymentVerificationErrorReason(failure.reason),
+    failure,
   });
 }
 
 function statusForVerificationFailure(
-  reason: PaymentVerificationFailureReason,
+  reason: PaymentFailure["reason"],
 ): 422 | 425 | 503 | 504 {
   if (reason === "onchain-payment-not-found" || reason === "insufficient-confirmations") {
     return 425;
