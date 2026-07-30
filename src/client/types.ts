@@ -2,6 +2,7 @@ import type { AbstractProvider, Signer } from "ethers";
 
 import type {
   Address,
+  D402PaymentActionResult,
   D402PaymentProof,
   D402PaymentRequest,
   Hex32,
@@ -72,10 +73,6 @@ export interface D402CreatedPayment {
   txHash: Hex32;
   paymentSalt: Hex32;
   payerAddress: Address;
-}
-
-export interface D402PaymentActionResult {
-  txHash: Hex32;
 }
 
 export interface D402PaymentExecutor {

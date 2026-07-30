@@ -40,6 +40,27 @@ export interface D402PaymentRequest extends D402Versioned {
   paymentSalt?: D402CanonicalSalt;
 }
 
+export type D402PaymentRequiredReasonCode = "missing-proof";
+
+export type D402PaymentRequiredReasonCategory =
+  | "proof"
+  | "request"
+  | "chain"
+  | "policy";
+
+export interface D402PaymentRequiredReason {
+  code: D402PaymentRequiredReasonCode;
+  category: D402PaymentRequiredReasonCategory;
+  retryable: boolean;
+  message?: string;
+}
+
+export interface D402PaymentChallenge {
+  paymentRequest: D402PaymentRequest;
+  settlementReference?: D402BlockReference;
+  reason: D402PaymentRequiredReason;
+}
+
 export interface DPaymentProof extends D402Versioned {
   paymentAddress: PaymentAddress;
   txHash: Hex32;
@@ -51,4 +72,10 @@ export interface D402PaymentProof {
   settlementReference?: D402BlockReference;
 }
 
-export type D402PaymentTerms = D402PaymentRequest;
+export interface D402PaymentActionResult {
+  txHash: Hex32;
+}
+
+export type D402PaymentSaltValidation =
+  | { ok: true }
+  | { ok: false; reason: "payment-id-mismatch" };

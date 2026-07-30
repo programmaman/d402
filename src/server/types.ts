@@ -1,9 +1,10 @@
 import type {
   Address,
+  D402PaymentActionResult,
+  D402PaymentChallenge,
   DPaymentProof,
   D402BlockReference,
   D402PaymentRequest,
-  D402PaymentTerms,
   Hex32,
   PaymentAddress,
 } from "../core/index.js";
@@ -51,20 +52,22 @@ export interface PaymentConfig {
   logger?: D402Logger;
 }
 
-export interface PayableTerms<
+export type PayableTerms<
   Req extends Request = Request,
-> {
-  chainId: number;
-  payeeAddress: D402PaymentTerms["payeeAddress"];
-  tokenAddress: D402PaymentTerms["tokenAddress"];
-  netAmount: D402PaymentTerms["netAmount"];
-  agreement: D402PaymentTerms["agreement"];
-  expiresAtUnixSec: number;
+> = Pick<
+  D402PaymentRequest,
+  | "chainId"
+  | "payeeAddress"
+  | "tokenAddress"
+  | "netAmount"
+  | "agreement"
+  | "expiresAtUnixSec"
+> & {
   version?: D402PaymentRequest["version"];
   method?: string;
   resource?: PayableTermsResourceResolver<Req>;
-  settlementTimeUnixSec?: D402PaymentTerms["settlementTimeUnixSec"];
-}
+  settlementTimeUnixSec?: D402PaymentRequest["settlementTimeUnixSec"];
+};
 
 export type PayableTermsResolver<
   Req extends Request = Request,
@@ -111,44 +114,14 @@ export type PaymentFailureReason =
   | D402PaymentVerificationFailureReason
   | (string & {});
 
-export type PaymentRequiredReasonCode = "missing-proof";
-
-export type PaymentRequiredReasonCategory =
-  | "proof"
-  | "request"
-  | "chain"
-  | "policy";
-
-export interface PaymentRequiredReason {
-  code: PaymentRequiredReasonCode;
-  category: PaymentRequiredReasonCategory;
-  retryable: boolean;
-  message?: string;
-}
-
 export type PaymentState = "funded" | "settled" | "disputed" | "resolved";
-
-export interface VerifiedPayment {
-  paymentId: Hex32;
-  paymentAddress: PaymentAddress;
-  txHash: DPaymentProof["txHash"];
-  payerAddress: Address;
-  state: PaymentState;
-  confirmations?: number;
-  creationBlockNumber?: number;
-  creationBlockHash?: Hex32;
-}
-
-export interface PaymentActionResult {
-  txHash: DPaymentProof["txHash"];
-}
 
 export interface PaymentAppealPeriod {
   start: bigint;
   end: bigint;
 }
 
-export interface PaymentAppealResult extends PaymentActionResult {
+export interface PaymentAppealResult extends D402PaymentActionResult {
   appealFeeWei: bigint;
   appealPeriod: PaymentAppealPeriod;
 }
@@ -156,17 +129,17 @@ export interface PaymentAppealResult extends PaymentActionResult {
 export interface PaymentActions {
   settlePayment: (
     paymentAddress: PaymentAddress,
-  ) => Promise<PaymentActionResult>;
+  ) => Promise<D402PaymentActionResult>;
   refundPayment: (
     paymentAddress: PaymentAddress,
-  ) => Promise<PaymentActionResult>;
+  ) => Promise<D402PaymentActionResult>;
   consumePayment: (
     paymentAddress: PaymentAddress,
-  ) => Promise<PaymentActionResult>;
+  ) => Promise<D402PaymentActionResult>;
   submitEvidence: (
     paymentAddress: PaymentAddress,
     evidenceUri: string,
-  ) => Promise<PaymentActionResult>;
+  ) => Promise<D402PaymentActionResult>;
   appealPayment: (
     paymentAddress: PaymentAddress,
   ) => Promise<PaymentAppealResult>;
@@ -194,6 +167,10 @@ export interface AuthenticatedPayment {
   confirmations?: number;
   creationBlockNumber?: number;
   creationBlockHash?: Hex32;
+}
+
+export interface VerifiedPayment extends AuthenticatedPayment {
+  state: PaymentState;
 }
 
 export interface AuthenticatedPaymentContext {
@@ -228,30 +205,14 @@ export type PayableHandler<Req = Request, Result = void, Res = Response> = (
   context: Readonly<PayableContext<Result>>,
 ) => Res | Promise<Res>;
 
-export interface PaymentRequiredResponseInit {
-  paymentRequest: D402PaymentRequest;
-  settlementReference?: D402BlockReference;
-  reason: PaymentRequiredReason;
-}
-
-export interface PaymentRequiredResponseBody {
-  paymentRequest: D402PaymentRequest;
-  settlementReference?: D402BlockReference;
-  reason: PaymentRequiredReason;
-}
-
 export type PaymentRequiredResponseBuilder = (
-  init: PaymentRequiredResponseInit,
+  init: D402PaymentChallenge,
 ) => Response;
 
-export interface PaymentVerificationErrorResponseInit {
+export interface PaymentVerificationErrorBuilderInput {
   status: 422 | 425 | 503 | 504;
   reason: PaymentVerificationErrorReason;
   failure: PaymentFailure;
-}
-
-export interface PaymentVerificationErrorResponseBody {
-  reason: PaymentVerificationErrorReason;
 }
 
 export interface PaymentVerificationErrorReason {
@@ -261,7 +222,7 @@ export interface PaymentVerificationErrorReason {
 }
 
 export type PaymentVerificationErrorResponseBuilder = (
-  init: PaymentVerificationErrorResponseInit,
+  init: PaymentVerificationErrorBuilderInput,
 ) => Response;
 
 export interface PayableRouteConfig<

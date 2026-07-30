@@ -1,13 +1,10 @@
-import type { PreparedTx } from "@rakelabs/dpayments-sdk";
-import type {
-  Signer,
-  TransactionReceipt,
-  TransactionRequest,
-  TransactionResponse,
-} from "ethers";
-import { isError } from "ethers";
+import type { Signer } from "ethers";
 
-import type { Hex32, PaymentAddress } from "../core/index.js";
+import type {
+  D402PaymentActionResult,
+  Hex32,
+  PaymentAddress,
+} from "../core/index.js";
 import { D402_DEFAULT_CONFIRMATIONS } from "../runtime/defaults.js";
 import { createPinnedDPayments } from "../runtime/dpayments.js";
 import { emitLog, NoopLogger } from "../runtime/logger.js";
@@ -17,8 +14,16 @@ import {
 import type {
   D402PaymentOperation,
 } from "../runtime/payment-execution-error.js";
+import {
+  createBroadcastQueue,
+  sendPreparedTransaction,
+  waitForSuccessfulReceipt,
+} from "../runtime/transaction.js";
 import type {
-  PaymentActionResult,
+  BroadcastQueue,
+  TransactionNonceRetry,
+} from "../runtime/transaction.js";
+import type {
   PaymentAppealResult,
   PaymentActions,
   PaymentConfig,
@@ -30,12 +35,8 @@ type ResolvedPaymentConfig = PaymentConfig & {
   logger: D402Logger;
 };
 
-type BroadcastInQueue = <Result>(
-  operation: () => Promise<Result>,
-) => Promise<Result>;
-
-const NONCE_RETRY_LIMIT = 3;
-const NONCE_RETRY_BASE_DELAY_MS = 300;
+const ACTION_TRANSACTION_FAILURE_MESSAGE =
+  "DPayments action transaction failed after broadcast or was not mined successfully.";
 
 export function paymentActions(config: PaymentConfig): PaymentActions {
   if (config.signer === undefined) {
@@ -43,28 +44,12 @@ export function paymentActions(config: PaymentConfig): PaymentActions {
       "paymentConfig.signer is required for payment actions so the server can broadcast settlement, refund, consumption, evidence, or appeal transactions.",
     );
   }
-  const actionConfig: PaymentConfig & {
-    signer: Signer;
-    logger: D402Logger;
-  } = {
+  const actionConfig: ResolvedPaymentConfig = {
     ...config,
     signer: config.signer,
     logger: config.logger ?? NoopLogger,
   };
-  let broadcastQueue: Promise<unknown> = Promise.resolve();
-
-  async function broadcastInQueue<Result>(
-    operation: () => Promise<Result>,
-  ): Promise<Result> {
-    const previous = broadcastQueue;
-    const current = (async () => {
-      await previous.catch(() => {});
-      return operation();
-    })();
-
-    broadcastQueue = current;
-    return current;
-  }
+  const broadcastInQueue = createBroadcastQueue();
 
   return {
     settlePayment(payment) {
@@ -173,8 +158,8 @@ async function sendPaymentAction(
   config: ResolvedPaymentConfig,
   paymentAddress: PaymentAddress,
   action: "settle" | "refund" | "consume",
-  broadcastInQueue: BroadcastInQueue,
-): Promise<PaymentActionResult> {
+  broadcastInQueue: BroadcastQueue,
+): Promise<D402PaymentActionResult> {
   const walletAddress = await config.signer.getAddress();
   emitLog(config.logger, {
     level: "debug",
@@ -186,19 +171,32 @@ async function sendPaymentAction(
       walletAddress,
     },
   });
-  const dpayments = await createQuickDPayments(config.provider, walletAddress);
+  const dpayments = await createPinnedDPayments({
+    provider: config.provider,
+    walletAddress,
+  });
   const dPayment = dpayments.dPayment(paymentAddress);
   const tx = action === "settle"
     ? dPayment.settle(walletAddress)
     : action === "refund"
       ? dPayment.voluntaryRefund(walletAddress)
       : dPayment.consume(walletAddress);
-  const receipt = await sendPreparedTx(
-    config,
-    tx,
-    action,
-    paymentAddress,
-    broadcastInQueue,
+  const response = await broadcastInQueue(() =>
+    sendPreparedTransaction({
+      provider: config.provider,
+      signer: config.signer,
+      tx,
+      onNonceRetry: createNonceRetryLogger(
+        config.logger,
+        action,
+        paymentAddress,
+      ),
+    }),
+  );
+  const receipt = await waitForSuccessfulReceipt(
+    response,
+    config.confirmations ?? D402_DEFAULT_CONFIRMATIONS,
+    ACTION_TRANSACTION_FAILURE_MESSAGE,
   );
   emitLog(config.logger, {
     level: "info",
@@ -219,8 +217,8 @@ async function sendEvidenceAction(
   config: ResolvedPaymentConfig,
   paymentAddress: PaymentAddress,
   evidenceUri: string,
-  broadcastInQueue: BroadcastInQueue,
-): Promise<PaymentActionResult> {
+  broadcastInQueue: BroadcastQueue,
+): Promise<D402PaymentActionResult> {
   const walletAddress = await config.signer.getAddress();
   emitLog(config.logger, {
     level: "debug",
@@ -231,15 +229,28 @@ async function sendEvidenceAction(
       walletAddress,
     },
   });
-  const dpayments = await createQuickDPayments(config.provider, walletAddress);
+  const dpayments = await createPinnedDPayments({
+    provider: config.provider,
+    walletAddress,
+  });
   const dPayment = dpayments.dPayment(paymentAddress);
   const tx = dPayment.submitEvidence(evidenceUri, walletAddress);
-  const receipt = await sendPreparedTx(
-    config,
-    tx,
-    "submit-evidence",
-    paymentAddress,
-    broadcastInQueue,
+  const response = await broadcastInQueue(() =>
+    sendPreparedTransaction({
+      provider: config.provider,
+      signer: config.signer,
+      tx,
+      onNonceRetry: createNonceRetryLogger(
+        config.logger,
+        "submit-evidence",
+        paymentAddress,
+      ),
+    }),
+  );
+  const receipt = await waitForSuccessfulReceipt(
+    response,
+    config.confirmations ?? D402_DEFAULT_CONFIRMATIONS,
+    ACTION_TRANSACTION_FAILURE_MESSAGE,
   );
   emitLog(config.logger, {
     level: "info",
@@ -258,7 +269,7 @@ async function sendEvidenceAction(
 async function sendAppealAction(
   config: ResolvedPaymentConfig,
   paymentAddress: PaymentAddress,
-  broadcastInQueue: BroadcastInQueue,
+  broadcastInQueue: BroadcastQueue,
 ): Promise<PaymentAppealResult> {
   const walletAddress = await config.signer.getAddress();
   emitLog(config.logger, {
@@ -270,18 +281,31 @@ async function sendAppealAction(
       walletAddress,
     },
   });
-  const dpayments = await createQuickDPayments(config.provider, walletAddress);
+  const dpayments = await createPinnedDPayments({
+    provider: config.provider,
+    walletAddress,
+  });
   const dPayment = dpayments.dPayment(paymentAddress);
   const prepared = await dPayment.prepareAppeal(
     "0x",
     walletAddress,
   );
-  const receipt = await sendPreparedTx(
-    config,
-    prepared.tx,
-    "appeal",
-    paymentAddress,
-    broadcastInQueue,
+  const response = await broadcastInQueue(() =>
+    sendPreparedTransaction({
+      provider: config.provider,
+      signer: config.signer,
+      tx: prepared.tx,
+      onNonceRetry: createNonceRetryLogger(
+        config.logger,
+        "appeal",
+        paymentAddress,
+      ),
+    }),
+  );
+  const receipt = await waitForSuccessfulReceipt(
+    response,
+    config.confirmations ?? D402_DEFAULT_CONFIRMATIONS,
+    ACTION_TRANSACTION_FAILURE_MESSAGE,
   );
   emitLog(config.logger, {
     level: "info",
@@ -304,90 +328,24 @@ async function sendAppealAction(
   };
 }
 
-async function sendPreparedTx(
-  config: ResolvedPaymentConfig,
-  tx: PreparedTx,
+function createNonceRetryLogger(
+  logger: D402Logger,
   operation: D402PaymentOperation,
   paymentAddress: PaymentAddress,
-  broadcastInQueue: BroadcastInQueue,
-): Promise<TransactionReceipt> {
-  const response = await broadcastInQueue(async () => {
-    async function attempt(): Promise<TransactionResponse> {
-      const request = toTransactionRequest(tx);
-      const from = await config.signer.getAddress();
-      const gasLimit = await config.provider.estimateGas({
-        ...request,
-        from,
-      });
-
-      return config.signer.sendTransaction({
-        ...request,
-        gasLimit,
-      });
-    }
-
-    for (let retry = 0; ; retry++) {
-      try {
-        return await attempt();
-      } catch (error) {
-        if (
-          !isError(error, "NONCE_EXPIRED") ||
-          retry === NONCE_RETRY_LIMIT
-        ) {
-          throw error;
-        }
-
-        const delayMs =
-          NONCE_RETRY_BASE_DELAY_MS * 2 ** retry +
-          Math.floor(Math.random() * NONCE_RETRY_BASE_DELAY_MS);
-        emitLog(config.logger, {
-          level: "warn",
-          event: "payment.transaction.retry",
-          message: "Retrying transaction after an expired nonce.",
-          context: {
-            operation,
-            paymentAddress,
-            transactionError: "NONCE_EXPIRED",
-            retry: retry + 1,
-            retryLimit: NONCE_RETRY_LIMIT,
-            delayMs,
-          },
-        });
-
-        await new Promise((resolve) => {
-          setTimeout(resolve, delayMs);
-        });
-      }
-    }
-  });
-  const receipt = await response.wait(
-    config.confirmations ?? D402_DEFAULT_CONFIRMATIONS,
-  );
-
-  if (receipt === null || receipt.status !== 1) {
-    throw new Error(
-      "DPayments action transaction failed after broadcast or was not mined successfully.",
-    );
-  }
-
-  return receipt;
-}
-
-function toTransactionRequest(tx: PreparedTx): TransactionRequest {
-  return {
-    to: tx.to,
-    data: tx.data,
-    value: BigInt(tx.value),
-    chainId: tx.chainId,
+): (retry: TransactionNonceRetry) => void {
+  return ({ retry, retryLimit, delayMs }) => {
+    emitLog(logger, {
+      level: "warn",
+      event: "payment.transaction.retry",
+      message: "Retrying transaction after an expired nonce.",
+      context: {
+        operation,
+        paymentAddress,
+        transactionError: "NONCE_EXPIRED",
+        retry,
+        retryLimit,
+        delayMs,
+      },
+    });
   };
-}
-
-async function createQuickDPayments(
-  provider: PaymentConfig["provider"],
-  walletAddress: string,
-): ReturnType<typeof createPinnedDPayments> {
-  return createPinnedDPayments({
-    provider,
-    walletAddress,
-  });
 }

@@ -4,6 +4,9 @@ export type {
   CreateDPaymentsExecutorOptions,
 } from "./payment-executor.js";
 export type {
+  D402PaymentActionResult,
+} from "../core/index.js";
+export type {
   D402Logger,
   D402LogLevel,
   D402LogRecord,
@@ -36,7 +39,6 @@ export type {
   D402FetchResponse,
   D402PaymentAttempt,
   D402PaymentActionResolution,
-  D402PaymentActionResult,
   D402PaymentExecutor,
   D402PaymentActionValue,
   D402RejectedPaymentAction,

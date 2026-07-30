@@ -1,11 +1,11 @@
 import type { AbstractProvider } from "ethers";
 import type {
   D402BlockReference,
-  D402PaymentTerms,
-  Hex32,
+  D402PaymentRequest,
 } from "../core/index.js";
 import type { PayableTerms, ResolvedPayableTerms } from "./types.js";
 import type { BlockReferenceCache } from "./cache.js";
+import { readBlockReference } from "./block-reference.js";
 
 export interface SettlementConfig {
   provider: AbstractProvider;
@@ -13,8 +13,15 @@ export interface SettlementConfig {
   settlementTimeUnixSec?: number;
 }
 
+export class SettlementTimingConfigurationError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "SettlementTimingConfigurationError";
+  }
+}
+
 export type ResolvedSettlementTerms = ResolvedPayableTerms & {
-  settlementTimeUnixSec: D402PaymentTerms["settlementTimeUnixSec"];
+  settlementTimeUnixSec: D402PaymentRequest["settlementTimeUnixSec"];
 };
 
 export async function resolveChallengeSettlementTerms(
@@ -30,7 +37,7 @@ export async function resolveChallengeSettlementTerms(
   if (paymentConfig.settlementWindow !== undefined) {
     const lookup = referenceCache
       ? await referenceCache.getLatest(paymentConfig.provider)
-      : await readLatestReference(paymentConfig.provider);
+      : await readBlockReference(paymentConfig.provider, "latest");
     if (!lookup.ok) {
       throw lookup.cause instanceof Error
         ? lookup.cause
@@ -89,44 +96,27 @@ export function resolveProofSettlementTerms(
 function fixedSettlementTime(
   config: SettlementConfig,
   terms: ResolvedPayableTerms,
-): D402PaymentTerms["settlementTimeUnixSec"] {
+): D402PaymentRequest["settlementTimeUnixSec"] {
   if (config.settlementTimeUnixSec !== undefined) return String(config.settlementTimeUnixSec) as `${bigint}`;
   const termTime = (terms as Partial<Pick<PayableTerms, "settlementTimeUnixSec">>)
     .settlementTimeUnixSec;
   if (termTime !== undefined) return termTime;
-  throw new Error("settlementTimeUnixSec must be provided by paymentConfig.settlementWindow, paymentConfig.settlementTimeUnixSec, or terms.settlementTimeUnixSec");
+  throw new SettlementTimingConfigurationError(
+    "settlementTimeUnixSec must be provided by paymentConfig.settlementWindow, paymentConfig.settlementTimeUnixSec, or terms.settlementTimeUnixSec",
+  );
 }
 
 function withSettlementTime(
   terms: ResolvedPayableTerms,
-  settlementTimeUnixSec: D402PaymentTerms["settlementTimeUnixSec"],
+  settlementTimeUnixSec: D402PaymentRequest["settlementTimeUnixSec"],
 ): ResolvedSettlementTerms {
   return { ...terms, settlementTimeUnixSec };
 }
 
-function addWindow(timestamp: string, window: number): D402PaymentTerms["settlementTimeUnixSec"] {
+function addWindow(timestamp: string, window: number): D402PaymentRequest["settlementTimeUnixSec"] {
   return String(BigInt(timestamp) + BigInt(window)) as `${bigint}`;
 }
 
-async function readLatestReference(provider: AbstractProvider): Promise<
-  | { ok: true; reference: D402BlockReference }
-  | { ok: false; cause?: unknown }
-> {
-  try {
-    const block = await provider.getBlock("latest");
-    if (block === null || block.hash === null) return { ok: false };
-    return {
-      ok: true,
-      reference: {
-        blockNumber: block.number,
-        blockHash: block.hash.toLowerCase() as Hex32,
-        blockTimestampUnixSec: String(block.timestamp) as `${bigint}`,
-      },
-    };
-  } catch (cause) {
-    return { ok: false, cause };
-  }
-}
 export function validateSettlementTimingConfiguration(
   config: SettlementConfig,
   terms: PayableTerms,
@@ -134,15 +124,23 @@ export function validateSettlementTimingConfiguration(
   const termTime = (terms as Partial<Pick<PayableTerms, "settlementTimeUnixSec">>)
     .settlementTimeUnixSec;
   if (config.settlementWindow !== undefined && config.settlementTimeUnixSec !== undefined) {
-    throw new Error("paymentConfig.settlementWindow and paymentConfig.settlementTimeUnixSec cannot both be set; choose one source of settlement timing");
+    throw new SettlementTimingConfigurationError(
+      "paymentConfig.settlementWindow and paymentConfig.settlementTimeUnixSec cannot both be set; choose one source of settlement timing",
+    );
   }
   if (config.settlementWindow !== undefined && termTime !== undefined) {
-    throw new Error("paymentConfig.settlementWindow and terms.settlementTimeUnixSec cannot both be set; choose one source of settlement timing");
+    throw new SettlementTimingConfigurationError(
+      "paymentConfig.settlementWindow and terms.settlementTimeUnixSec cannot both be set; choose one source of settlement timing",
+    );
   }
   if (config.settlementTimeUnixSec !== undefined && termTime !== undefined) {
-    throw new Error("paymentConfig.settlementTimeUnixSec and terms.settlementTimeUnixSec cannot both be set; choose one source of settlement timing");
+    throw new SettlementTimingConfigurationError(
+      "paymentConfig.settlementTimeUnixSec and terms.settlementTimeUnixSec cannot both be set; choose one source of settlement timing",
+    );
   }
   if (config.settlementWindow !== undefined && (!Number.isInteger(config.settlementWindow) || config.settlementWindow < 0)) {
-    throw new Error("paymentConfig.settlementWindow must be a non-negative integer");
+    throw new SettlementTimingConfigurationError(
+      "paymentConfig.settlementWindow must be a non-negative integer",
+    );
   }
 }

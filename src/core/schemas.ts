@@ -8,6 +8,8 @@ import {
 import type {
   Address,
   D402Agreement,
+  D402PaymentChallenge,
+  D402PaymentProof,
   D402PaymentRequest,
   DecimalString,
   Hex32,
@@ -100,6 +102,23 @@ export const blockReferenceSchema = z
   })
   .strict();
 
+export const paymentRequiredReasonSchema = z
+  .object({
+    code: z.literal("missing-proof"),
+    category: z.enum(["proof", "request", "chain", "policy"]),
+    retryable: z.boolean(),
+    message: z.string().optional(),
+  })
+  .strict();
+
+export const paymentChallengeSchema = z
+  .object({
+    paymentRequest: paymentRequestSchema,
+    settlementReference: blockReferenceSchema.optional(),
+    reason: paymentRequiredReasonSchema,
+  })
+  .strict() as z.ZodType<D402PaymentChallenge>;
+
 export const dPaymentProofSchema = z
   .object({
     version: z.literal(D402_VERSION),
@@ -114,4 +133,4 @@ export const d402PaymentProofSchema = z
     dPaymentProof: dPaymentProofSchema,
     settlementReference: blockReferenceSchema.optional(),
   })
-  .strict();
+  .strict() as z.ZodType<D402PaymentProof>;

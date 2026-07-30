@@ -1,11 +1,12 @@
-import { D402_PAYMENT_REQUEST_CONTENT_TYPE } from "./constants.js";
 import type {
-  PaymentRequiredReason,
-  PaymentRequiredResponseInit,
-} from "./types.js";
+  D402PaymentChallenge,
+  D402PaymentRequiredReason,
+  D402PaymentRequiredReasonCode,
+} from "../core/index.js";
+import { D402_PAYMENT_REQUEST_CONTENT_TYPE } from "../core/index.js";
 
 export function buildPaymentRequiredResponse(
-  init: PaymentRequiredResponseInit,
+  init: D402PaymentChallenge,
 ): Response {
   return new Response(JSON.stringify({
     paymentRequest: init.paymentRequest,
@@ -23,8 +24,8 @@ export function buildPaymentRequiredResponse(
 }
 
 export function buildPaymentRequiredReason(
-  code: "missing-proof" = "missing-proof",
-): PaymentRequiredReason {
+  code: D402PaymentRequiredReasonCode = "missing-proof",
+): D402PaymentRequiredReason {
   return {
     code,
     category: "proof",

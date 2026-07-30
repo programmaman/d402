@@ -1,8 +1,10 @@
 import { Buffer } from "node:buffer";
 
-import { parseD402PaymentProof } from "../core/index.js";
+import {
+  D402_PAYMENT_PROOF_HEADER,
+  parseD402PaymentProof,
+} from "../core/index.js";
 import type { D402PaymentProof } from "../core/types.js";
-import { D402_PAYMENT_PROOF_HEADER } from "./constants.js";
 
 export function decodeD402PaymentProof(value: string): D402PaymentProof {
   if (!value.trim()) {

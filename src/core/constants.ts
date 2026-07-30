@@ -1,4 +1,6 @@
 export const D402_VERSION = 0.3;
+export const D402_PAYMENT_PROOF_HEADER = "D402-Payment-Proof";
+export const D402_PAYMENT_REQUEST_CONTENT_TYPE = "application/d402+json";
 
 /**
  * Canonical v3 salt derived from keccak256(UTF-8("d402")).

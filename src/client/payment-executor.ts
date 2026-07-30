@@ -13,12 +13,9 @@ import type {
   AbstractProvider,
   Signer,
   TransactionReceipt,
-  TransactionRequest,
-  TransactionResponse,
 } from "ethers";
 import {
   hexlify,
-  isError,
   randomBytes,
 } from "ethers";
 
@@ -28,13 +25,11 @@ import {
 } from "../core/index.js";
 import type {
   Address,
+  D402PaymentActionResult,
   D402PaymentRequest,
   Hex32,
   PaymentAddress,
 } from "../core/index.js";
-import {
-  D402ConfigurationError,
-} from "./errors.js";
 import { D402_DEFAULT_CONFIRMATIONS } from "../runtime/defaults.js";
 import { createPinnedDPayments } from "../runtime/dpayments.js";
 import { emitLog, NoopLogger } from "../runtime/logger.js";
@@ -43,14 +38,21 @@ import {
 } from "../runtime/payment-execution-error.js";
 import type {
   D402PaymentExecutionError,
-  D402PaymentExecutionErrorInput,
   D402PaymentOperation,
 } from "../runtime/payment-execution-error.js";
 import { findPaymentCreatedEvent } from "../runtime/payment-events.js";
+import {
+  createBroadcastQueue,
+  sendPreparedTransaction,
+  waitForSuccessfulReceipt,
+} from "../runtime/transaction.js";
+import type {
+  BroadcastQueue,
+  TransactionNonceRetry,
+} from "../runtime/transaction.js";
 import type { D402Logger } from "../runtime/logger.js";
 import type {
   D402CreatedPayment,
-  D402PaymentActionResult,
   D402PaymentExecutor,
 } from "./types.js";
 
@@ -61,30 +63,19 @@ export interface CreateDPaymentsExecutorOptions {
   logger?: D402Logger;
 }
 
-const NONCE_RETRY_LIMIT = 3;
-const NONCE_RETRY_BASE_DELAY_MS = 300;
+type ResolvedDPaymentsExecutorOptions =
+  Omit<CreateDPaymentsExecutorOptions, "logger"> & {
+    logger: D402Logger;
+  };
 
 export function createDPaymentsExecutor(
   options: CreateDPaymentsExecutorOptions,
 ): D402PaymentExecutor {
-  const executorOptions = {
+  const executorOptions: ResolvedDPaymentsExecutorOptions = {
     ...options,
     logger: options.logger ?? NoopLogger,
   };
-  let broadcastQueue: Promise<unknown> = Promise.resolve();
-
-  async function broadcastInQueue<T>(
-    operation: () => Promise<T>,
-  ): Promise<T> {
-    const previous = broadcastQueue;
-    const current = (async () => {
-      await previous.catch(() => {});
-      return operation();
-    })();
-
-    broadcastQueue = current;
-    return current;
-  }
+  const broadcastInQueue = createBroadcastQueue();
 
   return {
     async createPayment(paymentRequest) {
@@ -95,10 +86,9 @@ export function createDPaymentsExecutor(
       );
     },
     async settlePayment(payment) {
-      return sendPaymentAction(
+      return sendSettlementAction(
         executorOptions,
         payment,
-        "settle",
         broadcastInQueue,
       );
     },
@@ -119,10 +109,6 @@ export function createDPaymentsExecutor(
     },
   };
 }
-
-type BroadcastInQueue = <T>(
-  operation: () => Promise<T>,
-) => Promise<T>;
 
 type PreparedDpaymentSdkResult =
   | Awaited<ReturnType<DPayments["factory"]["prepareCreateEthPayment"]>>
@@ -146,9 +132,9 @@ type PreparedDpayment =
   | PreparedErc20Dpayment;
 
 async function createDPaymentsPayment(
-  options: CreateDPaymentsExecutorOptions,
+  options: ResolvedDPaymentsExecutorOptions,
   paymentRequest: D402PaymentRequest,
-  broadcastInQueue: BroadcastInQueue,
+  broadcastInQueue: BroadcastQueue,
 ): Promise<D402CreatedPayment> {
   try {
     const payerAddress =
@@ -177,27 +163,29 @@ async function createDPaymentsPayment(
 
     if ("approvalTx" in preparedPayment) {
       const approvalResponse = await broadcastInQueue(() =>
-        sendPreparedTx(
-          options.provider,
-          options.signer,
-          preparedPayment.approvalTx,
-          "create",
-          undefined,
-          options.logger ?? NoopLogger,
-        ),
+        sendPreparedTransaction({
+          provider: options.provider,
+          signer: options.signer,
+          tx: preparedPayment.approvalTx,
+          onNonceRetry: createNonceRetryLogger(
+            options.logger,
+            "create",
+          ),
+        }),
       );
       await waitForSuccessfulReceipt(approvalResponse, confirmations);
     }
 
     const createResponse = await broadcastInQueue(() =>
-      sendPreparedTx(
-        options.provider,
-        options.signer,
-        preparedPayment.creationTx,
-        "create",
-        undefined,
-        options.logger ?? NoopLogger,
-      ),
+      sendPreparedTransaction({
+        provider: options.provider,
+        signer: options.signer,
+        tx: preparedPayment.creationTx,
+        onNonceRetry: createNonceRetryLogger(
+          options.logger,
+          "create",
+        ),
+      }),
     );
     const receipt = await waitForSuccessfulReceipt(
       createResponse,
@@ -219,7 +207,7 @@ async function createDPaymentsPayment(
       payerAddress,
     };
   } catch (cause) {
-    throw paymentExecutionError({
+    throw normalizePaymentExecutionError({
       operation: "create",
       cause,
     });
@@ -233,7 +221,7 @@ function isErc20PreparedPayment(
 }
 
 async function preparePayment(
-  options: CreateDPaymentsExecutorOptions,
+  options: ResolvedDPaymentsExecutorOptions,
   paymentRequest: D402PaymentRequest,
   paymentId: Hex32,
 ): Promise<PreparedDpayment> {
@@ -290,16 +278,17 @@ function createPaymentSalt(): Hex32 {
   return paymentSalt;
 }
 
-async function sendPaymentAction(
-  options: CreateDPaymentsExecutorOptions,
+async function sendSettlementAction(
+  options: ResolvedDPaymentsExecutorOptions,
   payment: D402CreatedPayment,
-  action: "settle",
-  broadcastInQueue: BroadcastInQueue,
+  broadcastInQueue: BroadcastQueue,
 ): Promise<D402PaymentActionResult> {
+  const action = "settle";
+
   try {
     const walletAddress = await options.signer.getAddress();
     logPaymentActionStart(
-      options.logger ?? NoopLogger,
+      options.logger,
       action,
       payment,
       walletAddress,
@@ -309,24 +298,24 @@ async function sendPaymentAction(
       walletAddress,
     });
     const dPayment = dpayments.dPayment(payment.paymentAddress);
-    const tx = action === "settle"
-      ? dPayment.settle(walletAddress)
-      : unreachable(action);
+    const tx = dPayment.settle(walletAddress);
     const response = await broadcastInQueue(() =>
-      sendPreparedTx(
-        options.provider,
-        options.signer,
+      sendPreparedTransaction({
+        provider: options.provider,
+        signer: options.signer,
         tx,
-        action,
-        payment.paymentAddress,
-        options.logger ?? NoopLogger,
-      ),
+        onNonceRetry: createNonceRetryLogger(
+          options.logger,
+          action,
+          payment.paymentAddress,
+        ),
+      }),
     );
     const receipt = await waitForSuccessfulReceipt(
       response,
       options.confirmations ?? D402_DEFAULT_CONFIRMATIONS,
     );
-    emitLog(options.logger ?? NoopLogger, {
+    emitLog(options.logger, {
       level: "info",
       event: "payment.action.confirmed",
       message: "Payment action confirmed.",
@@ -341,13 +330,13 @@ async function sendPaymentAction(
 
     return { txHash: receipt.hash as Hex32 };
   } catch (cause) {
-    const error = paymentExecutionError({
+    const error = normalizePaymentExecutionError({
       operation: "settle",
       paymentAddress: payment.paymentAddress,
       cause,
     });
     logPaymentActionFailure(
-      options.logger ?? NoopLogger,
+      options.logger,
       action,
       payment,
       cause,
@@ -358,20 +347,25 @@ async function sendPaymentAction(
 }
 
 async function raisePaymentDispute(
-  options: CreateDPaymentsExecutorOptions,
+  options: ResolvedDPaymentsExecutorOptions,
   payment: D402CreatedPayment,
-  broadcastInQueue: BroadcastInQueue,
+  broadcastInQueue: BroadcastQueue,
 ): Promise<D402PaymentActionResult> {
   try {
     const walletAddress = await options.signer.getAddress();
-    logPaymentActionStart(options.logger ?? NoopLogger, "dispute", payment, walletAddress);
+    logPaymentActionStart(
+      options.logger,
+      "dispute",
+      payment,
+      walletAddress,
+    );
     const dpayments = await createPinnedDPayments({
       provider: options.provider,
       walletAddress,
     });
     const dPayment = dpayments.dPayment(payment.paymentAddress);
     const current = await dPayment.read();
-    emitLog(options.logger ?? NoopLogger, {
+    emitLog(options.logger, {
       level: "debug",
       event: "payment.dispute.precheck",
       message: "Payment dispute precheck completed.",
@@ -383,7 +377,7 @@ async function raisePaymentDispute(
       },
     });
     const prepared = await dPayment.prepareRaiseDispute(walletAddress);
-    emitLog(options.logger ?? NoopLogger, {
+    emitLog(options.logger, {
       level: "debug",
       event: "payment.dispute.prepared",
       message: "Payment dispute transaction prepared.",
@@ -394,20 +388,22 @@ async function raisePaymentDispute(
       },
     });
     const response = await broadcastInQueue(() =>
-      sendPreparedTx(
-        options.provider,
-        options.signer,
-        prepared.tx,
-        "dispute",
-        payment.paymentAddress,
-        options.logger ?? NoopLogger,
-      ),
+      sendPreparedTransaction({
+        provider: options.provider,
+        signer: options.signer,
+        tx: prepared.tx,
+        onNonceRetry: createNonceRetryLogger(
+          options.logger,
+          "dispute",
+          payment.paymentAddress,
+        ),
+      }),
     );
     const receipt = await waitForSuccessfulReceipt(
       response,
       options.confirmations ?? D402_DEFAULT_CONFIRMATIONS,
     );
-    emitLog(options.logger ?? NoopLogger, {
+    emitLog(options.logger, {
       level: "info",
       event: "payment.dispute.confirmed",
       message: "Payment dispute confirmed.",
@@ -421,13 +417,13 @@ async function raisePaymentDispute(
 
     return { txHash: receipt.hash as Hex32 };
   } catch (cause) {
-    const error = paymentExecutionError({
+    const error = normalizePaymentExecutionError({
       operation: "dispute",
       paymentAddress: payment.paymentAddress,
       cause,
     });
     logPaymentActionFailure(
-      options.logger ?? NoopLogger,
+      options.logger,
       "dispute",
       payment,
       cause,
@@ -438,13 +434,13 @@ async function raisePaymentDispute(
 }
 
 async function submitPaymentEvidence(
-  options: CreateDPaymentsExecutorOptions,
+  options: ResolvedDPaymentsExecutorOptions,
   payment: D402CreatedPayment,
   evidenceUri: string,
-  broadcastInQueue: BroadcastInQueue,
+  broadcastInQueue: BroadcastQueue,
 ): Promise<D402PaymentActionResult> {
   if (evidenceUri.trim().length === 0) {
-    throw paymentExecutionError({
+    throw normalizePaymentExecutionError({
       operation: "submit-evidence",
       paymentAddress: payment.paymentAddress,
       cause: new Error("Evidence URI must not be empty."),
@@ -454,7 +450,7 @@ async function submitPaymentEvidence(
   try {
     const walletAddress = await options.signer.getAddress();
     logPaymentActionStart(
-      options.logger ?? NoopLogger,
+      options.logger,
       "submit-evidence",
       payment,
       walletAddress,
@@ -466,21 +462,23 @@ async function submitPaymentEvidence(
     const dPayment = dpayments.dPayment(payment.paymentAddress);
     const tx = dPayment.submitEvidence(evidenceUri, walletAddress);
     const response = await broadcastInQueue(() =>
-      sendPreparedTx(
-        options.provider,
-        options.signer,
+      sendPreparedTransaction({
+        provider: options.provider,
+        signer: options.signer,
         tx,
-        "submit-evidence",
-        payment.paymentAddress,
-        options.logger ?? NoopLogger,
-      ),
+        onNonceRetry: createNonceRetryLogger(
+          options.logger,
+          "submit-evidence",
+          payment.paymentAddress,
+        ),
+      }),
     );
     const receipt = await waitForSuccessfulReceipt(
       response,
       options.confirmations ?? D402_DEFAULT_CONFIRMATIONS,
     );
 
-    emitLog(options.logger ?? NoopLogger, {
+    emitLog(options.logger, {
       level: "info",
       event: "payment.evidence.confirmed",
       message: "Payment evidence submission confirmed.",
@@ -494,13 +492,13 @@ async function submitPaymentEvidence(
 
     return { txHash: receipt.hash as Hex32 };
   } catch (cause) {
-    const error = paymentExecutionError({
+    const error = normalizePaymentExecutionError({
       operation: "submit-evidence",
       paymentAddress: payment.paymentAddress,
       cause,
     });
     logPaymentActionFailure(
-      options.logger ?? NoopLogger,
+      options.logger,
       "submit-evidence",
       payment,
       cause,
@@ -510,88 +508,25 @@ async function submitPaymentEvidence(
   }
 }
 
-function paymentExecutionError(
-  input: D402PaymentExecutionErrorInput,
-): D402PaymentExecutionError {
-  return normalizePaymentExecutionError(input);
-}
-
-async function sendPreparedTx(
-  provider: AbstractProvider,
-  signer: Signer,
-  tx: PreparedTx,
-  operation: D402PaymentOperation,
-  paymentAddress: PaymentAddress | undefined,
+function createNonceRetryLogger(
   logger: D402Logger,
-): Promise<TransactionResponse> {
-  async function attempt(): Promise<TransactionResponse> {
-    const request = toTransactionRequest(tx);
-    const from = await signer.getAddress();
-    const gasLimit = await provider.estimateGas({
-      ...request,
-      from,
+  operation: D402PaymentOperation,
+  paymentAddress?: PaymentAddress,
+): (retry: TransactionNonceRetry) => void {
+  return ({ retry, retryLimit, delayMs }) => {
+    emitLog(logger, {
+      level: "warn",
+      event: "payment.transaction.retry",
+      message: "Retrying transaction after an expired nonce.",
+      context: {
+        operation,
+        paymentAddress,
+        transactionError: "NONCE_EXPIRED",
+        retry,
+        retryLimit,
+        delayMs,
+      },
     });
-
-    return signer.sendTransaction({
-      ...request,
-      gasLimit,
-    });
-  }
-
-  for (let retry = 0; ; retry++) {
-    try {
-      return await attempt();
-    } catch (error) {
-      if (
-        !isError(error, "NONCE_EXPIRED") ||
-        retry === NONCE_RETRY_LIMIT
-      ) {
-        throw error;
-      }
-
-      const delayMs =
-        NONCE_RETRY_BASE_DELAY_MS * 2 ** retry +
-        Math.floor(Math.random() * NONCE_RETRY_BASE_DELAY_MS);
-      emitLog(logger, {
-        level: "warn",
-        event: "payment.transaction.retry",
-        message: "Retrying transaction after an expired nonce.",
-        context: {
-          operation,
-          paymentAddress,
-          transactionError: "NONCE_EXPIRED",
-          retry: retry + 1,
-          retryLimit: NONCE_RETRY_LIMIT,
-          delayMs,
-        },
-      });
-
-      await new Promise((resolve) => {
-        setTimeout(resolve, delayMs);
-      });
-    }
-  }
-}
-
-async function waitForSuccessfulReceipt(
-  response: TransactionResponse,
-  confirmations: number,
-): Promise<TransactionReceipt> {
-  const receipt = await response.wait(confirmations);
-
-  if (receipt === null || receipt.status !== 1) {
-    throw new Error("dPayment transaction failed.");
-  }
-
-  return receipt;
-}
-
-function toTransactionRequest(tx: PreparedTx): TransactionRequest {
-  return {
-    to: tx.to,
-    data: tx.data,
-    value: BigInt(tx.value),
-    chainId: tx.chainId,
   };
 }
 
@@ -650,11 +585,6 @@ function extractPaymentAddressFromReceipt(
 
 function tokenAddressForChain(tokenAddress: string | null): string {
   return (tokenAddress ?? ZERO_ADDRESS).toLowerCase();
-}
-
-function unreachable(value: never): never {
-  void value;
-  throw new D402ConfigurationError("Unsupported payment action.");
 }
 
 function logPaymentActionStart(

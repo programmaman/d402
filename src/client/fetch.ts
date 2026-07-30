@@ -1,6 +1,6 @@
 import type { AbstractProvider } from "ethers";
 
-import { D402_PAYMENT_PROOF_HEADER } from "../server/constants.js";
+import { D402_PAYMENT_PROOF_HEADER } from "../core/index.js";
 import {
   D402ConfigurationError,
   D402PaymentError,
@@ -15,9 +15,7 @@ import {
   assertNoExistingProof,
   parsePaymentRequiredResponse,
   prepareReusableRequest,
-  resolveClientResource,
-  validatePaymentRequestBinding,
-  validatePaymentRequestFreshness,
+  validatePaymentRequestForRetry,
   withPaymentProofHeader,
 } from "./request.js";
 import { resolvePaymentAfterAcceptance } from "./resolution.js";
@@ -78,57 +76,54 @@ export function createD402Client(
     input: RequestInfo | URL,
     init?: RequestInit,
   ): Promise<D402FetchResponse> {
-      const prepared = prepareReusableRequest(input, init);
-      assertNoExistingProof(prepared.initial, proofHeaderName);
+    const prepared = prepareReusableRequest(input, init);
+    assertNoExistingProof(prepared.initial, proofHeaderName);
 
-      const unpaidResponse = await fetchImpl(prepared.initial);
-      if (unpaidResponse.status !== 402) {
-        return { response: unpaidResponse };
-      }
+    const unpaidResponse = await fetchImpl(prepared.initial);
+    if (unpaidResponse.status !== 402) {
+      return { response: unpaidResponse };
+    }
 
-      const challenge = await parsePaymentRequiredResponse(unpaidResponse);
-      const paymentRequest = challenge.paymentRequest;
-      const expectedResource = await resolveClientResource(
-        prepared.retry,
-        options.resource,
+    const challenge = await parsePaymentRequiredResponse(unpaidResponse);
+    const paymentRequest = challenge.paymentRequest;
+    await validatePaymentRequestForRetry({
+      paymentRequest,
+      request: prepared.retry,
+      ...(options.resource !== undefined
+        ? { resource: options.resource }
+        : {}),
+    });
+
+    if (options.policy !== undefined) {
+      const connectedChainId = await (
+        connectedChainIdPromise ?? getConnectedChainId(policyProvider!)
       );
-      validatePaymentRequestBinding({
+      validatePaymentPolicy({
         paymentRequest,
-        request: prepared.retry,
-        expectedResource,
+        connectedChainId,
+        policy: options.policy,
       });
-      validatePaymentRequestFreshness(paymentRequest);
+    }
 
-      if (options.policy !== undefined) {
-        const connectedChainId = await (
-          connectedChainIdPromise ?? getConnectedChainId(policyProvider!)
-        );
-        validatePaymentPolicy({
-          paymentRequest,
-          connectedChainId,
-          policy: options.policy,
-        });
-      }
+    const payment = await executor.createPayment(paymentRequest);
+    const dPaymentProof = buildDPaymentProof({
+      paymentAddress: payment.paymentAddress,
+      txHash: payment.txHash,
+      paymentSalt: payment.paymentSalt,
+    });
+    const proof: D402PaymentProof = {
+      dPaymentProof,
+      ...(challenge.settlementReference !== undefined
+        ? { settlementReference: challenge.settlementReference }
+        : {}),
+    };
+    const paymentAttempt: D402PaymentAttempt = {
+      paymentRequest,
+      payment,
+      proof,
+    };
 
-      const payment = await executor.createPayment(paymentRequest);
-      const dPaymentProof = buildDPaymentProof({
-        paymentAddress: payment.paymentAddress,
-        txHash: payment.txHash,
-        paymentSalt: payment.paymentSalt,
-      });
-      const proof: D402PaymentProof = {
-        dPaymentProof,
-          ...(challenge.settlementReference !== undefined
-            ? { settlementReference: challenge.settlementReference }
-            : {}),
-      };
-      const paymentAttempt: D402PaymentAttempt = {
-        paymentRequest,
-        payment,
-        proof,
-      };
-
-      return sendPaidRequest(paymentAttempt, prepared.retry);
+    return sendPaidRequest(paymentAttempt, prepared.retry);
   }
 
   async function retry(
@@ -138,16 +133,13 @@ export function createD402Client(
   ): Promise<D402FetchResponse> {
     const prepared = prepareReusableRequest(input, init);
     assertNoExistingProof(prepared.initial, proofHeaderName);
-    const expectedResource = await resolveClientResource(
-      prepared.retry,
-      options.resource,
-    );
-    validatePaymentRequestBinding({
+    await validatePaymentRequestForRetry({
       paymentRequest: payment.paymentRequest,
       request: prepared.retry,
-      expectedResource,
+      ...(options.resource !== undefined
+        ? { resource: options.resource }
+        : {}),
     });
-    validatePaymentRequestFreshness(payment.paymentRequest);
 
     return sendPaidRequest(payment, prepared.retry);
   }

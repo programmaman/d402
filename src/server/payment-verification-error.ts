@@ -1,7 +1,7 @@
-import { D402_PAYMENT_REQUEST_CONTENT_TYPE } from "./constants.js";
+import { D402_PAYMENT_REQUEST_CONTENT_TYPE } from "../core/index.js";
 import type {
+  PaymentVerificationErrorBuilderInput,
   PaymentVerificationErrorReason,
-  PaymentVerificationErrorResponseInit,
   PaymentFailureReason,
 } from "./types.js";
 
@@ -50,7 +50,7 @@ export function buildPaymentVerificationErrorReason(
 }
 
 export function buildPaymentVerificationErrorResponse(
-  init: PaymentVerificationErrorResponseInit,
+  init: PaymentVerificationErrorBuilderInput,
 ): Response {
   return new Response(JSON.stringify({ reason: init.reason }), {
     status: init.status,

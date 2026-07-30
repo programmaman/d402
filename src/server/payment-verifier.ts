@@ -10,14 +10,15 @@ import type { AbstractProvider } from "ethers";
 import type { PaymentCreatedEvent } from "@rakelabs/dpayments-sdk";
 import type { MulticallConfig } from "@rakelabs/dpayments-sdk";
 import {
-  D402_CANONICAL_SALT,
   derivePaymentId,
+  validatePaymentSalt,
 } from "../core/index.js";
 import type {
   Address,
   D402BlockReference,
   DPaymentProof,
   D402PaymentRequest,
+  D402PaymentSaltValidation,
   Hex32,
 } from "../core/index.js";
 import type {
@@ -36,38 +37,16 @@ import { getConnectedChainId } from "../runtime/chain.js";
 import { D402_DEFAULT_CONFIRMATIONS } from "../runtime/defaults.js";
 import { getDPaymentsMulticallConfig } from "../runtime/multicall.js";
 import { findPaymentCreatedEvents } from "../runtime/payment-events.js";
-
-type PaymentSaltVerificationResult =
-  | { ok: true }
-  | {
-      ok: false;
-      reason: "payment-id-mismatch";
-    };
+import {
+  readBlockReference,
+  sameBlockReference,
+} from "./block-reference.js";
 
 export function verifyPaymentSalt(
   paymentRequest: D402PaymentRequest,
   dPaymentProof: DPaymentProof,
-): PaymentSaltVerificationResult {
-  if (
-    paymentRequest.paymentSalt !== undefined
-    && paymentRequest.paymentSalt !== dPaymentProof.paymentSalt
-  ) {
-    return {
-      ok: false,
-      reason: "payment-id-mismatch",
-    };
-  }
-  if (
-    paymentRequest.paymentSalt === undefined
-    && dPaymentProof.paymentSalt === D402_CANONICAL_SALT
-  ) {
-    return {
-      ok: false,
-      reason: "payment-id-mismatch",
-    };
-  }
-
-  return { ok: true };
+): D402PaymentSaltValidation {
+  return validatePaymentSalt(paymentRequest, dPaymentProof.paymentSalt);
 }
 
 export interface DPaymentsAuthenticatorOptions {
@@ -334,47 +313,44 @@ async function verifySettlementPolicy(input: {
     return { ok: true };
   }
 
-  let referenceBlock;
-  try {
-    referenceBlock = await input.provider.getBlock(input.settlementReference.blockHash);
-  } catch (cause) {
-    return { ok: false, reason: "provider-error", cause };
+  const referenceResult = await readBlockReference(
+    input.provider,
+    input.settlementReference.blockHash,
+  );
+  if (!referenceResult.ok) {
+    return referenceResult.reason === "provider-error"
+      ? { ok: false, reason: "provider-error", cause: referenceResult.cause }
+      : { ok: false, reason: "reference-block-mismatch" };
   }
-
-  if (referenceBlock === null) {
+  if (!sameBlockReference(referenceResult.reference, input.settlementReference)) {
     return { ok: false, reason: "reference-block-mismatch" };
   }
 
-  if (
-    referenceBlock.number !== input.settlementReference.blockNumber
-    || referenceBlock.hash?.toLowerCase() !== input.settlementReference.blockHash.toLowerCase()
-    || referenceBlock.timestamp !== Number(input.settlementReference.blockTimestampUnixSec)
-  ) {
-    return { ok: false, reason: "reference-block-mismatch" };
-  }
-
-  let creationBlock;
-  try {
-    creationBlock = await input.provider.getBlock(input.receipt.blockNumber);
-  } catch (cause) {
-    return { ok: false, reason: "provider-error", cause };
-  }
-  if (creationBlock === null) {
+  const creationResult = await readBlockReference(
+    input.provider,
+    input.receipt.blockNumber,
+  );
+  if (!creationResult.ok) {
     return {
       ok: false,
       reason: "provider-error",
-      cause: new Error("Payment creation block is unavailable."),
+      cause: creationResult.reason === "provider-error"
+        ? creationResult.cause
+        : new Error("Payment creation block is unavailable."),
     };
   }
 
   if (
-    referenceBlock.number > input.receipt.blockNumber
-    || referenceBlock.timestamp > creationBlock.timestamp
+    referenceResult.reference.blockNumber > input.receipt.blockNumber
+    || BigInt(referenceResult.reference.blockTimestampUnixSec)
+      > BigInt(creationResult.reference.blockTimestampUnixSec)
   ) {
     return { ok: false, reason: "reference-settlement-out-of-bounds" };
   }
 
-  const expectedSettlementTime = BigInt(referenceBlock.timestamp)
+  const expectedSettlementTime = BigInt(
+    referenceResult.reference.blockTimestampUnixSec,
+  )
     + BigInt(input.settlementWindow);
   if (BigInt(input.paymentRequest.settlementTimeUnixSec) !== expectedSettlementTime) {
     return { ok: false, reason: "reference-settlement-out-of-bounds" };
@@ -389,7 +365,7 @@ function verifyCreatedEvent(
   event: PaymentCreatedEvent,
   expectedPaymentId: Hex32,
 ): PaymentValidationResult {
-  if (!sameHex(event.paymentId, expectedPaymentId)) {
+  if (event.paymentId.toLowerCase() !== expectedPaymentId.toLowerCase()) {
     return { ok: false, reason: "payment-id-mismatch" };
   }
 
@@ -454,10 +430,7 @@ function readPaymentStateOnce(
 async function readPaymentState(
   reader: PaymentReader,
   paymentAddress: string,
-): Promise<
-  | { ok: true; state: PaymentState }
-  | { ok: false; reason: "provider-error"; cause: unknown }
-> {
+): Promise<PaymentStateReadResult> {
   try {
     return { ok: true, state: await reader.readPayment.state(paymentAddress) };
   } catch (cause) {
@@ -524,9 +497,5 @@ function tokenAddressForChain(tokenAddress: string | null): string {
 }
 
 function sameAddress(left: string, right: string): boolean {
-  return left.toLowerCase() === right.toLowerCase();
-}
-
-function sameHex(left: string, right: string): boolean {
   return left.toLowerCase() === right.toLowerCase();
 }

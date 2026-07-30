@@ -1,5 +1,9 @@
 import type { AbstractProvider } from "ethers";
-import type { D402BlockReference, Hex32 } from "../core/index.js";
+import type { D402BlockReference } from "../core/index.js";
+import {
+  readBlockReference,
+  sameBlockReference,
+} from "./block-reference.js";
 
 export type BlockReferenceLookup =
   | {
@@ -109,7 +113,7 @@ export function createBlockReferenceCache(
       if (cached !== undefined) {
         state.historical.delete(key);
         state.historical.set(key, cached);
-        return compareReference(cached, expected)
+        return sameBlockReference(cached, expected)
           ? { ok: true, reference: cached, source: "cache" }
           : { ok: false, reason: "mismatch" };
       }
@@ -133,16 +137,12 @@ async function readLatest(
   state: ProviderState,
   insertHistorical: (state: ProviderState, reference: D402BlockReference) => void,
 ): Promise<BlockReferenceLookup> {
-  try {
-    const block = await provider.getBlock("latest");
-    if (block === null) return { ok: false, reason: "not-found" };
-    const reference = toBlockReference(block);
-    state.latest = { reference, cachedAtMs: Date.now() };
-    insertHistorical(state, reference);
-    return { ok: true, reference, source: "provider" };
-  } catch (cause) {
-    return { ok: false, reason: "provider-error", cause };
-  }
+  const result = await readBlockReference(provider, "latest");
+  if (!result.ok) return result;
+
+  state.latest = { reference: result.reference, cachedAtMs: Date.now() };
+  insertHistorical(state, result.reference);
+  return { ok: true, reference: result.reference, source: "provider" };
 }
 
 async function readByHash(
@@ -151,31 +151,12 @@ async function readByHash(
   state: ProviderState,
   insertHistorical: (state: ProviderState, reference: D402BlockReference) => void,
 ): Promise<BlockReferenceLookup> {
-  try {
-    const block = await provider.getBlock(expected.blockHash);
-    if (block === null) return { ok: false, reason: "not-found" };
-    const reference = toBlockReference(block);
-    if (!compareReference(reference, expected)) return { ok: false, reason: "mismatch" };
-    insertHistorical(state, reference);
-    return { ok: true, reference, source: "provider" };
-  } catch (cause) {
-    return { ok: false, reason: "provider-error", cause };
+  const result = await readBlockReference(provider, expected.blockHash);
+  if (!result.ok) return result;
+  if (!sameBlockReference(result.reference, expected)) {
+    return { ok: false, reason: "mismatch" };
   }
-}
 
-function toBlockReference(
-  block: NonNullable<Awaited<ReturnType<AbstractProvider["getBlock"]>>>,
-): D402BlockReference {
-  if (block.hash === null) throw new Error("Resolved block has no hash.");
-  return {
-    blockNumber: block.number,
-    blockHash: block.hash.toLowerCase() as Hex32,
-    blockTimestampUnixSec: String(block.timestamp) as `${bigint}`,
-  };
-}
-
-function compareReference(left: D402BlockReference, right: D402BlockReference): boolean {
-  return left.blockNumber === right.blockNumber
-    && left.blockHash.toLowerCase() === right.blockHash.toLowerCase()
-    && left.blockTimestampUnixSec === right.blockTimestampUnixSec;
+  insertHistorical(state, result.reference);
+  return { ok: true, reference: result.reference, source: "provider" };
 }

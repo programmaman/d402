@@ -2,15 +2,17 @@ import {
   buildPaymentRequiredReason,
   buildPaymentRequiredResponse,
 } from "./payment-required.js";
-import { buildPaymentVerificationErrorResponse } from "./payment-verification-error.js";
-import { buildPaymentVerificationErrorReason } from "./payment-verification-error.js";
+import {
+  buildPaymentVerificationErrorReason,
+  buildPaymentVerificationErrorResponse,
+} from "./payment-verification-error.js";
 import { readD402PaymentProofFromRequest } from "./payment-proof.js";
 import { buildServerPaymentRequest, resolvePayableTerms } from "./payment-request.js";
 import { createBlockReferenceCache, resolveLatestBlockCacheTtlMs } from "./cache.js";
 import {
   resolveChallengeSettlementTerms,
   resolveProofSettlementTerms,
-  validateSettlementTimingConfiguration,
+  SettlementTimingConfigurationError,
 } from "./settlement.js";
 import { resolveSettlementReference } from "./settlement-reference.js";
 import type {
@@ -52,7 +54,6 @@ export function payable<Req extends Request = Request>(
     }
 
     const terms = await resolvePayableTerms(request, options.terms);
-    validateSettlementTimingConfiguration(options.paymentConfig, terms);
 
     if (proof === undefined) {
       let challengeSettlement;
@@ -63,6 +64,9 @@ export function payable<Req extends Request = Request>(
           referenceCache,
         );
       } catch (cause) {
+        if (cause instanceof SettlementTimingConfigurationError) {
+          throw cause;
+        }
         return buildVerificationErrorResponse(
           options,
           { ok: false, reason: isTimeoutError(cause) ? "provider-timeout" : "provider-error", cause },

@@ -2,11 +2,8 @@ import {
   D402_CANONICAL_SALT,
   D402_VERSION,
 } from "../core/constants.js";
-import { normalizePaymentRequest } from "../core/payment-request.js";
-import type {
-  D402PaymentTerms,
-  D402PaymentRequest,
-} from "../core/types.js";
+import { parsePaymentRequest } from "../core/payment-request.js";
+import type { D402PaymentRequest } from "../core/types.js";
 import type {
   PaymentIdentifier,
   PayableTerms,
@@ -54,12 +51,6 @@ export async function resolvePayableTerms<
   };
 }
 
-export function buildPaymentRequest(
-  input: D402PaymentTerms,
-): D402PaymentRequest {
-  return normalizePaymentRequest(input);
-}
-
 export function buildServerPaymentRequest(
   input: BuildServerPaymentRequestInput,
 ): D402PaymentRequest {
@@ -71,15 +62,15 @@ export function buildServerPaymentRequest(
     input.identifier,
   );
 
-  return buildPaymentRequest(completeTerms);
+  return parsePaymentRequest(completeTerms);
 }
 
 function completeTermsFromRequest(
   request: Request,
   terms: PayableTerms,
   identifier: PaymentIdentifier | undefined,
-): D402PaymentTerms {
-  const partialTerms = terms as Partial<D402PaymentTerms>;
+): D402PaymentRequest {
+  const partialTerms = terms as Partial<D402PaymentRequest>;
   const settlementTimeUnixSec = partialTerms.settlementTimeUnixSec;
   const resolvedResource = partialTerms.resource ?? request.url;
 

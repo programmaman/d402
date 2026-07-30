@@ -1,6 +1,9 @@
-import type { D402BlockReference, D402PaymentRequest } from "../core/index.js";
-import { parsePaymentRequest } from "../core/index.js";
-import { blockReferenceSchema } from "../core/schemas.js";
+import { D402_PAYMENT_REQUEST_CONTENT_TYPE } from "../core/index.js";
+import type {
+  D402PaymentChallenge,
+  D402PaymentRequest,
+} from "../core/index.js";
+import { paymentChallengeSchema } from "../core/schemas.js";
 import {
   D402ConfigurationError,
   D402PaymentRequestParseError,
@@ -12,11 +15,6 @@ import type { D402ClientResourceResolver } from "./types.js";
 export interface PreparedD402Request {
   initial: Request;
   retry: Request;
-}
-
-interface D402PaymentChallenge {
-  paymentRequest: D402PaymentRequest;
-  settlementReference?: D402BlockReference;
 }
 
 export function prepareReusableRequest(
@@ -42,28 +40,19 @@ export async function parsePaymentRequiredResponse(
 ): Promise<D402PaymentChallenge> {
   const contentType = response.headers.get("Content-Type") ?? "";
 
-  if (!contentType.toLowerCase().includes("application/d402+json")) {
+  if (
+    !contentType
+      .toLowerCase()
+      .includes(D402_PAYMENT_REQUEST_CONTENT_TYPE)
+  ) {
     throw new D402PaymentRequestParseError(
-      "402 response is not a d402 payment request. Expected Content-Type application/d402+json.",
+      `402 response is not a d402 payment request. Expected Content-Type ${D402_PAYMENT_REQUEST_CONTENT_TYPE}.`,
     );
   }
 
   try {
     const body: unknown = await response.json();
-    if (typeof body !== "object" || body === null || Array.isArray(body)) {
-      throw new Error("402 response body must be an object");
-    }
-
-    const record = body as Record<string, unknown>;
-    const paymentRequest = parsePaymentRequest(record.paymentRequest);
-    const settlementReference = record.settlementReference === undefined
-      ? undefined
-      : blockReferenceSchema.parse(record.settlementReference);
-
-    return {
-      paymentRequest,
-      ...(settlementReference !== undefined ? { settlementReference } : {}),
-    };
+    return paymentChallengeSchema.parse(body);
   } catch (cause) {
     throw new D402PaymentRequestParseError(
       "Could not parse d402 payment request body.",
@@ -105,6 +94,23 @@ export function validatePaymentRequestFreshness(
       `Payment request is expired: expiresAtUnixSec=${paymentRequest.expiresAtUnixSec}, now=${nowUnixSec}.`,
     );
   }
+}
+
+export async function validatePaymentRequestForRetry(input: {
+  paymentRequest: D402PaymentRequest;
+  request: Request;
+  resource?: D402ClientResourceResolver;
+}): Promise<void> {
+  const expectedResource = await resolveClientResource(
+    input.request,
+    input.resource,
+  );
+  validatePaymentRequestBinding({
+    paymentRequest: input.paymentRequest,
+    request: input.request,
+    expectedResource,
+  });
+  validatePaymentRequestFreshness(input.paymentRequest);
 }
 
 export async function resolveClientResource(
