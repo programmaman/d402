@@ -39,6 +39,7 @@ export type {
   PaymentAppealResult,
   PaymentActions,
   PaymentState,
+  PayableResolverContext,
   PayableTerms,
   PayableTermsResolver,
   PayableTermsResourceResolver,

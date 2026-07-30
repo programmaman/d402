@@ -20,21 +20,33 @@ export interface BuildServerPaymentRequestInput {
   identifier?: PaymentIdentifier;
 }
 
-export async function resolvePayableTerms(
-  request: Request,
-  resolver: PayableTermsResolver,
+export async function resolvePayableTerms<
+  Req extends Request,
+>(
+  request: Req,
+  resolver: PayableTermsResolver<Req>,
 ): Promise<ResolvedPayableTerms> {
-  const termsRequest = request.clone();
-  const resourceRequest = request.clone();
+  const termsBodyRequest = request.clone();
   const terms = typeof resolver === "function"
-    ? await resolver(termsRequest)
+    ? await resolver(termsBodyRequest, {
+        originalRequest: request,
+        bodyRequest: termsBodyRequest,
+      })
     : resolver;
   const { resource, ...paymentTerms } = terms;
-  const resolvedResource = resource === undefined
-    ? undefined
-    : typeof resource === "function"
-      ? await resource(resourceRequest)
-      : resource;
+  let resolvedResource: string | undefined;
+
+  if (resource !== undefined) {
+    if (typeof resource === "function") {
+      const resourceBodyRequest = request.clone();
+      resolvedResource = await resource(resourceBodyRequest, {
+        originalRequest: request,
+        bodyRequest: resourceBodyRequest,
+      });
+    } else {
+      resolvedResource = resource;
+    }
+  }
 
   return {
     ...paymentTerms,

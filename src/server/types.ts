@@ -11,9 +11,30 @@ import type { AbstractProvider, Signer } from "ethers";
 import type { D402Logger } from "../runtime/logger.js";
 import type { PaymentConsumer } from "./payment-consumer.js";
 
-export type PayableTermsResourceResolver =
+export interface PayableResolverContext<
+  Req extends Request = Request,
+> {
+  /**
+   * The original framework request.
+   *
+   * Use this for framework-specific metadata. Read request bodies from
+   * bodyRequest so the handler's request remains unconsumed.
+   */
+  readonly originalRequest: Req;
+  /**
+   * A fresh Request clone dedicated to this resolver.
+   */
+  readonly bodyRequest: Request;
+}
+
+export type PayableTermsResourceResolver<
+  Req extends Request = Request,
+> =
   | string
-  | ((request: Request) => string | Promise<string>);
+  | ((
+      request: Request,
+      context: Readonly<PayableResolverContext<Req>>,
+    ) => string | Promise<string>);
 
 export type PaymentIdentifier =
   | "server"
@@ -30,7 +51,9 @@ export interface PaymentConfig {
   logger?: D402Logger;
 }
 
-export interface PayableTerms {
+export interface PayableTerms<
+  Req extends Request = Request,
+> {
   chainId: number;
   payeeAddress: D402PaymentTerms["payeeAddress"];
   tokenAddress: D402PaymentTerms["tokenAddress"];
@@ -39,13 +62,18 @@ export interface PayableTerms {
   expiresAtUnixSec: number;
   version?: D402PaymentRequest["version"];
   method?: string;
-  resource?: PayableTermsResourceResolver;
+  resource?: PayableTermsResourceResolver<Req>;
   settlementTimeUnixSec?: D402PaymentTerms["settlementTimeUnixSec"];
 }
 
-export type PayableTermsResolver =
-  | PayableTerms
-  | ((request: Request) => PayableTerms | Promise<PayableTerms>);
+export type PayableTermsResolver<
+  Req extends Request = Request,
+> =
+  | PayableTerms<Req>
+  | ((
+      request: Request,
+      context: Readonly<PayableResolverContext<Req>>,
+    ) => PayableTerms<Req> | Promise<PayableTerms<Req>>);
 
 export type ResolvedPayableTerms = Omit<PayableTerms, "resource"> & {
   resource?: string;
@@ -236,9 +264,13 @@ export type PaymentVerificationErrorResponseBuilder = (
   init: PaymentVerificationErrorResponseInit,
 ) => Response;
 
-export interface PayableRouteConfig<Req = Request, Result = void, Res = Response> {
+export interface PayableRouteConfig<
+  Req extends Request = Request,
+  Result = void,
+  Res = Response,
+> {
   paymentConfig: PaymentConfig;
-  terms: PayableTermsResolver;
+  terms: PayableTermsResolver<Req>;
   handler: PayableHandler<Req, Result, Res>;
   verifier?: PaymentVerifier;
   recovery?: PaymentRecovery;

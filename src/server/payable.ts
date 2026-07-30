@@ -51,7 +51,7 @@ export function payable<Req extends Request = Request>(
       return buildVerificationErrorResponse(options, { ok: false, reason: "invalid-proof" });
     }
 
-    const terms = await resolvePayableTerms(request.clone(), options.terms);
+    const terms = await resolvePayableTerms(request, options.terms);
     validateSettlementTimingConfiguration(options.paymentConfig, terms);
 
     if (proof === undefined) {
