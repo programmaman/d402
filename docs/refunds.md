@@ -1,14 +1,34 @@
 # d402 Refunds
 
-d402 standardizes the payment-authenticated mechanics of a refund. Applications
-still decide whether a mechanically refundable payment should be refunded by
-providing a `RefundPolicy`.
+d402 standardizes the payment-authenticated mechanics of requesting and
+executing a refund. The protocol proves which on-chain payment the request
+refers to and whether that payment can still be refunded. The application
+decides whether it should be refunded.
 
-## Route configuration
+This creates two distinct policy boundaries:
 
-The payable route advertises its refund endpoint:
+| Policy | Question answered | Configuration |
+| --- | --- | --- |
+| `FundedPayment` | Can this payment still take the on-chain refund transition? | Fixed inside `refunder()` |
+| `RefundPolicy` | Should this application approve this refund request? | Supplied by the integrator |
+
+`FundedPayment` requires the observed payment state to be exactly `funded`.
+It uses the same `ObservedPaymentContext` and `VerificationPolicy` interface as
+the payable flow. A refund route cannot replace it with a weaker policy.
+
+## Configure a refund route
+
+Define the payable route once, advertise its refund URL, and pass that same
+configuration to `payable()` and `refunder()`:
 
 ```ts
+import {
+  payable,
+  refunder,
+  type PayableRouteConfig,
+  type RefundPolicy,
+} from "d402/server";
+
 const routeConfig = {
   paymentConfig: {
     provider,
@@ -21,63 +41,9 @@ const routeConfig = {
   handler,
 } satisfies PayableRouteConfig;
 
-router.get("/resource", payable(routeConfig));
-router.post("/refund", refunder(routeConfig, refundPolicy));
-```
-
-`D402RefundRoute.url` may be relative or an absolute HTTP or HTTPS URL.
-Credentials and fragments are rejected. The refunder reuses the original
-route configuration; it does not invoke the terms resolver or protected
-handler.
-
-## Refund request
-
-When a paid response is rejected and the client uses `RequestRefund`, the SDK
-sends this request to the advertised route:
-
-```ts
-interface D402RefundRequest {
-  paymentRequest: D402PaymentRequest;
-  paymentProof: D402PaymentProof;
-  reason?: string;
-}
-```
-
-The historical payment request and proof are sufficient to derive and
-authenticate the payment. Challenge expiry is not re-evaluated. The protected
-response, original HTTP request, and a separate client-supplied payment address
-are not transmitted.
-
-## Refunder
-
-Before policy runs, `refunder()`:
-
-- parses the refund request strictly;
-- verifies payment salt and derived identity;
-- authenticates the historical creation transaction and event;
-- verifies chain, factory, address, payee, token, amount, settlement time,
-  confirmations, and any settlement reference;
-- observes current on-chain state;
-- verifies the configured signer controls the authenticated payee; and
-- applies the public `FundedPayment` verification policy, which requires
-  the payment to remain funded.
-
-If policy approves, the refunder calls `paymentActions().refundPayment()` and
-returns its confirmed transaction hash.
-
-`FundedPayment` uses the same `ObservedPaymentContext` →
-`VerificationPolicy` seam as `payable()`. It is not replaceable inside
-`refunder()`, because the on-chain refund transition always requires the funded
-state. Integrators may also use it explicitly as a normal payable route's
-`verificationPolicy` when that route should accept only still-refundable
-payments.
-
-## Refund policy
-
-```ts
-const refundPolicy: RefundPolicy = {
-  async verify({ request, payment, paymentRequest, reason }) {
-    const session = await authenticateApplicationRequest(request);
+const refundPolicy = {
+  async verify({ request, payment }) {
+    const session = await authenticateSession(request);
     const order = await orders.findByPaymentId(payment.paymentId);
 
     if (order === undefined || order.customerId !== session.customerId) {
@@ -87,17 +53,176 @@ const refundPolicy: RefundPolicy = {
       return { ok: false, reason: "already-fulfilled" };
     }
 
-    void paymentRequest;
-    void reason;
     return { ok: true };
   },
-};
+} satisfies RefundPolicy;
+
+const resourceRoute = payable(routeConfig);
+const refundRoute = refunder(routeConfig, refundPolicy);
 ```
 
-Policy owns HTTP caller authorization, application state, refund windows,
-fulfillment decisions, application idempotency, and manual review. There is no
-refund consumer, recovery hook, requester-authenticator hook, or separate
-refunder configuration.
+Mount `resourceRoute` on the protected resource and `refundRoute` at the URL
+advertised by `routeConfig.refunds`. Framework adapters may wrap these Fetch
+API request handlers as usual.
 
-The contract remains the final authority on whether the refund transition can
-occur. Concurrent attempts cannot both successfully refund the same payment.
+`D402RefundRoute.url` may be relative or an absolute HTTP or HTTPS URL. A
+relative URL is resolved against the URL that returned the payment challenge.
+Credentials and fragments are rejected.
+
+The original route configuration is reused for its provider, signer, and
+payment-verification settings. The refund handler does not invoke the original
+terms resolver, recovery hook, consumer, or protected handler.
+
+## Configure the client
+
+Refund requests are opt-in. Set the rejected-response action to
+`RequestRefund`:
+
+```ts
+import {
+  createD402Client,
+  D402PaymentAction,
+} from "d402/client";
+
+const client = await createD402Client({
+  provider,
+  signer: payer,
+  onRejected: D402PaymentAction.RequestRefund,
+});
+
+const response = await client.fetch(resourceUrl);
+```
+
+The default response validator accepts successful HTTP responses and rejects
+non-success responses with a reason such as `HTTP 500`. After a paid response
+is rejected, `client.fetch()` sends the refund request to the URL advertised in
+the original payment challenge.
+
+The challenge must advertise `refunds` when `RequestRefund` is configured. The
+client checks this before creating the payment. A successful refund does not
+replace the protected resource response: `client.fetch()` still returns that
+original response after the refund transaction is confirmed.
+
+`client.d402Fetch()` and `client.retry()` only perform the payment exchange.
+They do not run response validation or automatic post-response actions.
+
+## Refund request contract
+
+The client sends an HTTP `POST` with content type
+`application/d402-refund+json` and this body:
+
+```ts
+interface D402RefundRequest {
+  paymentRequest: D402PaymentRequest;
+  paymentProof: D402PaymentProof;
+  reason?: string;
+}
+```
+
+The request contains the historical payment request that created the payment,
+its creation proof, and the optional reason produced by the client's response
+validator. The reason is untrusted application-policy input; it is not payment
+authentication evidence.
+
+The historical payment request and proof are sufficient to derive and
+authenticate the on-chain payment. The refund handler does not re-evaluate the
+historical challenge expiry. It verifies that the payment was validly created,
+not that the old challenge would still be valid for creating a new payment.
+
+The following are deliberately not sent:
+
+- the protected resource response;
+- the original protected-resource HTTP request; or
+- a separate client-selected payment address.
+
+The `request` received by `RefundPolicy` is the new HTTP request made to the
+refund endpoint. The refunder parses a clone, so the policy may still read its
+headers or body.
+
+## Server verification sequence
+
+For each request, `refunder()`:
+
+1. Strictly parses the `D402RefundRequest`.
+2. Verifies the payment salt and derived payment identity.
+3. Authenticates the on-chain creation transaction and event, including chain,
+   factory, payment address, payee, token, amount, settlement time,
+   confirmations, and any settlement reference.
+4. Verifies that the configured signer controls the authenticated payee.
+5. Observes the payment's current on-chain state.
+6. Applies `FundedPayment` to the resulting `ObservedPaymentContext`.
+7. Runs the application-provided `RefundPolicy`.
+8. Calls `paymentActions().refundPayment()` and returns the confirmed
+   transaction hash.
+
+A successful response is:
+
+```json
+{
+  "txHash": "0x..."
+}
+```
+
+## Application refund policy
+
+`RefundPolicy` receives the authenticated and observed payment context plus the
+refund endpoint's HTTP request and optional client reason:
+
+```ts
+interface RefundPolicyContext extends ObservedPaymentContext {
+  request: Request;
+  reason?: string;
+}
+```
+
+This is the application seam for rules such as:
+
+- authenticating or identifying the HTTP caller;
+- associating the payment with an order or account;
+- refund windows and fulfillment state;
+- application idempotency and manual review; and
+- deciding whether the client-provided reason is acceptable.
+
+d402 does not authenticate the refund requester as a protocol identity. It
+authenticates the payment. If caller authentication is required, implement it
+inside `RefundPolicy` using the refund HTTP request.
+
+## Failures and concurrency
+
+The refund endpoint uses these status classes:
+
+| Status | Meaning |
+| --- | --- |
+| `400` | Invalid content type or refund request body |
+| `403` | The signer is not the payee, or `RefundPolicy` rejected the request |
+| `409` | The observed payment is not funded and therefore is not refundable |
+| `422` | The submitted payment request and proof failed canonical verification |
+| `425` | The payment is not yet observable with the required confirmations |
+| `503` / `504` | The chain provider failed or timed out |
+
+If the refund endpoint fails, `client.fetch()` throws `D402PaymentError`
+because a payment and proof already exist. Its `cause` is a
+`D402RefundRequestError`, which retains the refund endpoint response.
+
+There is no refund-specific recovery hook, consumer, caller authenticator, or
+separate refunder configuration. Application idempotency belongs in
+`RefundPolicy`. The contract remains the final authority over the state
+transition: concurrent requests may race, but they cannot both successfully
+refund the same payment.
+
+## Reusing `FundedPayment`
+
+`FundedPayment` is also exported for ordinary payable routes. Use it when a
+protected route should accept only payments that remain funded:
+
+```ts
+import { FundedPayment, payable } from "d402/server";
+
+const route = payable({
+  ...routeConfig,
+  verificationPolicy: FundedPayment,
+});
+```
+
+The default payable policy is `FundedOrSettledPayment`, which accepts either
+state.
