@@ -4,8 +4,8 @@ Three small examples show the common server shapes.
 
 ## Examples
 
-- [express-native](express-native/README.md): `PaymentAuthorizer` inside an
-  Express controller.
+- [express-native](express-native/README.md): side-by-side, runnable
+  `PaymentAuthorizer` and `payable()` Express servers using identical terms.
 - [next-route-handler](next-route-handler/README.md): `payable()` exported as a
   Next.js route.
 - [one-shot-access](one-shot-access/README.md): `payable()` with an on-chain

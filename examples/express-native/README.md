@@ -1,8 +1,17 @@
-# Express controller example
+# Express Server Integration Examples
 
-This example uses `PaymentAuthorizer` inside an ordinary Express controller.
-Express keeps ownership of routing and response handling; d402 returns a
-protocol response or the successful payment context.
+The same paid report is exposed through two separate server entry files:
+
+- [`src/payment-authorizer-server.ts`](src/payment-authorizer-server.ts) uses
+  `PaymentAuthorizer`. Express owns the successful response and d402 returns
+  either a protocol response or the authorized payment context.
+- [`src/payable-server.ts`](src/payable-server.ts) uses `payable()`. d402 owns
+  authorization and invokes a Fetch-native handler that returns the successful
+  response.
+
+Both use [`src/shared.ts`](src/shared.ts) for identical payment terms and the
+Express-to-Fetch request and response adapter. This keeps the comparison about
+the integration seam rather than different payment behavior.
 
 ## Setup
 
@@ -22,10 +31,12 @@ PORT=3000
 
 ## Run
 
-Terminal 1:
+Terminal 1, choose one server:
 
 ```sh
-npm run server
+npm run server:authorizer
+# or
+npm run server:payable
 ```
 
 Terminal 2:
@@ -35,4 +46,5 @@ npm run client
 ```
 
 The included client requests the report, handles the `402`, creates a
-native-token payment, and retries with proof.
+native-token payment, and retries with proof. `npm run server` remains an alias
+for the `PaymentAuthorizer` example.

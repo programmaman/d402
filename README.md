@@ -20,20 +20,21 @@ import { JsonRpcProvider } from "ethers";
 import { payable } from "d402/server";
 
 const provider = new JsonRpcProvider(process.env.RPC_URL);
+const terms = {
+  chainId: 100,
+  payeeAddress: "0x2222222222222222222222222222222222222222",
+  tokenAddress: null,
+  netAmount: "1000000000000000",
+  agreement: { id: "monthly-report:v1" },
+  expiresAtUnixSec: Math.floor(Date.now() / 1000) + 300,
+};
 
 export const GET = payable({
   paymentConfig: {
     provider,
     settlementWindow: 3600,
   },
-  terms: {
-    chainId: 100,
-    payeeAddress: "0x2222222222222222222222222222222222222222",
-    tokenAddress: null,
-    netAmount: "1000000000000000",
-    agreement: { id: "monthly-report:v1" },
-    expiresAtUnixSec: Math.floor(Date.now() / 1000) + 300,
-  },
+  terms,
   handler: (_request, payment) =>
     Response.json({
       report: "protected data",
@@ -98,7 +99,6 @@ const download = payable({
   paymentConfig: {
     provider,
     signer: payee,
-    identifier: "client",
     settlementWindow: 3600,
   },
   terms,
@@ -110,6 +110,66 @@ const download = payable({
 
 `Once` is an on-chain, at-most-once claim. If work must survive a crash or lost
 HTTP response, store the result under `context.payment.paymentId`.
+
+## Pay for an order
+
+Use the default server identity when payment terms represent a stable order or
+invoice. Put the order ID in the terms so retries reconstruct the same payment:
+
+```ts
+const orderRoute = payable({
+  paymentConfig: {
+    provider,
+  },
+  terms: (request) => {
+    const orderId = new URL(request.url).pathname.split("/").at(-1);
+
+    return {
+      chainId: 100,
+      payeeAddress: "0x2222222222222222222222222222222222222222",
+      tokenAddress: null,
+      netAmount: "1000000000000000",
+      agreement: { id: `order:${orderId}:v1` },
+      expiresAtUnixSec: Math.floor(Date.now() / 1000) + 300,
+    };
+  },
+  handler,
+});
+```
+
+The same payer, order terms, and server identity produce the same payment
+identity. This is useful for orders, invoices, and reusable entitlements.
+
+## Choose independent payment identity
+
+Use client identity for independent per-request payments. This is closer to an
+x402-style flow, where each request or access attempt should create a fresh
+payment instead of reusing an order identity:
+
+```ts
+import { Once, payable, paymentActions } from "d402/server";
+
+const actions = paymentActions({
+  provider,
+  signer: payee,
+});
+
+const independentPaymentRoute = payable({
+  paymentConfig: {
+    provider,
+    signer: payee,
+    identifier: "client",
+  },
+  terms,
+  consumer: Once(actions),
+  handler,
+});
+```
+
+Client identity is separate from single-use access. Use `Once` when a payment
+may authorize only one operation, and use client identity when each payment
+attempt should have an independent payment identity. They can be used together
+when every new payment should authorize at most one operation.
 
 ## Pay a protected route
 
@@ -127,7 +187,7 @@ const response = await client.fetch(
 ```
 
 Use `client.d402Fetch()` when the completed payment attempt must be persisted
-for application recovery.
+for application recovery or later lifecycle decisions.
 
 ## Choose a payment flow
 
@@ -142,7 +202,10 @@ single-use access, stable orders, jobs, credits, and deposits.
 - [Protocol diagrams](docs/protocol.md)
 - [API reference](docs/api.md)
 - [Advanced configuration](docs/advanced.md)
+- [HTTP and framework integration](docs/http-integration.md)
+- [Scaling and stateless deployment](docs/scaling.md)
 - [Signing modes](docs/signing.md)
+- [Refunds](docs/refunds.md)
 - [Disputes](docs/disputes.md)
 - [Testing](docs/testing.md)
 - [Examples](examples/README.md)

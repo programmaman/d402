@@ -5,10 +5,70 @@ Your app owns access policy, scheduling, retries, and any chain reads beyond
 proof verification. Application storage is optional when an endpoint only
 needs d402's on-chain one-shot authorization.
 
+For CORS, framework middleware, and request credentials, see
+[HTTP and Framework Integration](./http-integration.md). For replicated
+deployment architecture, see [Scaling d402](./scaling.md).
+
 That boundary is intentional. d402 proves that a payment matching the request
 was created and is currently usable. Your app still decides what entitlement
 that payment unlocks, whether it is one-shot or reusable, how fulfillment is
 stored, and how completed work is recovered if response delivery fails.
+
+## Two Equivalent Integration Forms
+
+Every payable example in this guide can be mounted in either of two forms:
+
+- `payable()` is a Fetch-native route wrapper. It authorizes the request and
+  invokes the supplied handler.
+- `PaymentAuthorizer` runs the same authorization pipeline but returns either
+  a protocol `Response` or an authorized context. It is usually simpler when a
+  framework already owns routing, middleware, and response conversion.
+
+The framework form is the operation that `payable()` performs internally:
+
+```ts
+import {
+  PaymentAuthorizer,
+  payable,
+  type PayableHandler,
+  type PaymentAuthorizationConfig,
+} from "d402/server";
+
+function frameworkController<Req extends Request, Result>(
+  authorizer: PaymentAuthorizer<Req, Result>,
+  handler: PayableHandler<Req, Result>,
+): (request: Req) => Promise<Response> {
+  return async (request) => {
+    const authorization = await authorizer.authorize(request);
+
+    if (authorization.response !== undefined) {
+      return authorization.response;
+    }
+
+    return handler(request, authorization.context);
+  };
+}
+```
+
+Real framework controllers can decorate or translate either response and can
+run session authentication, CORS, tracing, and error middleware around
+`authorize()`. The examples below name both resulting handlers:
+
+```ts
+// Fetch-native integration
+const fetchRoute = payable({ ...authorizationConfig, handler });
+
+// Framework-owned integration
+const authorizer = new PaymentAuthorizer(authorizationConfig);
+const frameworkRoute = frameworkController(authorizer, handler);
+```
+
+Choose one form for a route. They are shown together only to make the two
+integration surfaces explicit.
+
+For complete runnable files using identical terms, compare the Express
+[`PaymentAuthorizer` server](../examples/express-native/src/payment-authorizer-server.ts)
+and [`payable()` server](../examples/express-native/src/payable-server.ts).
 
 ## Resource Binding
 
@@ -18,7 +78,7 @@ when the payment is for another stable URL or resource identifier.
 Use a string when the same payment terms protect one stable URL.
 
 ```ts
-const route = payable({
+const authorizationConfig = {
   paymentConfig: {
     provider,
   },
@@ -26,15 +86,18 @@ const route = payable({
     ...terms,
     resource: "https://api.example.com/reports/monthly",
   },
-  handler,
-});
+} satisfies PaymentAuthorizationConfig;
+
+const fetchRoute = payable({ ...authorizationConfig, handler });
+const authorizer = new PaymentAuthorizer(authorizationConfig);
+const frameworkRoute = frameworkController(authorizer, handler);
 ```
 
 Configure an explicit resource when the payment represents something other
 than the literal request URL.
 
 ```ts
-const route = payable({
+const authorizationConfig = {
   paymentConfig: {
     provider,
   },
@@ -48,8 +111,11 @@ const route = payable({
     expiresAtUnixSec: 4102444800,
     resource: "report:monthly:123",
   },
-  handler,
-});
+} satisfies PaymentAuthorizationConfig;
+
+const fetchRoute = payable({ ...authorizationConfig, handler });
+const authorizer = new PaymentAuthorizer(authorizationConfig);
+const frameworkRoute = frameworkController(authorizer, handler);
 ```
 
 The client defaults to matching the URL it retries. When the server uses a
@@ -66,7 +132,7 @@ Use resolver context when a framework extends the standard `Request` type:
 ```ts
 import type { NextRequest } from "next/server";
 
-const route = payable<NextRequest>({
+const authorizationConfig = {
   paymentConfig: { provider },
   terms: async (
     _request,
@@ -82,14 +148,19 @@ const route = payable<NextRequest>({
         `report:${originalRequest.nextUrl.pathname}:${body.reportId}`,
     };
   },
-  handler: async (request) => {
-    const body = await request.json();
-    return Response.json({
-      path: request.nextUrl.pathname,
-      body,
-    });
-  },
-});
+} satisfies PaymentAuthorizationConfig<NextRequest>;
+
+const handler: PayableHandler<NextRequest> = async (request) => {
+  const body = await request.json();
+  return Response.json({
+    path: request.nextUrl.pathname,
+    body,
+  });
+};
+
+const fetchRoute = payable({ ...authorizationConfig, handler });
+const authorizer = new PaymentAuthorizer(authorizationConfig);
+const frameworkRoute = frameworkController(authorizer, handler);
 ```
 
 The first resolver argument and `bodyRequest` are the same dedicated clone.
@@ -97,6 +168,30 @@ Each resolver receives a fresh clone. Use `originalRequest` for framework
 metadata and the clone for body reads so the handler retains its body.
 
 ## Payable Authorization Pipeline
+
+Both public forms enter the same authorizer:
+
+```text
+payable({ authorization config, handler })
+                   |
+                   v
+          PaymentAuthorizer.authorize(request)
+                   |
+          +--------+--------+
+          |                 |
+   protocol Response   authorized context
+          |                 |
+        return            handler
+
+framework controller
+          |
+          v
+PaymentAuthorizer.authorize(request)
+          |
+          +-- protocol Response -> framework decorates/translates -> return
+          |
+          +-- authorized context -> framework invokes business handler
+```
 
 A proof-bearing request passes through these stages:
 
@@ -155,20 +250,25 @@ reservation: if stock allocation fails, the server still needs the refund path
 to be available.
 
 ```ts
-import { FundedPayment, payable } from "d402/server";
+import { FundedPayment } from "d402/server";
 
-const reserveInventory = payable({
+const authorizationConfig = {
   paymentConfig,
   terms,
   verificationPolicy: FundedPayment,
-  handler: async (_request, context) => {
-    const reservation = await inventory.reserve({
-      paymentId: context.payment.paymentId,
-    });
+} satisfies PaymentAuthorizationConfig;
 
-    return Response.json(reservation);
-  },
-});
+const handler: PayableHandler = async (_request, context) => {
+  const reservation = await inventory.reserve({
+    paymentId: context.payment.paymentId,
+  });
+
+  return Response.json(reservation);
+};
+
+const fetchRoute = payable({ ...authorizationConfig, handler });
+const authorizer = new PaymentAuthorizer(authorizationConfig);
+const frameworkRoute = frameworkController(authorizer, handler);
 ```
 
 Most routes should use one of these built-in policies. A custom policy is only
@@ -185,7 +285,12 @@ It receives the original HTTP request and a `PayableContext` containing the
 authenticated payment request, proof, observed payment, and consumer result.
 
 ```ts
-handler: async (request, context) => {
+const authorizationConfig = {
+  paymentConfig,
+  terms,
+} satisfies PaymentAuthorizationConfig;
+
+const handler: PayableHandler = async (request, context) => {
   const input = await request.json() as ReportInput;
   const report = await reports.create({
     input,
@@ -199,7 +304,11 @@ handler: async (request, context) => {
   });
 
   return Response.json(report);
-},
+};
+
+const fetchRoute = payable({ ...authorizationConfig, handler });
+const authorizer = new PaymentAuthorizer(authorizationConfig);
+const frameworkRoute = frameworkController(authorizer, handler);
 ```
 
 The handler is the right place to generate content, create an order, reserve
@@ -218,11 +327,11 @@ Use `Once` when one payment should authorize at most one operation. Construct
 the server payment actions once and inject them into the consumer:
 
 ```ts
-import { Once, payable, paymentActions } from "d402/server";
+import { Once, paymentActions } from "d402/server";
 
 const actions = paymentActions({ provider, signer: payee });
 
-const route = payable({
+const authorizationConfig = {
   paymentConfig: {
     provider,
     signer: payee,
@@ -230,14 +339,19 @@ const route = payable({
   },
   consumer: Once(actions),
   terms,
-  handler: async () =>
-    Response.json(await fulfillOnce()),
-});
+} satisfies PaymentAuthorizationConfig;
+
+const handler: PayableHandler = async () =>
+  Response.json(await fulfillOnce());
+
+const fetchRoute = payable({ ...authorizationConfig, handler });
+const authorizer = new PaymentAuthorizer(authorizationConfig);
+const frameworkRoute = frameworkController(authorizer, handler);
 ```
 
-`payable()` verifies the proof and then consumes the payment on-chain before
-calling the handler. Only the payee can perform that transition. If two server
-instances receive the same proof concurrently, only one consumption
+Both integration forms verify the proof and then consume the payment on-chain
+before calling the handler. Only the payee can perform that transition. If two
+server instances receive the same proof concurrently, only one consumption
 transaction can succeed and only that instance reaches the handler.
 
 The other request is rejected with `422 payment-already-consumed`. The replay
@@ -292,9 +406,9 @@ payment for fulfillment.
 
 ## Payment Recovery
 
-The route's `recovery` hook returns work that the application already completed
-for an authenticated payment. It is not a retry callback and should not start
-new work.
+The authorization configuration's `recovery` hook returns work that the
+application already completed for an authenticated payment. It is not a retry
+callback and should not start new work.
 
 The relevant authorization order is:
 
@@ -307,9 +421,10 @@ authenticate payment
 -> handler
 ```
 
-If `recovery` returns a `Response`, d402 returns it immediately. Observation,
-verification, consumption, and the handler are skipped. If it returns
-`undefined`, normal authorization continues.
+If `recovery` returns a `Response`, `payable()` returns it directly and
+`PaymentAuthorizer.authorize()` returns it as `authorization.response`.
+Observation, verification, consumption, and the handler are skipped. If the
+hook returns `undefined`, normal authorization continues.
 
 ```ts
 import type { PaymentRecovery } from "d402/server";
@@ -322,13 +437,16 @@ const recovery: PaymentRecovery = async ({ payment }) => {
     : Response.json(completed.result);
 };
 
-const route = payable({
+const authorizationConfig = {
   paymentConfig,
   terms,
   recovery,
   consumer: Once(actions),
-  handler,
-});
+} satisfies PaymentAuthorizationConfig;
+
+const fetchRoute = payable({ ...authorizationConfig, handler });
+const authorizer = new PaymentAuthorizer(authorizationConfig);
+const frameworkRoute = frameworkController(authorizer, handler);
 ```
 
 Recovery runs before live-state observation because completed work may still
@@ -475,12 +593,15 @@ function DatabaseOnce(chainId: number): PaymentConsumer {
   };
 }
 
-const route = payable({
+const authorizationConfig = {
   paymentConfig,
   consumer: DatabaseOnce(chainId),
   terms,
-  handler,
-});
+} satisfies PaymentAuthorizationConfig;
+
+const fetchRoute = payable({ ...authorizationConfig, handler });
+const authorizer = new PaymentAuthorizer(authorizationConfig);
+const frameworkRoute = frameworkController(authorizer, handler);
 ```
 
 `insertIfAbsent` must be one atomic operation backed by a unique constraint.
@@ -532,22 +653,50 @@ d402 should verify the payment. Your app should decide whether reuse is allowed.
 That decision can depend on any application rule you want: account ownership,
 SKU, order state, agreement metadata, quotas, or server-side entitlements.
 
+```ts
+import { None } from "d402/server";
+
+const authorizationConfig = {
+  paymentConfig,
+  terms,
+  consumer: None,
+} satisfies PaymentAuthorizationConfig;
+
+const handler: PayableHandler = async (_request, context) =>
+  Response.json(await entitlements.read(context.payment.paymentId));
+
+const fetchRoute = payable({ ...authorizationConfig, handler });
+const authorizer = new PaymentAuthorizer(authorizationConfig);
+const frameworkRoute = frameworkController(authorizer, handler);
+```
+
 ## Limited Reuse
 
 Store a usage count when one payment buys a fixed number of uses.
 
 ```ts
-const usageKey = [
-  context.paymentRequest.chainId,
-  context.payment.paymentId,
-  context.payment.paymentAddress,
-  context.payment.txHash,
-].join(":");
+const authorizationConfig = {
+  paymentConfig,
+  terms,
+} satisfies PaymentAuthorizationConfig;
 
-const usage = await db.paymentUsage.incrementIfBelowLimit(usageKey, 100);
-if (!usage.allowed) {
-  return Response.json({ error: "payment-quota-exhausted" }, { status: 409 });
-}
+const handler: PayableHandler = async (_request, context) => {
+  const usageKey = [
+    context.paymentRequest.chainId,
+    context.payment.paymentId,
+    context.payment.paymentAddress,
+    context.payment.txHash,
+  ].join(":");
+
+  const usage = await db.paymentUsage.incrementIfBelowLimit(usageKey, 100);
+  return usage.allowed
+    ? Response.json(await fulfillUse())
+    : Response.json({ error: "payment-quota-exhausted" }, { status: 409 });
+};
+
+const fetchRoute = payable({ ...authorizationConfig, handler });
+const authorizer = new PaymentAuthorizer(authorizationConfig);
+const frameworkRoute = frameworkController(authorizer, handler);
 ```
 
 The limit can come from your terms, account plan, database record, or decoded
@@ -608,7 +757,7 @@ and lower-level contract workflows.
 `RefundPolicy` answers a different question from `VerificationPolicy`:
 
 - `VerificationPolicy` decides whether an observed payment is acceptable for a
-  payable route.
+  paid authorization.
 - `RefundPolicy` decides whether the application should approve a refund of an
   already authenticated payment.
 
@@ -717,8 +866,8 @@ await actions.submitEvidence(paymentAddress, "ipfs://QmEvidence");
 await actions.appealPayment(paymentAddress);
 ```
 
-Pass the same object to `Once(actions)` when a payable route needs canonical
-on-chain one-shot consumption.
+Pass the same object to `Once(actions)` when either integration form needs
+canonical on-chain one-shot consumption.
 
 ## Nonce ownership and concurrent broadcasts
 
@@ -727,19 +876,14 @@ integrator. It does not wrap signers in ethers `NonceManager`, assign explicit
 nonces, or retain nonce state.
 
 Client executors and server action helpers privately order broadcasts made
-through the same object. This is only local race prevention; it is not a
-distributed nonce manager. Independent processes, helpers, and distributed
-signers remain responsible for their own coordination.
+through the same object. Independent helpers and server processes may also
+share one wallet without an external nonce manager: d402's bounded
+`NONCE_EXPIRED` recovery handles normal concurrent action races.
 
-If a broadcast fails with `NONCE_EXPIRED`, d402 estimates the transaction
-again against current contract state and makes up to three more attempts.
-Those attempts use bounded exponential backoff with jitter so independent
-executors do not remain synchronized. No other error is retried
-automatically. If another executor already completed the same payment action,
-the fresh estimate can surface the resulting decoded dPayments state error
-without broadcasting an unnecessary transaction. d402 does not treat that
-case as success because it does not possess the other executor's verified
-transaction hash.
+This is bounded race recovery, not persistent distributed nonce allocation.
+Centralized signing or application-owned nonce coordination remains an
+optional throughput and custody choice for sustained high-volume transaction
+traffic; it is not required simply to run d402 across replicas.
 
 ## Structured lifecycle logging
 

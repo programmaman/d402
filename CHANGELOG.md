@@ -42,6 +42,9 @@ All notable public changes to d402 are documented here.
   internally when a paid response is rejected. Refund endpoint failures surface
   as `D402PaymentError` with a `D402RefundRequestError` cause that retains the
   endpoint response.
+- Added `client.requestRefund(payment, reason?)` for user-approved, delayed, or
+  otherwise application-controlled use of the same canonical refund transport
+  after `d402Fetch()`. The stored challenge route cannot be overridden.
 - Added `refunder(routeConfig, refundPolicy)`. It reuses the original payable
   route's payment configuration to authenticate payment creation, verify that
   the configured signer controls the payee, observe current on-chain state,
@@ -71,6 +74,9 @@ All notable public changes to d402 are documented here.
   before verification, consumption, or handler execution.
 - Verification-error response builders now receive the complete
   `PaymentFailure`, including the original cause when available.
+- Exported the canonical payment-required and verification-error response
+  builders so custom response hooks can preserve the protocol body and content
+  type while adding application headers.
 - Updated consumer and handler contexts to carry authenticated payment data,
   verified state, and the consumer result without duplicating verification
   payloads.
@@ -109,6 +115,8 @@ All notable public changes to d402 are documented here.
 
 ### API and implementation cleanup
 
+- Exported `defaultResponseValidator` and `BuildPaymentProofInput` for
+  integrators composing the corresponding public client extension points.
 - Removed `acceptSuccessfulResponse`, `D402ResponseValidationError`, and the
   dead `paymentProofSchema` alias.
 - Payment action defaults are resolved once by `createD402Client()` rather than
@@ -119,6 +127,23 @@ All notable public changes to d402 are documented here.
 - Removed the client forwarding dPayments helper; execution now calls the
   pinned dPayments adapter directly without changing adapter caching or
   implementation pinning.
+
+### Documentation
+
+- Reworked the protocol reference around wire-level request flows, HTTP
+  messages, and canonical error modes, removing SDK and deployment guidance.
+- Expanded every payable pattern in the advanced guide to show both the
+  Fetch-native `payable()` form and the equivalent framework-owned
+  `PaymentAuthorizer` flow.
+- Added separate runnable Express server files for `payable()` and
+  `PaymentAuthorizer`, backed by the same terms and HTTP adapter for a direct
+  integration comparison.
+- Added production HTTP integration guidance for CORS, browser preflight,
+  framework controllers, response decoration, and refund credentials.
+- Added a scaling guide covering stateless cross-replica verification,
+  on-chain and database replay claims, recovery storage, RPC capacity, and
+  tested same-signer operation across replicas, with centralized nonce
+  coordination described as an optional high-volume or custody architecture.
 
 ## 0.3.0-rc.0 - 2026-07-28
 

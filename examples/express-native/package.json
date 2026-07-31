@@ -3,7 +3,9 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "server": "tsx src/server.ts",
+    "server": "npm run server:authorizer",
+    "server:authorizer": "tsx src/payment-authorizer-server.ts",
+    "server:payable": "tsx src/payable-server.ts",
     "client": "tsx src/client.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },

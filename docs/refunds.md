@@ -69,6 +69,9 @@ API request handlers as usual.
 relative URL is resolved against the URL that returned the payment challenge.
 Credentials and fragments are rejected.
 
+For cross-origin preflight, cookies, and bearer credentials on the refund
+request, see [HTTP and Framework Integration](./http-integration.md).
+
 The original route configuration is reused for its provider, signer, and
 payment-verification settings. The refund handler does not invoke the original
 terms resolver, recovery hook, consumer, or protected handler.
@@ -105,6 +108,23 @@ original response after the refund transaction is confirmed.
 
 `client.d402Fetch()` and `client.retry()` only perform the payment exchange.
 They do not run response validation or automatic post-response actions.
+
+Use `d402Fetch()` followed by `requestRefund()` when the application needs to
+inspect the response, ask for user approval, or delay the refund request:
+
+```ts
+const { response, payment } = await client.d402Fetch(resourceUrl);
+
+if (payment !== undefined && await approveRefund(response)) {
+  await client.requestRefund(payment, "User approved refund");
+}
+```
+
+`requestRefund()` uses the refund route retained from the original challenge
+and the same canonical transport as automatic `RequestRefund`. It does not
+accept a replacement route or transport callback. Applications that use a
+different transport own that separate workflow outside the d402 refund
+protocol.
 
 ## Refund request contract
 
