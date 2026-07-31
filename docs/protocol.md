@@ -8,7 +8,7 @@ retries the request with a proof of payment creation.
 
 1. Client sends the original HTTP request.
 2. Server returns `402 application/d402+json` when no usable proof is present.
-3. Client parses `paymentRequest`.
+3. Client parses the complete `D402PaymentChallenge`.
 4. Client validates local policy before spending.
 5. Client creates the dPayment.
 6. Client retries the same HTTP request with `D402-Payment-Proof`.
@@ -24,16 +24,68 @@ Cache-Control: no-store
 ```
 
 ```ts
-interface PaymentRequiredResponseBody {
+interface D402PaymentChallenge {
   paymentRequest: D402PaymentRequest;
-  reason: PaymentRequiredReason;
+  settlementReference?: D402BlockReference;
+  reason: D402PaymentRequiredReason;
+  refunds?: D402RefundRoute;
+}
+
+interface D402RefundRoute {
+  url: string;
+}
+
+interface D402PaymentRequiredReason {
+  code: "missing-proof";
+  category: "proof" | "request" | "chain" | "policy";
+  retryable: boolean;
+  message?: string;
+}
+
+interface D402BlockReference {
+  blockNumber: number;
+  blockHash: `0x${string}`;
+  blockTimestampUnixSec: `${bigint}`;
 }
 ```
 
 The response uses `application/d402+json` rather than plain
 `application/json` so clients can distinguish a d402 payment challenge from an
 ordinary JSON error body. The `+json` suffix is intentional: generic JSON tools
-can still parse it.
+can still parse it. Window-based settlement challenges include
+`settlementReference`; fixed-settlement challenges omit it.
+
+`refunds.url` is optional advisory metadata pointing to an application-owned
+refund-request destination. It may be relative or an absolute HTTP(S) URL.
+The challenge itself does not define caller authorization or refund
+eligibility. `RequestRefund` uses the fixed method and body described below;
+the server's `RefundPolicy` owns application decisions. See
+[Refunds](./refunds.md).
+
+## Refund Request
+
+The client sends `POST application/d402-refund+json` to the advertised refund
+route:
+
+```ts
+interface D402RefundRequest {
+  paymentRequest: D402PaymentRequest;
+  paymentProof: D402PaymentProof;
+  reason?: string;
+}
+```
+
+The server authenticates the historical payment from these fields. It does not
+resolve current terms or re-evaluate challenge expiration. The original HTTP
+request and protected response are not part of the refund protocol.
+
+A successful response contains the confirmed on-chain action result:
+
+```ts
+interface D402PaymentActionResult {
+  txHash: `0x${string}`;
+}
+```
 
 ## Payment Request
 
@@ -131,12 +183,13 @@ interface D402PaymentProof {
 Verification is relative to the canonical chain observed by the configured
 provider at verification time. Confirmation depth reduces reorganization risk
 but does not establish absolute finality. Applications requiring a stronger or
-different finality rule can configure a greater depth or provide a custom
-verifier.
+different finality rule can configure a greater depth. Route-specific acceptance
+rules belong in a custom verification policy.
 
-The built-in verifier exposes its observation through
-`VerifiedPayment.confirmations`, `creationBlockNumber`, and
-`creationBlockHash`. Custom verifiers may omit this optional metadata.
+The canonical observer exposes authenticated creation metadata through
+`ObservedPayment.confirmations`, `creationBlockNumber`, and
+`creationBlockHash`. A custom verification policy cannot replace or omit this
+observation.
 
 ## Consumption
 
@@ -192,7 +245,7 @@ Built-in `reason.code` values:
 | `wrong-payment-address` | The proof address does not match creation. | `false` |
 | `wrong-payee` | The on-chain payee differs from the request. | `false` |
 | `wrong-token` | The on-chain token differs from the request. | `false` |
-| `wrong-amount` | The on-chain amount does not satisfy the built-in verifier. | `false` |
+| `wrong-amount` | The on-chain amount does not satisfy the authenticated request. | `false` |
 | `wrong-settlement-time` | The on-chain settlement time differs from the request. | `false` |
 | `insufficient-confirmations` | Creation lacks the configured depth. | `true` |
 | `failed-transaction` | The creation transaction reverted. | `false` |
@@ -202,7 +255,7 @@ Built-in `reason.code` values:
 | `provider-timeout` | Provider verification timed out. | `true` |
 | `provider-error` | Provider verification failed. | `true` |
 
-Custom verifier codes are returned unchanged and belong to the integrator's
+Custom verification-policy codes are returned unchanged and belong to the integrator's
 own API contract. The table above defines the stable built-in meanings.
 
 ## Retryability

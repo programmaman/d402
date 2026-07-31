@@ -4,14 +4,94 @@ All notable public changes to d402 are documented here.
 
 ## Unreleased
 
-- Client policy configuration is now validated when a client is constructed.
-  Amount, chain ID, and time-window limits reject malformed local values before
-  provider or network work, and stateful resource regular expressions match
-  deterministically.
-- Added an optional, default-silent structured logger record sink for client
-  and server payment actions. Logger failures are isolated from payment flows.
-- Removed the deprecated `acceptSuccessfulResponse`,
-  `D402ResponseValidationError`, and `paymentProofSchema` exports.
+### Client payment recovery
+
+- Added `client.d402Fetch()` to return both the HTTP response and the completed
+  `D402PaymentAttempt` used for a paid request.
+- Added `client.retry()` to resend a persisted proof after validating request
+  method, resource, freshness, and proof-header binding. Retrying never creates
+  another payment.
+- Exposed the client's resolved `executor` so integrators can explicitly run
+  settlement or other supported payment actions.
+- Added `D402PaymentError`, which preserves the completed payment attempt,
+  original cause, and paid response when available after a post-payment
+  failure.
+- Kept `fetch()` as the response-only convenience API. `d402Fetch()` and
+  `retry()` do not invoke legacy response callbacks or automatic payment
+  actions, giving applications direct control over persistence and recovery.
+
+### Client policy
+
+- Client policy configuration is now validated during `createD402Client()`
+  construction, before provider or network work.
+- `maxAmount` must be a non-negative integer, `allowedChains` entries must be
+  positive safe integers, and expiry and settlement windows must be
+  non-negative safe integers.
+- Stateful resource regular expressions now reset and restore `lastIndex`, so
+  repeated policy evaluation is deterministic.
+
+### Server verification and request handling
+
+- Added `PaymentAuthorizer` for controller-owned and middleware-adapted request
+  flows. It runs the same authorization pipeline as `payable()` and returns
+  either a protocol response or the successful `PayableContext`.
+- Split immutable proof and creation authentication, canonical live
+  payment-state observation, and route-specific verification policy.
+  `VerificationPolicy` can accept or reject an `ObservedPaymentContext`
+  without replacing canonical proof authentication or observation.
+- Added the authenticated-payment `recovery` hook between authentication and
+  live-state verification, allowing applications to recover completed work
+  before verification, consumption, or handler execution.
+- Verification-error response builders now receive the complete
+  `PaymentFailure`, including the original cause when available.
+- Updated consumer and handler contexts to carry authenticated payment data,
+  verified state, and the consumer result without duplicating verification
+  payloads.
+- Moved server resource selection into `terms.resource`, which supports static
+  values and dynamic resolvers.
+- Added generic `PayableResolverContext<Req>`. Terms and resource resolvers
+  receive independent body-safe request clones while
+  `context.originalRequest` preserves framework-specific request properties
+  such as `NextRequest.nextUrl`.
+- Settlement references now fail closed when their block is unavailable or
+  does not match the challenged block number, hash, or timestamp. Verification
+  no longer substitutes newer chain data for an issued challenge.
+- Removed the deprecated latest-block timestamp cache and legacy settlement
+  resolver while retaining the block-reference settlement path.
+
+### Transaction execution and observability
+
+- Added the shared `D402PaymentExecutionError` for client and server payment
+  actions. It preserves the original cause and exposes the operation, payment
+  address, decoded dPayments revert name, and transaction error code when
+  available.
+- Consolidated client and server transaction failure normalization so contract
+  reverts surface consistently instead of being hidden behind unrelated
+  wrapper messages.
+- Signer nonce selection remains owned by the configured signer. d402 does not
+  wrap signers in `NonceManager`, assign explicit nonces, or share nonce state
+  across independently created executors or action helpers.
+- Each executor or action helper privately orders its own broadcasts. A
+  `NONCE_EXPIRED` broadcast is freshly gas-estimated and retried up to three
+  times with bounded exponential backoff and jitter; other failures are not
+  automatically retried.
+- Added an optional structured logger record sink to client and server payment
+  execution. Logging is silent by default, logger failures are ignored, and
+  contexts exclude signed transactions, credentials, evidence URIs, and
+  arbitrary error properties.
+
+### API and implementation cleanup
+
+- Removed `acceptSuccessfulResponse`, `D402ResponseValidationError`, and the
+  dead `paymentProofSchema` alias.
+- Payment action defaults are resolved once by `createD402Client()` rather than
+  inside the lower-level response resolution helper.
+- `parseD402PaymentProof()` now parses and normalizes directly from the complete
+  proof schema while `parseDPaymentProof()` remains the standalone public
+  dPayment-proof parser.
+- Removed the client forwarding dPayments helper; execution now calls the
+  pinned dPayments adapter directly without changing adapter caching or
+  implementation pinning.
 
 ## 0.3.0-rc.0 - 2026-07-28
 

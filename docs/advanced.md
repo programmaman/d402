@@ -167,7 +167,7 @@ handler: async (_request, context) => {
 }
 ```
 
-`payerAddress` is not supplied by the proof. The verifier authenticates it from
+`payerAddress` is not supplied by the proof. The authenticator derives it from
 the trusted factory event and exposes it through `context.payment`.
 
 Consumption also does not settle the payment, reduce refund rights, restrict

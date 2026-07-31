@@ -3,49 +3,29 @@ import "dotenv/config";
 import express from "express";
 import { JsonRpcProvider } from "ethers";
 
-import { payable } from "d402/server";
+import { PaymentAuthorizer } from "d402/server";
 
 const port = Number(process.env.PORT ?? "3000");
 const chainId = Number(requireEnv("CHAIN_ID"));
 const payeeAddress = requireEnv("PAYEE_ADDRESS") as `0x${string}`;
 const provider = new JsonRpcProvider(requireEnv("RPC_URL"));
 
-const protectedReport = payable({
+const reportPayment = new PaymentAuthorizer({
   paymentConfig: {
     provider,
     confirmations: 1,
     settlementWindow: 3600,
   },
   terms: (request) => ({
-    resource: (resourceRequest) => resourceRequest.url,
     chainId,
     payeeAddress,
     tokenAddress: null,
     netAmount: "1000000000000000",
     agreement: {
       id: `express-report:${new URL(request.url).pathname}:v1`,
-      hash: "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
     },
     expiresAtUnixSec: Math.floor(Date.now() / 1000) + 300,
   }),
-  handler: async (request, context) => {
-    const url = new URL(request.url);
-    const reportId = url.pathname.split("/").at(-1);
-
-    return Response.json({
-      ok: true,
-      report: {
-        id: reportId,
-        title: `Report ${reportId}`,
-        generatedAt: new Date().toISOString(),
-      },
-      payment: {
-        paymentId: context.payment.paymentId,
-        paymentAddress: context.payment.paymentAddress,
-        state: context.payment.state,
-      },
-    });
-  },
 });
 
 const app = express();
@@ -56,8 +36,21 @@ app.get("/healthz", (_req, res) => {
 
 app.get("/reports/:id", async (req, res, next) => {
   try {
-    const response = await protectedReport(toWebRequest(req));
-    await sendWebResponse(res, response);
+    const authorization =
+      await reportPayment.authorize(toWebRequest(req));
+
+    if (authorization.response !== undefined) {
+      await sendWebResponse(res, authorization.response);
+      return;
+    }
+
+    res.json({
+      report: {
+        id: req.params.id,
+        title: `Report ${req.params.id}`,
+      },
+      paymentId: authorization.context.payment.paymentId,
+    });
   } catch (error) {
     next(error);
   }

@@ -13,7 +13,6 @@ const payeeAddress = payee.address as `0x${string}`;
 const actions = paymentActions({
   provider,
   signer: payee,
-  confirmations: 1,
 });
 
 const protectedDownload = payable({
@@ -26,24 +25,21 @@ const protectedDownload = payable({
   },
   consumer: Once(actions),
   terms: (request) => ({
-    resource: (resourceRequest) => resourceRequest.url,
     chainId,
     payeeAddress,
     tokenAddress: null,
     netAmount: "1000000000000000",
     agreement: {
       id: `one-shot-download:${new URL(request.url).pathname}:v1`,
-      hash: "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
     },
     expiresAtUnixSec: Math.floor(Date.now() / 1000) + 300,
   }),
-  handler: async (_request, context) => {
-    return Response.json({
+  handler: (_request, context) =>
+    Response.json({
       ok: true,
       downloadUrl: "https://storage.example.test/downloads/report-123.pdf",
       paymentId: context.payment.paymentId,
-    });
-  },
+    }),
 });
 
 const app = express();

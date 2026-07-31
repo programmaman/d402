@@ -13,31 +13,25 @@ const protectReport = payable({
     settlementWindow: 3600,
   },
   terms: (request) => {
-    const url = new URL(request.url);
-
     return {
-      resource: (resourceRequest) => resourceRequest.url,
       chainId,
       payeeAddress,
       tokenAddress: null,
       netAmount: "1000000000000000",
       agreement: {
-        id: `next-report:${url.pathname}:v1`,
-        hash: "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        id: `next-report:${new URL(request.url).pathname}:v1`,
       },
       expiresAtUnixSec: Math.floor(Date.now() / 1000) + 300,
     };
   },
-  handler: async (request, context) => {
-    const url = new URL(request.url);
-    const id = url.pathname.split("/").at(-1);
-
-    return Response.json({
+  handler: (request, context) =>
+    Response.json({
       ok: true,
-      report: { id, title: `Report ${id}` },
+      report: {
+        id: new URL(request.url).pathname.split("/").at(-1),
+      },
       paymentId: context.payment.paymentId,
-    });
-  },
+    }),
 });
 
 export async function GET(request: Request): Promise<Response> {

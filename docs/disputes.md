@@ -12,7 +12,8 @@ receiving a final ruling.
 4. The client validates the response. If it is rejected, the client chooses one
    of these actions:
    - `KeepOpen`: leave the payment open.
-   - `RequestRefund`: ask the server to evaluate a refund request.
+   - `RequestRefund`: send the historical request and proof to the advertised
+     refund route.
    - `Dispute`: raise the on-chain dispute.
 5. If disputed, the payment enters the on-chain `disputed` state and receives a
    dispute ID from the underlying dPayment system.
@@ -62,6 +63,10 @@ interpret the court's policy or decide which party is correct.
 The application owns dispute policy, refund approval, persistence, replay and
 idempotency handling, notifications, and mapping the court ruling to a
 business outcome.
+
+`RequestRefund` uses the internal refund transport. The server authenticates
+the payment, applies `RefundPolicy`, and performs the payee-authorized on-chain
+refund when policy approves. See [Refunds](./refunds.md).
 
 ## Evidence flow
 

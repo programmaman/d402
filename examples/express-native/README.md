@@ -1,7 +1,8 @@
-# Express Native Token Example
+# Express controller example
 
-This example protects `GET /reports/:id` with d402 and pays for it from a Node
-client using a native-token dPayment.
+This example uses `PaymentAuthorizer` inside an ordinary Express controller.
+Express keeps ownership of routing and response handling; d402 returns a
+protocol response or the successful payment context.
 
 ## Setup
 
@@ -33,6 +34,5 @@ Terminal 2:
 npm run client
 ```
 
-Before payment, the server returns `402 application/d402+json`. The client then
-creates the payment, retries with `D402-Payment-Proof`, and receives the report
-JSON.
+The included client requests the report, handles the `402`, creates a
+native-token payment, and retries with proof.

@@ -57,6 +57,7 @@
     "docs/comparisons.md",
     "docs/disputes.md",
     "docs/protocol.md",
+    "docs/refunds.md",
     "docs/schemes.md",
     "docs/signing.md",
     "docs/testing.md",
@@ -76,6 +77,7 @@
     "examples/one-shot-access/tsconfig.json",
     "examples/one-shot-access/src/",
     "README.md",
+    "ELI5.md",
     "CHANGELOG.md",
     "LICENSE"
   ],

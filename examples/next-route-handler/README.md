@@ -1,7 +1,6 @@
 # Next.js Route Handler Example
 
-This example shows the smallest shape for using `payable()` directly in a
-Next.js route handler.
+This example exports a `payable()` route directly from a Next.js route handler.
 
 ## Files
 

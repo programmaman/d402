@@ -44,9 +44,12 @@ Exports:
 
 Key types:
 
-- `D402PaymentTerms`
 - `D402PaymentRequest`
+- `D402PaymentChallenge`
+- `D402PaymentRequiredReason`
 - `D402PaymentProof`
+- `D402PaymentActionResult`
+- `D402RefundRoute`
 - `D402Agreement`
 - `Address`
 - `Hex32`
@@ -249,13 +252,19 @@ Important options:
 - `paymentConfig.cache`: optional cache setting for settlement-window support.
 - `paymentConfig.logger`: optional structured record sink for server payment
   actions. It has the same failure-isolated behavior as the client logger.
+- `paymentConfig.multicall`: optional trusted Multicall3 configuration used by
+  canonical payment-state observation.
 - `terms`: static terms or a function of the request. Its optional `resource`
   may be a string or function of the request; it defaults to the incoming URL.
 - `handler`: protected handler.
+- `refunds`: optional advisory application-owned refund destination included
+  in the 402 challenge as `{ url }`. d402 does not invoke it.
 - `recovery`: optional authenticated-payment recovery hook. A response returned
   here skips live-state verification, consumption, and the handler.
-- `verifier`: optional verifier for an authenticated payment. It may accept or
-  reject the current payment state, but cannot replace proof authentication.
+- `verificationPolicy`: optional policy that accepts or rejects a canonically
+  observed payment. It cannot replace proof authentication or live-state
+  observation. `UsablePayment` is the default; the exported
+  `RefundablePayment` accepts only payments whose current state is `funded`.
 - `consumer`: optional payment-consumption policy. Use
   `Once(actions)` with a shared `paymentActions({ provider, signer })` instance
   to consume a verified payment before the
@@ -345,12 +354,12 @@ through `cause`.
 
 ## Recovery and Consumers
 
-d402 always authenticates payment creation and verifies current on-chain
-identity. `recovery` runs before verification, so an application can return a
-stored result before replay consumption. A custom verifier receives only this
-authenticated context; use it when a route intentionally permits or rejects a
-particular current payment state. Use `PaymentConsumer` for single-use or
-application claims.
+d402 always authenticates payment creation and observes current on-chain state.
+`recovery` runs before observation, so an application can return a stored result
+before replay consumption. A custom `VerificationPolicy` receives the
+`ObservedPaymentContext` produced by canonical observation; use it when a route
+intentionally permits or rejects a particular current payment state. Use
+`PaymentConsumer` for single-use or application claims.
 
 `Once` accepts any object implementing the `consumePayment` portion of
 `PaymentActions`. Use the concrete actions object for canonical on-chain
@@ -382,15 +391,25 @@ const databaseOnce: PaymentConsumer = {
 
 const route = payable({
   paymentConfig,
-  verify,
   consumer: databaseOnce,
   terms,
   handler,
 });
 ```
 
-Do not implement consumption as a verifier read followed by a later write.
+Do not implement consumption as a policy read followed by a later write.
 That check is not atomic and permits concurrent replay.
+
+## Refund routes and policy
+
+`D402PaymentAction.RequestRefund` sends a `D402RefundRequest` containing the
+historical payment request, payment proof, and rejection reason to the
+advertised `D402RefundRoute`.
+
+On the server, `refunder(originalRouteConfig, refundPolicy)` authenticates the
+payment, verifies signer ownership and refundable state, applies application
+policy, and calls the existing on-chain refund action. `RefundPolicy` is the
+only application plugin in this flow. See [Refunds](./refunds.md).
 
 ## `d402/autosigner`
 
