@@ -1,5 +1,6 @@
 export { createD402Client } from "./fetch.js";
 export { createDPaymentsExecutor } from "./payment-executor.js";
+export { defaultResponseValidator } from "./defaults.js";
 export type {
   CreateDPaymentsExecutorOptions,
 } from "./payment-executor.js";
@@ -15,6 +16,7 @@ export {
   buildDPaymentProof,
   encodeD402PaymentProof,
 } from "./payment-proof.js";
+export type { BuildPaymentProofInput } from "./payment-proof.js";
 export {
   D402ClientError,
   D402ConfigurationError,

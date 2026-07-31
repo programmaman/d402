@@ -20,6 +20,7 @@ import {
   withPaymentProofHeader,
 } from "./request.js";
 import { resolvePaymentAfterAcceptance } from "./resolution.js";
+import { requestRefund as sendRefundRequest } from "./refund-request.js";
 import { getConnectedChainId } from "../runtime/chain.js";
 import type {
   CreateD402ClientOptions,
@@ -29,7 +30,11 @@ import type {
   D402ResponseValidator,
 } from "./types.js";
 import { D402PaymentAction } from "./types.js";
-import type { D402PaymentProof, D402RefundRoute } from "../core/index.js";
+import type {
+  D402PaymentActionResult,
+  D402PaymentProof,
+  D402RefundRoute,
+} from "../core/index.js";
 import { defaultPaymentActions, defaultResponseValidator } from "./defaults.js";
 
 export function createD402Client(
@@ -160,6 +165,27 @@ export function createD402Client(
     return sendPaidRequest(payment, prepared.retry);
   }
 
+  async function requestRefund(
+    payment: D402PaymentAttempt,
+    reason?: string,
+  ): Promise<D402PaymentActionResult> {
+    if (payment.refunds === undefined) {
+      throw new D402ConfigurationError(
+        "requestRefund requires the payment challenge to advertise refunds.",
+      );
+    }
+
+    return sendRefundRequest({
+      route: payment.refunds,
+      refundRequest: {
+        paymentRequest: payment.paymentRequest,
+        paymentProof: payment.proof,
+        ...(reason !== undefined ? { reason } : {}),
+      },
+      fetch: fetchImpl,
+    });
+  }
+
   return Promise.resolve({
     executor,
     async fetch(input, init) {
@@ -181,7 +207,7 @@ export function createD402Client(
           executor,
           onAccepted,
           onRejected,
-          fetch: fetchImpl,
+          requestRefund,
         });
       } catch (cause) {
         throw new D402PaymentError({
@@ -195,6 +221,7 @@ export function createD402Client(
     },
     d402Fetch,
     retry,
+    requestRefund,
   });
 }
 

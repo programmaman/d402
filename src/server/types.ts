@@ -273,7 +273,7 @@ export interface PayableRouteConfig<
   recovery?: PaymentRecovery;
   consumer?: PaymentConsumer<Result>;
   /**
-   * Advisory application-owned refund destination advertised in challenges.
+   * Application-owned canonical refund destination advertised in challenges.
    */
   refunds?: D402RefundRoute;
   proofHeaderName?: string;

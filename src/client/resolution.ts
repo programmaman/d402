@@ -9,7 +9,9 @@ import type {
   D402PaymentOperation,
 } from "../runtime/payment-execution-error.js";
 import { D402PaymentAction } from "./types.js";
-import { requestRefund } from "./refund-request.js";
+import type {
+  D402PaymentActionResult,
+} from "../core/index.js";
 import type {
   D402AcceptedPaymentAction,
   D402CreatedPayment,
@@ -26,7 +28,10 @@ export async function resolvePaymentAfterAcceptance(input: {
   onAccepted: D402AcceptedPaymentAction;
   onRejected: D402RejectedPaymentAction;
   executor: D402PaymentExecutor;
-  fetch: typeof globalThis.fetch;
+  requestRefund: (
+    payment: D402PaymentAttempt,
+    reason?: string,
+  ) => Promise<D402PaymentActionResult>;
 }): Promise<D402PaymentActionResolution> {
   const payment = input.paymentAttempt.payment;
 
@@ -54,21 +59,10 @@ export async function resolvePaymentAfterAcceptance(input: {
   }
 
   if (input.onRejected === D402PaymentAction.RequestRefund) {
-    if (input.paymentAttempt.refunds === undefined) {
-      throw new D402ConfigurationError(
-        "RequestRefund requires the payment challenge to advertise refunds.",
-      );
-    }
-
-    const result = await requestRefund({
-      route: input.paymentAttempt.refunds,
-      refundRequest: {
-        paymentRequest: input.paymentAttempt.paymentRequest,
-        paymentProof: input.paymentAttempt.proof,
-        reason: input.responseDecision.reason,
-      },
-      fetch: input.fetch,
-    });
+    const result = await input.requestRefund(
+      input.paymentAttempt,
+      input.responseDecision.reason,
+    );
 
     return { action: "refunded", txHash: result.txHash };
   }

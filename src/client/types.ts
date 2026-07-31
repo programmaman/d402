@@ -23,6 +23,14 @@ export interface D402Client {
     input: RequestInfo | URL,
     init?: RequestInit,
   ): Promise<D402FetchResponse>;
+  /**
+   * Request a refund through the canonical route retained from this payment's
+   * challenge. The route and transport cannot be overridden.
+   */
+  requestRefund(
+    payment: D402PaymentAttempt,
+    reason?: string,
+  ): Promise<D402PaymentActionResult>;
 }
 
 /** A completed payment and its proof, suitable for persistence and retry. */
@@ -30,6 +38,7 @@ export interface D402PaymentAttempt {
   readonly paymentRequest: D402PaymentRequest;
   readonly payment: D402CreatedPayment;
   readonly proof: D402PaymentProof;
+  /** Absolute refund route resolved from the original challenge, when offered. */
   readonly refunds?: D402RefundRoute;
 }
 

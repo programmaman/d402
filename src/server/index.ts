@@ -8,6 +8,14 @@ export {
 } from "./payment-proof.js";
 export { paymentActions } from "./payment-actions.js";
 export {
+  buildPaymentRequiredReason,
+  buildPaymentRequiredResponse,
+} from "./payment-required.js";
+export {
+  buildPaymentVerificationErrorReason,
+  buildPaymentVerificationErrorResponse,
+} from "./payment-verification-error.js";
+export {
   D402PaymentExecutionError,
   type D402PaymentExecutionErrorInput,
   type D402PaymentOperation,

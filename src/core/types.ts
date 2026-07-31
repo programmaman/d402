@@ -57,9 +57,7 @@ export interface D402PaymentRequiredReason {
 
 export interface D402RefundRoute {
   /**
-   * Advisory application-owned location for requesting or initiating a refund.
-   *
-   * d402 does not invoke this URL or define its transport contract.
+   * Application-owned endpoint for the canonical d402 refund request.
    */
   url: string;
 }
