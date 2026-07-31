@@ -4,7 +4,7 @@ import type {
   VerificationPolicyResult,
 } from "./types.js";
 
-export const UsablePayment: VerificationPolicy = Object.freeze({
+export const FundedOrSettledPayment: VerificationPolicy = Object.freeze({
   verify(
     context: Readonly<ObservedPaymentContext>,
   ): VerificationPolicyResult {
@@ -23,7 +23,7 @@ export const UsablePayment: VerificationPolicy = Object.freeze({
 });
 
 /** Accepts only a payment that can still take the on-chain refund transition. */
-export const RefundablePayment: VerificationPolicy = Object.freeze({
+export const FundedPayment: VerificationPolicy = Object.freeze({
   verify(
     context: Readonly<ObservedPaymentContext>,
   ): VerificationPolicyResult {

@@ -34,7 +34,7 @@ import {
   verifyPaymentSalt,
 } from "./payment-verifier.js";
 import { None, type PaymentConsumer } from "./payment-consumer.js";
-import { UsablePayment } from "./verification-policy.js";
+import { FundedOrSettledPayment } from "./verification-policy.js";
 
 export class PaymentAuthorizer<
   Req extends Request = Request,
@@ -52,7 +52,8 @@ export class PaymentAuthorizer<
     this.#config = config;
     this.#authenticator = createDPaymentsAuthenticator(config.paymentConfig);
     this.#observer = createDPaymentsObserver(config.paymentConfig);
-    this.#verificationPolicy = config.verificationPolicy ?? UsablePayment;
+    this.#verificationPolicy = config.verificationPolicy
+      ?? FundedOrSettledPayment;
     this.#consumer = config.consumer ?? (None as PaymentConsumer<Result>);
     this.#refunds = config.refunds === undefined
       ? undefined

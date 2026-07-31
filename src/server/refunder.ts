@@ -10,7 +10,7 @@ import {
   refundsSchema,
 } from "../core/schemas.js";
 import { paymentActions } from "./payment-actions.js";
-import { RefundablePayment } from "./verification-policy.js";
+import { FundedPayment } from "./verification-policy.js";
 import {
   createDPaymentsAuthenticator,
   createDPaymentsObserver,
@@ -112,7 +112,7 @@ export function refunder<
       ...authenticated,
       payment: observation.payment,
     };
-    const verification = await RefundablePayment.verify(observed);
+    const verification = await FundedPayment.verify(observed);
     if (!verification.ok) {
       return refundFailureResponse(
         409,

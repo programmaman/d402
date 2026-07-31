@@ -59,13 +59,13 @@ Before policy runs, `refunder()`:
   confirmations, and any settlement reference;
 - observes current on-chain state;
 - verifies the configured signer controls the authenticated payee; and
-- applies the public `RefundablePayment` verification policy, which requires
+- applies the public `FundedPayment` verification policy, which requires
   the payment to remain funded.
 
 If policy approves, the refunder calls `paymentActions().refundPayment()` and
 returns its confirmed transaction hash.
 
-`RefundablePayment` uses the same `ObservedPaymentContext` →
+`FundedPayment` uses the same `ObservedPaymentContext` →
 `VerificationPolicy` seam as `payable()`. It is not replaceable inside
 `refunder()`, because the on-chain refund transition always requires the funded
 state. Integrators may also use it explicitly as a normal payable route's

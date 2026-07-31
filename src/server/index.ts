@@ -24,8 +24,8 @@ export {
   type PaymentConsumerResult,
 } from "./payment-consumer.js";
 export {
-  RefundablePayment,
-  UsablePayment,
+  FundedOrSettledPayment,
+  FundedPayment,
 } from "./verification-policy.js";
 export type {
   PayableContext,

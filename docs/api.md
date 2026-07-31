@@ -263,8 +263,8 @@ Important options:
   here skips live-state verification, consumption, and the handler.
 - `verificationPolicy`: optional policy that accepts or rejects a canonically
   observed payment. It cannot replace proof authentication or live-state
-  observation. `UsablePayment` is the default; the exported
-  `RefundablePayment` accepts only payments whose current state is `funded`.
+  observation. `FundedOrSettledPayment` is the default; the exported
+  `FundedPayment` accepts only payments whose current state is `funded`.
 - `consumer`: optional payment-consumption policy. Use
   `Once(actions)` with a shared `paymentActions({ provider, signer })` instance
   to consume a verified payment before the
