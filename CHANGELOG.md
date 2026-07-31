@@ -2,7 +2,7 @@
 
 All notable public changes to d402 are documented here.
 
-## Unreleased
+## 0.3.0-rc.1 - 2026-07-31
 
 ### Client payment recovery
 
