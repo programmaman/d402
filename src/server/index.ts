@@ -1,6 +1,8 @@
 export { payable } from "./payable.js";
-export { createDPaymentsVerifier } from "./payment-verifier.js";
-export type { DPaymentsVerifierOptions } from "./payment-verifier.js";
+export { refunder } from "./refunder.js";
+export { PaymentAuthorizer } from "./payment-authorizer.js";
+export { createDPaymentsObserver } from "./payment-verifier.js";
+export type { DPaymentsObserverOptions } from "./payment-verifier.js";
 export {
   decodeD402PaymentProof,
 } from "./payment-proof.js";
@@ -21,10 +23,16 @@ export {
   type PaymentConsumer,
   type PaymentConsumerResult,
 } from "./payment-consumer.js";
+export {
+  RefundablePayment,
+  UsablePayment,
+} from "./verification-policy.js";
 export type {
   PayableContext,
   PayableHandler,
   PayableRouteConfig,
+  PaymentAuthorizationConfig,
+  PaymentAuthorizationOutcome,
   D402PaymentVerificationFailureReason,
   AuthenticatedPayment,
   AuthenticatedPaymentContext,
@@ -46,7 +54,12 @@ export type {
   PaymentFailure,
   PaymentFailureReason,
   PaymentRecovery,
-  PaymentVerifier,
-  VerifiedPayment,
-  VerifiedPaymentContext,
+  PaymentObserver,
+  ObservedPayment,
+  ObservedPaymentContext,
+  VerificationPolicy,
+  VerificationPolicyResult,
+  RefundPolicy,
+  RefundPolicyContext,
+  RefundPolicyResult,
 } from "./types.js";

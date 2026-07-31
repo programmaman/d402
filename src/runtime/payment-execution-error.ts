@@ -5,7 +5,6 @@ import type { PaymentAddress } from "../core/index.js";
 export type D402PaymentOperation =
   | "create"
   | "settle"
-  | "request-refund"
   | "refund"
   | "consume"
   | "dispute"
@@ -21,7 +20,6 @@ export interface D402PaymentExecutionErrorInput {
 const operationMessages: Record<D402PaymentOperation, string> = {
   create: "Could not create dPayment.",
   settle: "Could not settle dPayment.",
-  "request-refund": "Could not request a dPayment refund.",
   refund: "Could not refund dPayment.",
   consume: "Could not consume dPayment.",
   dispute: "Could not dispute dPayment.",

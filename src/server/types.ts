@@ -2,6 +2,7 @@ import type {
   Address,
   D402PaymentActionResult,
   D402PaymentChallenge,
+  D402RefundRoute,
   DPaymentProof,
   D402BlockReference,
   D402PaymentRequest,
@@ -9,6 +10,7 @@ import type {
   PaymentAddress,
 } from "../core/index.js";
 import type { AbstractProvider, Signer } from "ethers";
+import type { MulticallConfig } from "@rakelabs/dpayments-sdk";
 import type { D402Logger } from "../runtime/logger.js";
 import type { PaymentConsumer } from "./payment-consumer.js";
 
@@ -50,6 +52,8 @@ export interface PaymentConfig {
   cache?: boolean | number;
   identifier?: PaymentIdentifier;
   logger?: D402Logger;
+  /** Trusted private-network or test-chain Multicall3 deployment. */
+  multicall?: MulticallConfig;
 }
 
 export type PayableTerms<
@@ -94,6 +98,7 @@ export type D402PaymentVerificationFailureReason =
   | "onchain-payment-not-found"
   | "onchain-payment-mismatch"
   | "onchain-payment-not-usable"
+  | "payment-not-refundable"
   | "payment-already-consumed"
   | "unsupported-chain"
   | "wrong-chain"
@@ -169,7 +174,7 @@ export interface AuthenticatedPayment {
   creationBlockHash?: Hex32;
 }
 
-export interface VerifiedPayment extends AuthenticatedPayment {
+export interface ObservedPayment extends AuthenticatedPayment {
   state: PaymentState;
 }
 
@@ -180,23 +185,54 @@ export interface AuthenticatedPaymentContext {
   settlementReference?: D402BlockReference;
 }
 
-export interface VerifiedPaymentContext extends Omit<AuthenticatedPaymentContext, "payment"> {
-  payment: VerifiedPayment;
+export interface ObservedPaymentContext extends Omit<AuthenticatedPaymentContext, "payment"> {
+  payment: ObservedPayment;
 }
 
 export type PaymentAuthenticator<Req = Request> = (
   input: Readonly<PaymentAuthenticationInput<Req>>,
 ) => { ok: true; payment: AuthenticatedPayment } | PaymentFailure | Promise<{ ok: true; payment: AuthenticatedPayment } | PaymentFailure>;
 
-export type PaymentVerifier = (
+export type PaymentObserver = (
   context: Readonly<AuthenticatedPaymentContext>,
-) => { ok: true; state: PaymentState } | PaymentFailure | Promise<{ ok: true; state: PaymentState } | PaymentFailure>;
+) => { ok: true; payment: ObservedPayment } | PaymentFailure | Promise<{ ok: true; payment: ObservedPayment } | PaymentFailure>;
+
+export type VerificationPolicyResult =
+  | { ok: true }
+  | PaymentFailure;
+
+export interface VerificationPolicy {
+  verify(
+    context: Readonly<ObservedPaymentContext>,
+  ): VerificationPolicyResult | Promise<VerificationPolicyResult>;
+}
+
+export interface RefundPolicyContext<
+  Req extends Request = Request,
+> extends ObservedPaymentContext {
+  /** The actual HTTP request received by the refund endpoint. */
+  readonly request: Req;
+  /** Optional client-provided policy input. */
+  readonly reason?: string;
+}
+
+export type RefundPolicyResult =
+  | { ok: true }
+  | PaymentFailure;
+
+export interface RefundPolicy<
+  Req extends Request = Request,
+> {
+  verify(
+    context: Readonly<RefundPolicyContext<Req>>,
+  ): RefundPolicyResult | Promise<RefundPolicyResult>;
+}
 
 export type PaymentRecovery = (
   context: Readonly<AuthenticatedPaymentContext>,
 ) => Response | undefined | Promise<Response | undefined>;
 
-export interface PayableContext<Result = void> extends VerifiedPaymentContext {
+export interface PayableContext<Result = void> extends ObservedPaymentContext {
   consumerResult: Result;
 }
 
@@ -233,10 +269,29 @@ export interface PayableRouteConfig<
   paymentConfig: PaymentConfig;
   terms: PayableTermsResolver<Req>;
   handler: PayableHandler<Req, Result, Res>;
-  verifier?: PaymentVerifier;
+  verificationPolicy?: VerificationPolicy;
   recovery?: PaymentRecovery;
   consumer?: PaymentConsumer<Result>;
+  /**
+   * Advisory application-owned refund destination advertised in challenges.
+   */
+  refunds?: D402RefundRoute;
   proofHeaderName?: string;
   buildPaymentRequiredResponse?: PaymentRequiredResponseBuilder;
   buildPaymentVerificationErrorResponse?: PaymentVerificationErrorResponseBuilder;
 }
+
+export type PaymentAuthorizationConfig<
+  Req extends Request = Request,
+  Result = void,
+> = Omit<PayableRouteConfig<Req, Result>, "handler">;
+
+export type PaymentAuthorizationOutcome<Result = void> =
+  | {
+      response: Response;
+      context?: never;
+    }
+  | {
+      response?: never;
+      context: Readonly<PayableContext<Result>>;
+    };

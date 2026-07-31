@@ -11,6 +11,8 @@ import type {
   D402PaymentChallenge,
   D402PaymentProof,
   D402PaymentRequest,
+  D402RefundRequest,
+  D402RefundRoute,
   DecimalString,
   Hex32,
 } from "./types.js";
@@ -111,11 +113,26 @@ export const paymentRequiredReasonSchema = z
   })
   .strict();
 
+export const refundsSchema = z
+  .object({
+    url: z
+      .string()
+      .trim()
+      .min(1, { message: "must not be blank" })
+      .refine(isSupportedRefundUrl, {
+        message:
+          "must be a relative URL or an absolute HTTP(S) URL without credentials or a fragment",
+      }),
+  })
+  .strict()
+  .transform((parsed): D402RefundRoute => ({ url: parsed.url }));
+
 export const paymentChallengeSchema = z
   .object({
     paymentRequest: paymentRequestSchema,
     settlementReference: blockReferenceSchema.optional(),
     reason: paymentRequiredReasonSchema,
+    refunds: refundsSchema.optional(),
   })
   .strict() as z.ZodType<D402PaymentChallenge>;
 
@@ -134,3 +151,31 @@ export const d402PaymentProofSchema = z
     settlementReference: blockReferenceSchema.optional(),
   })
   .strict() as z.ZodType<D402PaymentProof>;
+
+export const refundRequestSchema = z
+  .object({
+    paymentRequest: paymentRequestSchema,
+    paymentProof: d402PaymentProofSchema,
+    reason: z.string().trim().min(1, { message: "must not be blank" }).optional(),
+  })
+  .strict() as z.ZodType<D402RefundRequest>;
+
+export const paymentActionResultSchema = z
+  .object({
+    txHash: hex32Schema,
+  })
+  .strict();
+
+function isSupportedRefundUrl(value: string): boolean {
+  try {
+    const parsed = new URL(value, "https://d402.invalid/");
+    return (
+      (parsed.protocol === "http:" || parsed.protocol === "https:") &&
+      parsed.username.length === 0 &&
+      parsed.password.length === 0 &&
+      parsed.hash.length === 0
+    );
+  } catch {
+    return false;
+  }
+}

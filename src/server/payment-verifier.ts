@@ -27,7 +27,7 @@ import type {
   AuthenticatedPaymentContext,
   PaymentAuthenticator,
   PaymentFailure,
-  PaymentVerifier,
+  PaymentObserver,
 } from "./types.js";
 
 type PaymentValidationResult =
@@ -124,15 +124,15 @@ export function createDPaymentsAuthenticator(
   };
 }
 
-export interface DPaymentsVerifierOptions {
+export interface DPaymentsObserverOptions {
   provider: AbstractProvider;
   /** Trusted private-network or test-chain Multicall3 deployment. */
   multicall?: MulticallConfig;
 }
 
-export function createDPaymentsVerifier(
-  options: DPaymentsVerifierOptions,
-): PaymentVerifier {
+export function createDPaymentsObserver(
+  options: DPaymentsObserverOptions,
+): PaymentObserver {
   let reader: Promise<PaymentReader> | undefined;
   const inFlightPaymentStateReads = new Map<string, Promise<PaymentStateReadResult>>();
 
@@ -143,12 +143,18 @@ export function createDPaymentsVerifier(
     return reader;
   }
 
-  return async function verifyDPaymentsPayment(context: Readonly<AuthenticatedPaymentContext>) {
+  return async function observeDPaymentsPayment(context: Readonly<AuthenticatedPaymentContext>) {
     const state = await getReader().then((currentReader) =>
       readPaymentStateOnce(currentReader, context.payment.paymentAddress, inFlightPaymentStateReads),
     );
     if (!state.ok) return state;
-    return verifyPaymentState(state.state);
+    return {
+      ok: true,
+      payment: {
+        ...context.payment,
+        state: toD402PaymentState(state.state),
+      },
+    };
   };
 }
 
@@ -229,7 +235,7 @@ async function verifyPaymentCreatedEvent(input: {
   let confirmations: number | undefined;
   if (input.confirmations === 1) {
     // A non-null receipt proves inclusion, which is one confirmation under
-    // this verifier's convention. No block-head lookup is needed.
+    // this authenticator's convention. No block-head lookup is needed.
     confirmations = 1;
   } else if (input.confirmations > 1) {
     let blockNumber: number;
@@ -438,20 +444,6 @@ async function readPaymentState(
   }
 }
 
-function verifyPaymentState(paymentState: PaymentState):
-  | { ok: true; state: D402PaymentState }
-  | PaymentFailure {
-  const state = toD402PaymentState(paymentState);
-  if (!isUsableForAccess(state)) {
-    return {
-      ok: false,
-      reason: state === "disputed" ? "disputed-payment" : "resolved-payment",
-    };
-  }
-
-  return { ok: true, state };
-}
-
 function buildAuthenticatedPayment(
   proof: DPaymentProof,
   paymentId: Hex32,
@@ -486,10 +478,6 @@ function toD402PaymentState(state: PaymentState): D402PaymentState {
   }
 
   return "resolved";
-}
-
-function isUsableForAccess(state: D402PaymentState): boolean {
-  return state === "funded" || state === "settled";
 }
 
 function tokenAddressForChain(tokenAddress: string | null): string {

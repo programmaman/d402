@@ -55,10 +55,29 @@ export interface D402PaymentRequiredReason {
   message?: string;
 }
 
+export interface D402RefundRoute {
+  /**
+   * Advisory application-owned location for requesting or initiating a refund.
+   *
+   * d402 does not invoke this URL or define its transport contract.
+   */
+  url: string;
+}
+
+export interface D402RefundRequest {
+  /** The historical request used to create the payment. */
+  readonly paymentRequest: D402PaymentRequest;
+  /** The creation proof for the payment being refunded. */
+  readonly paymentProof: D402PaymentProof;
+  /** Optional application-policy input supplied by the client. */
+  readonly reason?: string;
+}
+
 export interface D402PaymentChallenge {
   paymentRequest: D402PaymentRequest;
   settlementReference?: D402BlockReference;
   reason: D402PaymentRequiredReason;
+  refunds?: D402RefundRoute;
 }
 
 export interface DPaymentProof extends D402Versioned {

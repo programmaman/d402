@@ -8,13 +8,7 @@ import { D402_PAYMENT_REQUEST_CONTENT_TYPE } from "../core/index.js";
 export function buildPaymentRequiredResponse(
   init: D402PaymentChallenge,
 ): Response {
-  return new Response(JSON.stringify({
-    paymentRequest: init.paymentRequest,
-    ...(init.settlementReference !== undefined
-      ? { settlementReference: init.settlementReference }
-      : {}),
-    reason: init.reason,
-  }), {
+  return new Response(JSON.stringify(init), {
     status: 402,
     headers: {
       "Content-Type": D402_PAYMENT_REQUEST_CONTENT_TYPE,

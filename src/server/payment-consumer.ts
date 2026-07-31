@@ -3,7 +3,7 @@ import { decodeDPaymentError } from "@rakelabs/dpayments-sdk";
 import type {
   PaymentActions,
   PaymentFailure,
-  VerifiedPaymentContext,
+  ObservedPaymentContext,
 } from "./types.js";
 
 export type PaymentConsumerResult<Result> =
@@ -12,7 +12,7 @@ export type PaymentConsumerResult<Result> =
 
 export interface PaymentConsumer<Result = void> {
   consume(
-    context: Readonly<VerifiedPaymentContext>,
+    context: Readonly<ObservedPaymentContext>,
   ): Promise<PaymentConsumerResult<Result>>;
 }
 
