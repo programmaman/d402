@@ -2,6 +2,14 @@
 
 All notable public changes to d402 are documented here.
 
+## 0.3.0-rc.2 - 2026-07-31
+
+### Temporary Once blocker
+
+- Temporarily disabled `Once()` with an explicit error until the on-chain
+  consumption logic is updated. The blocker includes a TODO for removal. 
+  On-chain upgrades need a CI / publish pipeline too.
+
 ## 0.3.0-rc.1 - 2026-07-31
 
 ### Client payment recovery
