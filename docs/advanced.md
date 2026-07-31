@@ -8,7 +8,7 @@ needs d402's on-chain one-shot authorization.
 That boundary is intentional. d402 proves that a payment matching the request
 was created and is currently usable. Your app still decides what entitlement
 that payment unlocks, whether it is one-shot or reusable, how fulfillment is
-stored, and what recovery path to use if fulfillment later fails.
+stored, and how completed work is recovered if response delivery fails.
 
 ## Resource Binding
 
@@ -96,6 +96,122 @@ The first resolver argument and `bodyRequest` are the same dedicated clone.
 Each resolver receives a fresh clone. Use `originalRequest` for framework
 metadata and the clone for body reads so the handler retains its body.
 
+## Payable Authorization Pipeline
+
+A proof-bearing request passes through these stages:
+
+```text
+resolve terms
+-> authenticate payment creation
+-> recover an existing result
+-> observe current on-chain state
+-> apply VerificationPolicy
+-> apply PaymentConsumer
+-> run the handler
+```
+
+Each stage owns one question:
+
+| Stage | Question |
+| --- | --- |
+| Terms | What payment does this request require? |
+| Authentication | Does the proof identify a real payment matching those terms? |
+| Recovery | Did this authenticated payment already produce a durable result? |
+| Observation | What is the payment's current canonical on-chain state? |
+| `VerificationPolicy` | May this route accept a payment in that observed state? |
+| `PaymentConsumer` | May this payment authorization be used again? |
+| Handler | What business operation does an authorized request perform? |
+
+Authentication and observation are canonical d402 mechanics. Integrators
+configure terms, recovery, verification, consumption, and handling without
+replacing proof authentication.
+
+## Verification Policy
+
+An authentic payment is not automatically acceptable for every route. It may
+have been settled, disputed, or resolved.
+`VerificationPolicy` exists to decide whether the canonically observed payment
+state is acceptable before consumption or business work begins.
+
+The policy receives `ObservedPaymentContext`:
+
+```ts
+interface ObservedPaymentContext {
+  paymentRequest: D402PaymentRequest;
+  dPaymentProof: DPaymentProof;
+  payment: ObservedPayment;
+  settlementReference?: D402BlockReference;
+}
+```
+
+The default is `FundedOrSettledPayment`. It accepts payments in `funded` or
+`settled` state and rejects disputed or resolved payments. This is appropriate
+for ordinary access routes where prior settlement should not erase the thing
+the customer purchased.
+
+Use `FundedPayment` when fulfillment must begin only while the payee can still
+voluntarily refund the payment. A production example is a physical inventory
+reservation: if stock allocation fails, the server still needs the refund path
+to be available.
+
+```ts
+import { FundedPayment, payable } from "d402/server";
+
+const reserveInventory = payable({
+  paymentConfig,
+  terms,
+  verificationPolicy: FundedPayment,
+  handler: async (_request, context) => {
+    const reservation = await inventory.reserve({
+      paymentId: context.payment.paymentId,
+    });
+
+    return Response.json(reservation);
+  },
+});
+```
+
+Most routes should use one of these built-in policies. A custom policy is only
+needed for a stricter route-level decision based on the authenticated payment
+request or observed payment. Keep it read-only: it should not authenticate the
+HTTP caller, claim one-shot use, execute fulfillment, or broadcast payment
+actions. Those jobs belong to the surrounding application, consumer, handler,
+or refund route.
+
+## Handler
+
+The handler performs new business work after payment authorization succeeds.
+It receives the original HTTP request and a `PayableContext` containing the
+authenticated payment request, proof, observed payment, and consumer result.
+
+```ts
+handler: async (request, context) => {
+  const input = await request.json() as ReportInput;
+  const report = await reports.create({
+    input,
+    paymentId: context.payment.paymentId,
+    payerAddress: context.payment.payerAddress,
+  });
+
+  await db.results.put({
+    paymentId: context.payment.paymentId,
+    result: report,
+  });
+
+  return Response.json(report);
+},
+```
+
+The handler is the right place to generate content, create an order, reserve
+inventory, provision credits, or enqueue a job. It is not the place to parse or
+trust payment proof fields directly; d402 has already authenticated them into
+`context`.
+
+A consumer controls whether the handler may be entered more than once, but it
+cannot guarantee that the handler finishes exactly once. Make important
+operations idempotent by `paymentId` and persist their result before returning
+the response. The recovery hook can then deliver that result after a retry.
+
 ## Datastore-Free One-Shot Consumption
 
 Use `Once` when one payment should authorize at most one operation. Construct
@@ -174,6 +290,162 @@ Consumption also does not settle the payment, reduce refund rights, restrict
 disputes, or bypass the arbiter. It records only that the payee claimed the
 payment for fulfillment.
 
+## Payment Recovery
+
+The route's `recovery` hook returns work that the application already completed
+for an authenticated payment. It is not a retry callback and should not start
+new work.
+
+The relevant authorization order is:
+
+```text
+authenticate payment
+-> recovery
+-> observe current state
+-> verification policy
+-> consumer
+-> handler
+```
+
+If `recovery` returns a `Response`, d402 returns it immediately. Observation,
+verification, consumption, and the handler are skipped. If it returns
+`undefined`, normal authorization continues.
+
+```ts
+import type { PaymentRecovery } from "d402/server";
+
+const recovery: PaymentRecovery = async ({ payment }) => {
+  const completed = await db.results.findByPaymentId(payment.paymentId);
+
+  return completed === undefined
+    ? undefined
+    : Response.json(completed.result);
+};
+
+const route = payable({
+  paymentConfig,
+  terms,
+  recovery,
+  consumer: Once(actions),
+  handler,
+});
+```
+
+Recovery runs before live-state observation because completed work may still
+need to be delivered after its payment has been consumed, settled, disputed,
+or resolved. Those states prevent new work; they do not erase a result that was
+already produced.
+
+### Lost HTTP response
+
+Consider a production report API:
+
+1. The server consumes the payment.
+2. It generates the report and stores it under `paymentId`.
+3. The connection closes before the client receives the response.
+4. The client retries with the same proof.
+
+Without recovery, `Once` rejects the retry because the payment is already
+consumed. With recovery, the retry returns the stored report without generating
+or charging for it again.
+
+The handler must store the result before returning it:
+
+```ts
+handler: async (_request, { payment }) => {
+  const report = await reports.generate();
+
+  await db.results.put({
+    paymentId: payment.paymentId,
+    result: report,
+  });
+
+  return Response.json(report);
+},
+```
+
+### Asynchronous paid job
+
+For a paid video render, model-training run, or large export, store a durable
+job keyed by `paymentId`. Recovery can return the current job status on every
+retry and the final result after completion:
+
+```ts
+const recoverJob: PaymentRecovery = async ({ payment }) => {
+  const job = await db.jobs.findByPaymentId(payment.paymentId);
+  if (job === undefined) return undefined;
+
+  return job.status === "complete"
+    ? Response.json(job.result)
+    : Response.json(
+        { jobId: job.id, status: job.status },
+        { status: 202 },
+      );
+};
+```
+
+The paid handler creates the job once and returns `202`. A worker updates the
+same record. Recovery does not enqueue another job.
+
+### Generated artifact or download
+
+For a generated PDF, data archive, or licensed download, store the object key
+against the authenticated payment. Recovery can issue a fresh short-lived
+download URL without regenerating the artifact:
+
+```ts
+const recoverArtifact: PaymentRecovery = async ({ payment }) => {
+  const artifact = await db.artifacts.findByPaymentId(payment.paymentId);
+  if (artifact === undefined) return undefined;
+
+  const url = await objectStorage.createSignedUrl(artifact.objectKey);
+  return Response.redirect(url, 303);
+};
+```
+
+### Durable order receipt
+
+For an order, reservation, or ticket purchase, persist the business identifier
+with the payment. A retry can return the same receipt instead of creating a
+second order:
+
+```ts
+const recoverReceipt: PaymentRecovery = async ({ payment }) => {
+  const order = await db.orders.findByPaymentId(payment.paymentId);
+  if (order === undefined) return undefined;
+
+  return Response.json({
+    orderId: order.id,
+    status: order.status,
+    receiptUrl: order.receiptUrl,
+  });
+};
+```
+
+### What recovery does not solve
+
+There is still no atomic transaction spanning on-chain consumption and an
+application database. If the process dies after `Once` consumes the payment
+but before a durable result or job record exists, `recovery` has nothing to
+return. Production systems that cannot tolerate that gap should use a durable
+job/outbox design, reconciliation worker, or a database consumer that creates
+the business record atomically with its payment claim.
+
+`PaymentRecovery` receives an `AuthenticatedPaymentContext`, not the current
+HTTP request or an `ObservedPaymentContext`. Payment authentication proves the
+historical payment; it does not authenticate the current caller. If a recovered
+result contains account-private data, authenticate the application request in
+the surrounding controller before invoking `payable()` or
+`PaymentAuthorizer`.
+
+Keep the hook narrow:
+
+- Return only an existing durable result, job status, artifact, or receipt.
+- Key records by authenticated payment identity, normally `paymentId`.
+- Return `undefined` when no completed or recoverable record exists.
+- Do not create orders, enqueue jobs, grant entitlements, or perform other new
+  side effects from recovery.
+
 ## Database-Backed Consumption
 
 `Once` is the canonical choice when the chain should be the shared source of
@@ -185,7 +457,7 @@ import type { PaymentConsumer } from "d402/server";
 
 function DatabaseOnce(chainId: number): PaymentConsumer {
   return {
-    async consume(payment) {
+    async consume({ payment }) {
       const inserted = await db.consumedPayments.insertIfAbsent({
         chainId,
         paymentId: payment.paymentId,
@@ -194,7 +466,7 @@ function DatabaseOnce(chainId: number): PaymentConsumer {
       });
 
       return inserted
-        ? { ok: true, payment }
+        ? { ok: true, result: undefined }
         : {
             ok: false,
             reason: "payment-already-consumed",
@@ -331,7 +603,69 @@ const paymentInfo = await dpayments.dPayment(paymentAddress).read();
 Use these reads for detailed payment state, dispute state, evidence, appeals,
 and lower-level contract workflows.
 
-## Settlement And Refund Actions
+## Refund Policy
+
+`RefundPolicy` answers a different question from `VerificationPolicy`:
+
+- `VerificationPolicy` decides whether an observed payment is acceptable for a
+  payable route.
+- `RefundPolicy` decides whether the application should approve a refund of an
+  already authenticated payment.
+
+The refund pipeline is:
+
+```text
+authenticate historical payment
+-> verify the configured signer is the payee
+-> observe current on-chain state
+-> require FundedPayment
+-> apply RefundPolicy
+-> broadcast refund
+```
+
+`FundedPayment` is fixed inside `refunder()` because the contract can only take
+the voluntary-refund transition from the funded state. `RefundPolicy` cannot
+weaken that mechanical requirement.
+
+The application policy receives the observed payment, historical payment
+request and proof, the refund endpoint's actual HTTP request, and the optional
+untrusted reason supplied by the client:
+
+```ts
+import type { RefundPolicy } from "d402/server";
+
+const refundPolicy: RefundPolicy = {
+  async verify({ request, payment, reason }) {
+    const session = await sessions.require(request.headers);
+    const order = await orders.findByPaymentId(payment.paymentId);
+
+    if (order === undefined || order.customerId !== session.customerId) {
+      return { ok: false, reason: "not-authorized" };
+    }
+    if (order.fulfilled) {
+      return { ok: false, reason: "already-fulfilled" };
+    }
+    if (reason === "changed my mind" && !order.allowsVoluntaryReturns) {
+      return { ok: false, reason: "return-not-allowed" };
+    }
+
+    return { ok: true };
+  },
+};
+```
+
+This is where a production application authenticates the refund caller, finds
+the associated order, checks fulfillment and refund windows, reserves an
+idempotency decision, or sends the request to manual review. d402 authenticates
+the payment, not the person making the HTTP request. The client-provided
+`reason` is policy input, not evidence.
+
+The policy should return a decision; it should not call `refundPayment()`
+itself. After approval, `refunder()` broadcasts the canonical refund action.
+See the [refund guide](./refunds.md) for the complete transport and failure
+contract.
+
+## Settlement and Refund Actions
 
 If the app needs lower-level lifecycle actions outside d402's proof
 verification path, call the dPayment SDK directly from the server side.
