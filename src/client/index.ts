@@ -22,6 +22,7 @@ export {
   D402PaymentRequestParseError,
   D402PolicyViolationError,
   D402RequestReplayError,
+  D402RefundRequestError,
 } from "./errors.js";
 export {
   D402PaymentExecutionError,

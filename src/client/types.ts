@@ -5,6 +5,7 @@ import type {
   D402PaymentActionResult,
   D402PaymentProof,
   D402PaymentRequest,
+  D402RefundRoute,
   Hex32,
 } from "../core/index.js";
 import type { D402Logger } from "../runtime/logger.js";
@@ -29,6 +30,7 @@ export interface D402PaymentAttempt {
   readonly paymentRequest: D402PaymentRequest;
   readonly payment: D402CreatedPayment;
   readonly proof: D402PaymentProof;
+  readonly refunds?: D402RefundRoute;
 }
 
 /** The HTTP response and, when payment was required, the payment used for it. */
@@ -78,10 +80,6 @@ export interface D402CreatedPayment {
 export interface D402PaymentExecutor {
   createPayment: (paymentRequest: D402PaymentRequest) => Promise<D402CreatedPayment>;
   settlePayment?: (payment: D402CreatedPayment) => Promise<D402PaymentActionResult>;
-  requestRefund?: (
-    payment: D402CreatedPayment,
-    reason: string,
-  ) => Promise<D402PaymentActionResult>;
   disputePayment?: (
     payment: D402CreatedPayment,
     reason: string,
@@ -124,6 +122,6 @@ export type D402RejectedPaymentAction =
   | typeof D402PaymentAction.KeepOpen;
 
 export interface D402PaymentActionResolution {
-  action: "settled" | "refund-requested" | "disputed" | "kept-open";
+  action: "settled" | "refunded" | "disputed" | "kept-open";
   txHash?: Hex32;
 }

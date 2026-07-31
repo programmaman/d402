@@ -59,3 +59,13 @@ export class D402ConfigurationError extends D402ClientError {
     this.name = "D402ConfigurationError";
   }
 }
+
+export class D402RefundRequestError extends D402ClientError {
+  readonly response: Response;
+
+  constructor(message: string, response: Response, options?: { cause?: unknown }) {
+    super(message, options);
+    this.name = "D402RefundRequestError";
+    this.response = response;
+  }
+}

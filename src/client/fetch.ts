@@ -4,6 +4,7 @@ import { D402_PAYMENT_PROOF_HEADER } from "../core/index.js";
 import {
   D402ConfigurationError,
   D402PaymentError,
+  D402PaymentRequestParseError,
 } from "./errors.js";
 import { createDPaymentsExecutor } from "./payment-executor.js";
 import { buildDPaymentProof, encodeD402PaymentProof } from "./payment-proof.js";
@@ -27,7 +28,8 @@ import type {
   D402PaymentAttempt,
   D402ResponseValidator,
 } from "./types.js";
-import type { D402PaymentProof } from "../core/index.js";
+import { D402PaymentAction } from "./types.js";
+import type { D402PaymentProof, D402RefundRoute } from "../core/index.js";
 import { defaultPaymentActions, defaultResponseValidator } from "./defaults.js";
 
 export function createD402Client(
@@ -48,10 +50,10 @@ export function createD402Client(
   const connectedChainIdPromise = options.policy !== undefined
     ? getConnectedChainId(policyProvider!)
     : null;
-  const executor = options.executor ?? createDefaultExecutor(options, provider);
   const onResponse = resolveResponseValidator(options.onResponse);
   const onAccepted = options.onAccepted ?? defaultPaymentActions.OnAccepted;
   const onRejected = options.onRejected ?? defaultPaymentActions.OnRejected;
+  const executor = options.executor ?? createDefaultExecutor(options, provider);
 
   async function sendPaidRequest(
     payment: D402PaymentAttempt,
@@ -85,6 +87,17 @@ export function createD402Client(
     }
 
     const challenge = await parsePaymentRequiredResponse(unpaidResponse);
+    const challengeUrl = unpaidResponse.url.length > 0
+      ? unpaidResponse.url
+      : prepared.initial.url;
+    if (
+      onRejected === D402PaymentAction.RequestRefund &&
+      challenge.refunds === undefined
+    ) {
+      throw new D402PaymentRequestParseError(
+        "RequestRefund requires the payment challenge to advertise refunds.",
+      );
+    }
     const paymentRequest = challenge.paymentRequest;
     await validatePaymentRequestForRetry({
       paymentRequest,
@@ -121,6 +134,9 @@ export function createD402Client(
       paymentRequest,
       payment,
       proof,
+      ...(challenge.refunds !== undefined
+        ? { refunds: resolveRefunds(challenge.refunds, challengeUrl) }
+        : {}),
     };
 
     return sendPaidRequest(paymentAttempt, prepared.retry);
@@ -160,11 +176,12 @@ export function createD402Client(
         });
 
         await resolvePaymentAfterAcceptance({
-          payment: result.payment.payment,
+          paymentAttempt: result.payment,
           responseDecision,
           executor,
           onAccepted,
           onRejected,
+          fetch: fetchImpl,
         });
       } catch (cause) {
         throw new D402PaymentError({
@@ -179,6 +196,15 @@ export function createD402Client(
     d402Fetch,
     retry,
   });
+}
+
+function resolveRefunds(
+  refunds: D402RefundRoute,
+  challengeUrl: string,
+): D402RefundRoute {
+  return {
+    url: new URL(refunds.url, challengeUrl).href,
+  };
 }
 
 function resolveFetch(
