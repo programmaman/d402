@@ -17,7 +17,7 @@ All notable public changes to d402 are documented here.
   original cause, and paid response when available after a post-payment
   failure.
 - Kept `fetch()` as the response-only convenience API. `d402Fetch()` and
-  `retry()` do not invoke legacy response callbacks or automatic payment
+  `retry()` do not invoke response validation or automatic post-response
   actions, giving applications direct control over persistence and recovery.
 
 ### Client policy
@@ -29,6 +29,33 @@ All notable public changes to d402 are documented here.
   non-negative safe integers.
 - Stateful resource regular expressions now reset and restore `lastIndex`, so
   repeated policy evaluation is deterministic.
+
+### Refund protocol and policy
+
+- Added `D402RefundRoute` so payable routes can advertise a relative or
+  absolute HTTP(S) refund endpoint in payment challenges.
+- Standardized refund transport as an HTTP `POST` with content type
+  `application/d402-refund+json`. `D402RefundRequest` carries the historical
+  `D402PaymentRequest`, its `D402PaymentProof`, and an optional client-provided
+  policy reason.
+- `D402PaymentAction.RequestRefund` now sends the canonical refund request
+  internally when a paid response is rejected. Refund endpoint failures surface
+  as `D402PaymentError` with a `D402RefundRequestError` cause that retains the
+  endpoint response.
+- Added `refunder(routeConfig, refundPolicy)`. It reuses the original payable
+  route's payment configuration to authenticate payment creation, verify that
+  the configured signer controls the payee, observe current on-chain state,
+  enforce funded-state eligibility, and broadcast the refund transaction.
+- Added the application-owned `RefundPolicy` seam for HTTP caller
+  authentication, order and fulfillment rules, refund windows, application
+  idempotency, and manual review. d402 authenticates the payment; it does not
+  define a protocol identity for the refund requester.
+- Added the public `FundedPayment` and `FundedOrSettledPayment` verification
+  policies. `refunder()` always applies `FundedPayment`, while
+  `FundedOrSettledPayment` is the default policy for ordinary payable routes.
+- Refund handling deliberately does not invoke the original terms resolver,
+  recovery hook, consumer, protected handler, or route verification-policy
+  override.
 
 ### Server verification and request handling
 
