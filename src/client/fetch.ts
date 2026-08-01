@@ -286,6 +286,9 @@ function createDefaultExecutor(
     ...(options.logger !== undefined
       ? { logger: options.logger }
       : {}),
+    ...(options.onEvent !== undefined
+      ? { onEvent: options.onEvent }
+      : {}),
   };
 
   return createDPaymentsExecutor(executorOptions);

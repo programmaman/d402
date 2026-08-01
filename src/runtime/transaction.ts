@@ -8,6 +8,10 @@ import type {
 } from "ethers";
 import { isError } from "ethers";
 
+import { TransactionPreparedEvent } from "../core/events.js";
+import type { D402EventHandler } from "../core/events.js";
+import { emitEvent } from "./events.js";
+
 const NONCE_RETRY_LIMIT = 3;
 const NONCE_RETRY_BASE_DELAY_MS = 300;
 
@@ -25,6 +29,7 @@ export interface SendPreparedTransactionInput {
   provider: AbstractProvider;
   signer: Signer;
   tx: PreparedTx;
+  onEvent?: D402EventHandler | undefined;
   onNonceRetry?: (retry: TransactionNonceRetry) => void;
 }
 
@@ -66,6 +71,11 @@ export async function sendPreparedTransaction(
       ...request,
       from,
     });
+
+    emitEvent(
+      input.onEvent,
+      new TransactionPreparedEvent(input.tx),
+    );
 
     return input.signer.sendTransaction({
       ...request,

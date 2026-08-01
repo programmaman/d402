@@ -25,6 +25,7 @@ import {
 } from "../core/index.js";
 import type {
   Address,
+  D402EventHandler,
   D402PaymentActionResult,
   D402PaymentRequest,
   Hex32,
@@ -61,6 +62,7 @@ export interface CreateDPaymentsExecutorOptions {
   provider: AbstractProvider;
   confirmations?: number;
   logger?: D402Logger;
+  onEvent?: D402EventHandler;
 }
 
 type ResolvedDPaymentsExecutorOptions =
@@ -167,6 +169,7 @@ async function createDPaymentsPayment(
           provider: options.provider,
           signer: options.signer,
           tx: preparedPayment.approvalTx,
+          onEvent: options.onEvent,
           onNonceRetry: createNonceRetryLogger(
             options.logger,
             "create",
@@ -181,6 +184,7 @@ async function createDPaymentsPayment(
         provider: options.provider,
         signer: options.signer,
         tx: preparedPayment.creationTx,
+        onEvent: options.onEvent,
         onNonceRetry: createNonceRetryLogger(
           options.logger,
           "create",
@@ -304,6 +308,7 @@ async function sendSettlementAction(
         provider: options.provider,
         signer: options.signer,
         tx,
+        onEvent: options.onEvent,
         onNonceRetry: createNonceRetryLogger(
           options.logger,
           action,
@@ -392,6 +397,7 @@ async function raisePaymentDispute(
         provider: options.provider,
         signer: options.signer,
         tx: prepared.tx,
+        onEvent: options.onEvent,
         onNonceRetry: createNonceRetryLogger(
           options.logger,
           "dispute",
@@ -466,6 +472,7 @@ async function submitPaymentEvidence(
         provider: options.provider,
         signer: options.signer,
         tx,
+        onEvent: options.onEvent,
         onNonceRetry: createNonceRetryLogger(
           options.logger,
           "submit-evidence",

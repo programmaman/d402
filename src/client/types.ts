@@ -6,6 +6,7 @@ import type {
   D402PaymentProof,
   D402PaymentRequest,
   D402RefundRoute,
+  D402EventHandler,
   Hex32,
 } from "../core/index.js";
 import type { D402Logger } from "../runtime/logger.js";
@@ -62,6 +63,7 @@ export interface CreateD402ClientOptions {
   onResponse?: D402ResponseValidator;
   onAccepted?: D402AcceptedPaymentAction;
   onRejected?: D402RejectedPaymentAction;
+  onEvent?: D402EventHandler;
   executor?: D402PaymentExecutor;
   resource?: D402ClientResourceResolver;
   logger?: D402Logger;

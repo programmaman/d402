@@ -186,6 +186,7 @@ async function sendPaymentAction(
       provider: config.provider,
       signer: config.signer,
       tx,
+      onEvent: config.onEvent,
       onNonceRetry: createNonceRetryLogger(
         config.logger,
         action,
@@ -240,6 +241,7 @@ async function sendEvidenceAction(
       provider: config.provider,
       signer: config.signer,
       tx,
+      onEvent: config.onEvent,
       onNonceRetry: createNonceRetryLogger(
         config.logger,
         "submit-evidence",
@@ -295,6 +297,7 @@ async function sendAppealAction(
       provider: config.provider,
       signer: config.signer,
       tx: prepared.tx,
+      onEvent: config.onEvent,
       onNonceRetry: createNonceRetryLogger(
         config.logger,
         "appeal",

@@ -1,5 +1,10 @@
 export { parsePaymentRequest } from "./payment-request.js";
 export {
+  D402Event,
+  TransactionPreparedEvent,
+  type D402EventHandler,
+} from "./events.js";
+export {
   derivePaymentId,
   validatePaymentSalt,
 } from "./payment-id.js";

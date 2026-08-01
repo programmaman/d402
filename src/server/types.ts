@@ -5,6 +5,7 @@ import type {
   D402RefundRoute,
   DPaymentProof,
   D402BlockReference,
+  D402EventHandler,
   D402PaymentRequest,
   Hex32,
   PaymentAddress,
@@ -52,6 +53,7 @@ export interface PaymentConfig {
   cache?: boolean | number;
   identifier?: PaymentIdentifier;
   logger?: D402Logger;
+  onEvent?: D402EventHandler;
   /** Trusted private-network or test-chain Multicall3 deployment. */
   multicall?: MulticallConfig;
 }

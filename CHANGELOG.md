@@ -2,6 +2,19 @@
 
 All notable public changes to d402 are documented here.
 
+## 0.3.0-rc.4 - 2026-08-01
+
+### Prepared transaction events
+
+- Added `D402Event`, `TransactionPreparedEvent`, and `D402EventHandler`.
+- Added non-blocking event dispatch with isolated handler failures and
+  non-awaited asynchronous work.
+- Added cloned transaction snapshots
+- Emitted prepared transaction events immediately before every signer attempt,
+  including nonce retries.
+- Forwarded `onEvent` through client executors, server payment actions, and
+  payment configuration.
+
 ## 0.3.0-rc.3 - 2026-08-01
 
 ### Browser-compatible client proof encoding
