@@ -16,13 +16,15 @@ Use `payable()` when the protected handler can be expressed as a Fetch-style
 route:
 
 ```ts
-import { JsonRpcProvider } from "ethers";
+import { JsonRpcProvider, Wallet } from "ethers";
 import { payable } from "d402/server";
 
 const provider = new JsonRpcProvider(process.env.RPC_URL);
+// Any ethers Signer works here, including a KMS or custody-backed signer.
+const payee = new Wallet(process.env.PAYEE_PRIVATE_KEY, provider);
 const terms = {
   chainId: 100,
-  payeeAddress: "0x2222222222222222222222222222222222222222",
+  payeeAddress: payee.address,
   tokenAddress: null,
   netAmount: "1000000000000000",
   agreement: { id: "monthly-report:v1" },
@@ -32,6 +34,7 @@ const terms = {
 export const GET = payable({
   paymentConfig: {
     provider,
+    signer: payee,
     settlementWindow: 3600,
   },
   terms,
@@ -56,6 +59,8 @@ import { PaymentAuthorizer } from "d402/server";
 const reportPayment = new PaymentAuthorizer({
   paymentConfig: {
     provider,
+    // This may also be a KMS or custody-backed ethers Signer.
+    signer: payee,
     settlementWindow: 3600,
   },
   terms,
@@ -92,6 +97,7 @@ import { Once, payable, paymentActions } from "d402/server";
 
 const actions = paymentActions({
   provider,
+  // Use the payee's Wallet, KMS, or custody-backed ethers Signer.
   signer: payee,
 });
 
@@ -120,13 +126,15 @@ invoice. Put the order ID in the terms so retries reconstruct the same payment:
 const orderRoute = payable({
   paymentConfig: {
     provider,
+    // This may also be a KMS or custody-backed ethers Signer.
+    signer: payee,
   },
   terms: (request) => {
     const orderId = new URL(request.url).pathname.split("/").at(-1);
 
     return {
       chainId: 100,
-      payeeAddress: "0x2222222222222222222222222222222222222222",
+      payeeAddress: payee.address,
       tokenAddress: null,
       netAmount: "1000000000000000",
       agreement: { id: `order:${orderId}:v1` },
@@ -151,6 +159,7 @@ import { Once, payable, paymentActions } from "d402/server";
 
 const actions = paymentActions({
   provider,
+  // Use the payee's Wallet, KMS, or custody-backed ethers Signer.
   signer: payee,
 });
 
@@ -178,6 +187,7 @@ import { JsonRpcProvider, Wallet } from "ethers";
 import { createD402Client } from "d402/client";
 
 const provider = new JsonRpcProvider(process.env.RPC_URL);
+// In a browser, this can instead come from BrowserProvider.getSigner().
 const signer = new Wallet(process.env.PAYER_PRIVATE_KEY, provider);
 const client = await createD402Client({ provider, signer });
 
