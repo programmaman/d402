@@ -63,6 +63,7 @@
     "docs/schemes.md",
     "docs/signing.md",
     "docs/testing.md",
+    "docs/upcoming-features.md",
     "examples/README.md",
     "examples/express-native/package.json",
     "examples/express-native/README.md",

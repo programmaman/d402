@@ -204,6 +204,7 @@ single-use access, stable orders, jobs, credits, and deposits.
 - [Advanced configuration](docs/advanced.md)
 - [HTTP and framework integration](docs/http-integration.md)
 - [Scaling and stateless deployment](docs/scaling.md)
+- [Upcoming features](docs/upcoming-features.md)
 - [Signing modes](docs/signing.md)
 - [Refunds](docs/refunds.md)
 - [Disputes](docs/disputes.md)
