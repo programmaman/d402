@@ -1,4 +1,4 @@
-import { Buffer } from "node:buffer";
+import { encodeBase64, toUtf8Bytes } from "ethers";
 
 import { D402_VERSION } from "../core/constants.js";
 import { parseD402PaymentProof, parseDPaymentProof } from "../core/index.js";
@@ -26,5 +26,8 @@ export function buildDPaymentProof(input: BuildPaymentProofInput): DPaymentProof
 
 export function encodeD402PaymentProof(proof: D402PaymentProof): string {
   const normalized = parseD402PaymentProof(proof);
-  return Buffer.from(JSON.stringify(normalized), "utf8").toString("base64url");
+  return encodeBase64(toUtf8Bytes(JSON.stringify(normalized)))
+    .replaceAll("+", "-")
+    .replaceAll("/", "_")
+    .replace(/=+$/, "");
 }

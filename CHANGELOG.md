@@ -2,6 +2,15 @@
 
 All notable public changes to d402 are documented here.
 
+## 0.3.0-rc.3 - 2026-08-01
+
+### Browser-compatible client proof encoding
+
+- Decoupled client payment-proof encoding from Node's `node:buffer` module.
+- Reused ethers UTF-8 and base64 utilities so `d402/client` can be bundled for
+  browser wallet integrations while preserving the existing base64url proof
+  format.
+
 ## 0.3.0-rc.2 - 2026-07-31
 
 ### Temporary Once blocker
