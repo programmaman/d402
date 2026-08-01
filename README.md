@@ -182,12 +182,14 @@ when every new payment should authorize at most one operation.
 
 ## Pay a protected route
 
+For a server, agent, or other unattended client, connect an ethers `Wallet` to
+the provider:
+
 ```ts
 import { JsonRpcProvider, Wallet } from "ethers";
 import { createD402Client } from "d402/client";
 
 const provider = new JsonRpcProvider(process.env.RPC_URL);
-// In a browser, this can instead come from BrowserProvider.getSigner().
 const signer = new Wallet(process.env.PAYER_PRIVATE_KEY, provider);
 const client = await createD402Client({ provider, signer });
 
@@ -195,6 +197,26 @@ const response = await client.fetch(
   "https://api.example.com/reports/monthly",
 );
 ```
+
+In a browser, use the signer exposed by MetaMask or another EIP-1193 wallet:
+
+```ts
+import { BrowserProvider } from "ethers";
+import { createD402Client } from "d402/client";
+
+const provider = new BrowserProvider(window.ethereum);
+await provider.send("eth_requestAccounts", []);
+const signer = await provider.getSigner();
+const client = await createD402Client({ provider, signer });
+
+const response = await client.fetch(
+  "https://api.example.com/reports/monthly",
+);
+```
+
+The client signer is always the payer. Browser wallets prompt the user when
+d402 sends a payment transaction; ERC-20 payments may also require a separate
+token approval transaction.
 
 Use `client.d402Fetch()` when the completed payment attempt must be persisted
 for application recovery or later lifecycle decisions.
