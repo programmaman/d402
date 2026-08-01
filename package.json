@@ -1,6 +1,6 @@
 {
   "name": "d402",
-  "version": "0.3.0-rc.3",
+  "version": "0.3.0-rc.4",
   "description": "HTTP 402 payment agreement SDK backed by on-chain state.",
   "type": "module",
   "license": "Apache-2.0",
