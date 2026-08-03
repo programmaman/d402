@@ -21,6 +21,7 @@ import { payable } from "d402/server";
 
 const provider = new JsonRpcProvider(process.env.RPC_URL);
 // Any ethers Signer works here, including a KMS or custody-backed signer.
+// Signer is only needed if the server performs an on-chain action during the request (for example, Once consumption or refunds).
 const payee = new Wallet(process.env.PAYEE_PRIVATE_KEY, provider);
 const terms = {
   chainId: 100,

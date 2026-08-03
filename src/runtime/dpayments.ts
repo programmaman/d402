@@ -4,8 +4,8 @@ import type { AbstractProvider } from "ethers";
 import { getConnectedChainId } from "./chain.js";
 
 const quickDisputablePayment = Object.freeze({
-  address: "0x85ac6fee5f1f57de2b073e4a93edb2ff897290b8",
-  name: "Quick Disputable Payment V1",
+  address: "0x2813C7F3c4AABBa045e10f1eFAc835E342DE4E0A",
+  name: "Quick Disputable Payment V2",
 });
 
 const dpaymentsCache = new WeakMap<

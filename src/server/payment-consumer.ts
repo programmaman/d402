@@ -25,10 +25,6 @@ export const None: PaymentConsumer<void> = Object.freeze({
 export function Once(
   actions: Pick<PaymentActions, "consumePayment">,
 ): PaymentConsumer<void> {
-  throw new Error(
-    "Once() is temporarily disabled. TODO: remove this blocker once the on-chain consumption logic is updated.",
-  );
-
   return {
     async consume(context): Promise<PaymentConsumerResult<void>> {
       try {
