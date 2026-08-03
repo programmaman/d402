@@ -2,6 +2,49 @@
 
 All notable public changes to d402 are documented here.
 
+## 0.3.0 - 2026-08-03
+
+This is the stable V0.3 release. It promotes the APIs and protocol behavior
+validated across the `0.3.0-rc.0` through `0.3.0-rc.4` release candidates.
+
+### Production payment semantics
+
+- Added protocol-level one-shot consumption so horizontally scaled server
+  replicas can authorize a payment at most once without a shared replay cache,
+  sticky sessions, or a centralized lock.
+- Updated the pinned Gnosis Quick Disputable Payment integration to V2 at
+  `0x2813C7F3c4AABBa045e10f1eFAc835E342DE4E0A` and re-enabled `Once()` against
+  the deployed on-chain consumption implementation.
+- Added standardized refund discovery, authenticated refund requests,
+  application-owned refund policy, and reusable client/server refund APIs.
+- Added `PaymentAuthorizer` for framework-owned controllers, middleware,
+  services, and other integrations where payment authorization belongs outside
+  a Fetch-native `payable()` wrapper.
+- Added server- and client-selected payment identity, reusable payments,
+  multiple payment schemes behind one HTTP protocol, and explicit verification
+  policies for funded and settled payment states.
+
+### Client reliability and integration
+
+- Added recoverable `d402Fetch()` and `retry()` flows, persisted payment
+  attempts, explicit payment actions, and structured post-payment errors.
+- Added strict client policy validation for chains, tokens, payees, resources,
+  amounts, expiry windows, and settlement windows.
+- Added browser-compatible proof encoding and prepared-transaction events for
+  wallet previews, observability, and application UX.
+- Added consistent transaction failure normalization, bounded nonce retries,
+  and optional structured logging across client and server actions.
+
+### Protocol and documentation
+
+- Finalized wire protocol version `0.3`, including canonical payment identity,
+  compact proof transport, exact resource/method binding, and settlement
+  references that fail closed on chain disagreement.
+- Expanded production guidance for framework integration, CORS, scaling,
+  refunds, payment schemes, recovery, observability, and signing.
+- Added runnable examples demonstrating Fetch-native and framework-native
+  authorization patterns.
+
 ## 0.3.0-rc.4 - 2026-08-01
 
 ### Prepared transaction events
