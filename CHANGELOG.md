@@ -2,6 +2,16 @@
 
 All notable public changes to d402 are documented here.
 
+## 0.3.1 - 2026-08-03
+
+### Dependency security
+
+- Updated PostCSS from 8.5.16 to 8.5.25 to address the audited source-map
+  path-traversal vulnerability.
+- Updated brace-expansion from 5.0.7 to 5.0.9 to address the audited
+  uncontrolled resource-consumption vulnerability.
+- Updated nanoid from 3.3.15 to 3.3.17 as part of the dependency audit.
+
 ## 0.3.0 - 2026-08-03
 
 This is the stable V0.3 release. It promotes the APIs and protocol behavior
