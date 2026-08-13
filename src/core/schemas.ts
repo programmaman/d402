@@ -118,11 +118,7 @@ export const refundsSchema = z
     url: z
       .string()
       .trim()
-      .min(1, { message: "must not be blank" })
-      .refine(isSupportedRefundUrl, {
-        message:
-          "must be a relative URL or an absolute HTTP(S) URL without credentials or a fragment",
-      }),
+      .min(1, { message: "must not be blank" }),
   })
   .strict()
   .transform((parsed): D402RefundRoute => ({ url: parsed.url }));
@@ -165,17 +161,3 @@ export const paymentActionResultSchema = z
     txHash: hex32Schema,
   })
   .strict();
-
-function isSupportedRefundUrl(value: string): boolean {
-  try {
-    const parsed = new URL(value, "https://d402.invalid/");
-    return (
-      (parsed.protocol === "http:" || parsed.protocol === "https:") &&
-      parsed.username.length === 0 &&
-      parsed.password.length === 0 &&
-      parsed.hash.length === 0
-    );
-  } catch {
-    return false;
-  }
-}

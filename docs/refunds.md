@@ -65,9 +65,11 @@ Mount `resourceRoute` on the protected resource and `refundRoute` at the URL
 advertised by `routeConfig.refunds`. Framework adapters may wrap these Fetch
 API request handlers as usual.
 
-`D402RefundRoute.url` may be relative or an absolute HTTP or HTTPS URL. A
-relative URL is resolved against the URL that returned the payment challenge.
-Credentials and fragments are rejected.
+`D402RefundRoute.url` is an opaque, non-empty transport reference. The client
+resolves relative references against the URL that returned the payment
+challenge, then passes the result to its configured `fetch` implementation.
+The transport decides which URL schemes, credentials, fragments, or custom
+reference formats it supports.
 
 For cross-origin preflight, cookies, and bearer credentials on the refund
 request, see [HTTP and Framework Integration](./http-integration.md).

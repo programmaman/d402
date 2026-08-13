@@ -2,6 +2,13 @@
 
 All notable public changes to d402 are documented here.
 
+## 0.3.3 - 2026-08-13
+
+### Package security
+
+- Replaced the synthetic URL base used by refund-route validation with
+  reference-aware validation while preserving supported refund URL forms.
+
 ## 0.3.2 - 2026-08-13
 
 ### Package security
