@@ -2,6 +2,13 @@
 
 All notable public changes to d402 are documented here.
 
+## 0.3.2 - 2026-08-13
+
+### Package security
+
+- Stopped shipping example application manifests in the npm package so package
+  security scanners analyze only d402's runtime dependency surface.
+
 ## 0.3.1 - 2026-08-03
 
 ### Dependency security
