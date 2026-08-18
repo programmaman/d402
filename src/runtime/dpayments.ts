@@ -1,4 +1,8 @@
-import { DPayments, FACTORY_ADDRESS } from "@rakelabs/dpayments-sdk";
+import { ABI, DPayments, FACTORY_ADDRESS } from "@rakelabs/dpayments-sdk";
+import {
+  createEthersAbiCodec,
+  createEthersRpcClient,
+} from "@rakelabs/ethers-adapter";
 import type { AbstractProvider } from "ethers";
 
 import { getConnectedChainId } from "./chain.js";
@@ -40,7 +44,8 @@ export async function createPinnedDPayments(
     new DPayments({
       chainId,
       factoryAddress: FACTORY_ADDRESS,
-      provider: options.provider,
+      rpcClient: createEthersRpcClient(options.provider),
+      codec: createEthersAbiCodec(ABI),
       walletAddress: options.walletAddress,
       impl: quickDisputablePayment,
     }),

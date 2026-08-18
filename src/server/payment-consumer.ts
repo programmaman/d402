@@ -1,10 +1,16 @@
-import { decodeDPaymentError } from "@rakelabs/dpayments-sdk";
+import { ABI } from "@rakelabs/dpayments-sdk";
+import {
+  createEthersAbiCodec,
+  decodeEthersError,
+} from "@rakelabs/ethers-adapter";
 
 import type {
   PaymentActions,
   PaymentFailure,
   ObservedPaymentContext,
 } from "./types.js";
+
+const codec = createEthersAbiCodec(ABI);
 
 export type PaymentConsumerResult<Result> =
   | { ok: true; result: Result }
@@ -31,13 +37,12 @@ export function Once(
         await actions.consumePayment(context.payment.paymentAddress);
         return { ok: true, result: undefined };
       } catch (error) {
-        const decoded = decodeDPaymentError(error);
+        const decoded = decodeEthersError(error, codec)
+          ?? (error instanceof Error
+            ? decodeEthersError(error.cause, codec)
+            : undefined);
 
-        if (
-          decoded !== null
-          && "error" in decoded
-          && decoded.error === "AlreadyConsumed"
-        ) {
+        if (decoded?.name === "AlreadyConsumed") {
           return {
             ok: false,
             reason: "payment-already-consumed",

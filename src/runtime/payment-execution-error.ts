@@ -1,6 +1,12 @@
-import { decodeDPaymentError } from "@rakelabs/dpayments-sdk";
+import { ABI } from "@rakelabs/dpayments-sdk";
+import {
+  createEthersAbiCodec,
+  decodeEthersError,
+} from "@rakelabs/ethers-adapter";
 
 import type { PaymentAddress } from "../core/index.js";
+
+const codec = createEthersAbiCodec(ABI);
 
 export type D402PaymentOperation =
   | "create"
@@ -35,11 +41,8 @@ export class D402PaymentExecutionError extends Error {
   readonly transactionError: string | undefined;
 
   constructor(input: D402PaymentExecutionErrorInput) {
-    const decoded = decodeDPaymentError(input.cause);
-    const dpaymentsError =
-      decoded !== null && "error" in decoded
-        ? decoded.error
-        : undefined;
+    const decoded = decodeEthersError(input.cause, codec);
+    const dpaymentsError = decoded?.name;
     const transactionError = decodeTransactionError(input.cause);
     const baseMessage = operationMessages[input.operation];
     const message = dpaymentsError !== undefined

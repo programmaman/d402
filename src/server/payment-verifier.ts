@@ -1,10 +1,15 @@
 import {
+  ABI,
   FACTORY_ADDRESS,
   PaymentEvents,
   PaymentReader,
   PaymentState,
   ZERO_ADDRESS,
 } from "@rakelabs/dpayments-sdk";
+import {
+  createEthersAbiCodec,
+  createEthersRpcClient,
+} from "@rakelabs/ethers-adapter";
 import { getAddress } from "ethers";
 import type { AbstractProvider } from "ethers";
 import type { PaymentCreatedEvent } from "@rakelabs/dpayments-sdk";
@@ -60,7 +65,7 @@ export interface DPaymentsAuthenticatorOptions {
 export function createDPaymentsAuthenticator(
   options: DPaymentsAuthenticatorOptions,
 ): PaymentAuthenticator {
-  const events = new PaymentEvents();
+  const events = new PaymentEvents(createEthersAbiCodec(ABI));
   const confirmations = options.confirmations ?? D402_DEFAULT_CONFIRMATIONS;
   let connectedChainId: Promise<number> | undefined;
 
@@ -137,8 +142,13 @@ export function createDPaymentsObserver(
   const inFlightPaymentStateReads = new Map<string, Promise<PaymentStateReadResult>>();
 
   function getReader(): Promise<PaymentReader> {
+    const rpcClient = createEthersRpcClient(options.provider);
     reader ??= getConnectedChainId(options.provider).then((chainId) =>
-      new PaymentReader(options.provider, options.multicall ?? getDPaymentsMulticallConfig(chainId)),
+      new PaymentReader(
+        rpcClient,
+        createEthersAbiCodec(ABI),
+        options.multicall ?? getDPaymentsMulticallConfig(chainId),
+      ),
     );
     return reader;
   }

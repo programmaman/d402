@@ -1,7 +1,9 @@
 import {
+  ABI,
   PaymentEvents,
   ZERO_ADDRESS,
 } from "@rakelabs/dpayments-sdk";
+import { createEthersAbiCodec } from "@rakelabs/ethers-adapter";
 import type {
   DPayments,
   PrepareCreateErc20Result,
@@ -544,7 +546,7 @@ function extractPaymentAddressFromReceipt(
   payerAddress: string,
   paymentId: Hex32,
 ): Address {
-  const events = new PaymentEvents();
+  const events = new PaymentEvents(createEthersAbiCodec(ABI));
   const createdEvent = findPaymentCreatedEvent({
     logs: receipt.logs,
     factoryAddress,

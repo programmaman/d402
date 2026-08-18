@@ -96,7 +96,8 @@
     "access": "public"
   },
   "dependencies": {
-    "@rakelabs/dpayments-sdk": "^0.1.5",
+    "@rakelabs/dpayments-sdk": "^0.2.1",
+    "@rakelabs/ethers-adapter": "^0.1.0",
     "canonicalize": "^3.0.0",
     "ethers": "^6.17.0",
     "zod": "^4.4.3"
