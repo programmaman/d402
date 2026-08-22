@@ -2,6 +2,37 @@
 
 All notable public changes to d402 are documented here.
 
+## 0.4.0 - 2026-08-22
+
+### Provider-neutral integration
+
+- Removed d402 core's runtime dependency on ethers and viem.
+- Standardized client and executor composition around four neutral capabilities:
+  `rpcClient`, `codec`, `errorDecoder`, and `txSender`.
+- Preserved direct custom integration by allowing applications to provide those
+  capabilities without constructing a provider-specific adapter object.
+- Retained custom payment executors for relayers, custodial wallets, and other
+  integrations that do not use the standard dPayments execution path.
+
+### Ethers and Viem adapters
+
+- Added provider-specific Ethers and Viem adapter packages that supply the
+  neutral d402 capabilities.
+- Kept provider, signer, wallet, nonce, gas, receipt, and confirmation behavior
+  inside the corresponding adapter transaction sender and RPC client.
+- Added provider-specific error decoding at the adapter boundary.
+- Reduced the default adapter package surface to the adapter, transaction
+  sender, and Ethers compatibility client constructors.
+
+### API cleanup
+
+- Removed client-side confirmation options. Transaction confirmation depth is
+  now configured on the adapter transaction sender; server verification
+  confirmations remain part of server payment configuration.
+- Simplified `Once()` to accept only the payment actions it consumes.
+- Removed unused adapter types and provider-specific dependencies from shared
+  protocol code.
+
 ## 0.3.3 - 2026-08-13
 
 ### Package security
