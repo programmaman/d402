@@ -1,0 +1,8 @@
+.upstream/
+.npmignore
+test/
+src/
+*.ts
+*.tsbuildinfo
+tsconfig*.json
+package-lock.json
