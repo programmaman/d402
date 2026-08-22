@@ -1,12 +1,15 @@
-import type { AbstractProvider, Signer } from "ethers";
+import type { AbiCodec } from "@rakelabs/dpayments-sdk";
 
 import type {
   Address,
+  D402ErrorDecoder,
   D402PaymentActionResult,
   D402PaymentProof,
   D402PaymentRequest,
   D402RefundRoute,
+  D402RpcClient,
   D402EventHandler,
+  D402TxSender,
   Hex32,
 } from "../core/index.js";
 import type { D402Logger } from "../runtime/logger.js";
@@ -54,11 +57,12 @@ export type D402ClientResourceResolver =
   | ((request: Request) => string | Promise<string>);
 
 export interface CreateD402ClientOptions {
-  signer?: Signer;
-  provider?: AbstractProvider;
+  rpcClient?: D402RpcClient;
+  codec?: AbiCodec;
+  errorDecoder?: D402ErrorDecoder;
+  txSender?: D402TxSender;
   fetch?: typeof globalThis.fetch;
   proofHeaderName?: string;
-  confirmations?: number;
   policy?: D402ClientPolicy;
   onResponse?: D402ResponseValidator;
   onAccepted?: D402AcceptedPaymentAction;

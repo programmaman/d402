@@ -1,5 +1,6 @@
 import type {
   Address,
+  D402ErrorDecoder,
   D402PaymentActionResult,
   D402PaymentChallenge,
   D402RefundRoute,
@@ -7,10 +8,12 @@ import type {
   D402BlockReference,
   D402EventHandler,
   D402PaymentRequest,
+  D402RpcClient,
+  D402TxSender,
   Hex32,
   PaymentAddress,
 } from "../core/index.js";
-import type { AbstractProvider, Signer } from "ethers";
+import type { AbiCodec } from "@rakelabs/dpayments-sdk";
 import type { MulticallConfig } from "@rakelabs/dpayments-sdk";
 import type { D402Logger } from "../runtime/logger.js";
 import type { PaymentConsumer } from "./payment-consumer.js";
@@ -45,8 +48,10 @@ export type PaymentIdentifier =
   | "client";
 
 export interface PaymentConfig {
-  provider: AbstractProvider;
-  signer?: Signer;
+  rpcClient: D402RpcClient;
+  codec: AbiCodec;
+  errorDecoder?: D402ErrorDecoder;
+  txSender?: D402TxSender;
   confirmations?: number;
   settlementWindow?: number;
   settlementTimeUnixSec?: number;

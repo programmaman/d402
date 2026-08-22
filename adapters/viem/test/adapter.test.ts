@@ -10,8 +10,8 @@ import {
 
 import {
   createViemTxSender,
-} from "../src/index.js";
-import { createViemAdapter } from "../src/adapter.js";
+} from "../src";
+import { createViemAdapter } from "../src";
 import { createViemRpcClient } from "../src/rpc-client.js";
 
 const decodeViemError = vi.hoisted(() => vi.fn());

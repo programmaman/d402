@@ -9,10 +9,11 @@ import { createEthersAdapter } from "./adapter.js";
 
 export interface EthersClientOptions extends Omit<
   CreateD402ClientOptions,
-  "rpcClient" | "codec"
+  "rpcClient" | "codec" | "errorDecoder"
 > {
   provider: AbstractProvider;
   signer?: Signer;
+  confirmations?: number;
   txSender?: D402TxSender;
 }
 
@@ -25,20 +26,26 @@ export interface EthersClientOptions extends Omit<
 export function createClient(
   options: EthersClientOptions,
 ): Promise<D402Client> {
-  const { provider, signer, txSender, ...clientOptions } = options;
+  const {
+    provider,
+    signer,
+    confirmations,
+    txSender,
+    ...clientOptions
+  } = options;
   const adapter = createEthersAdapter({
     provider,
     ...(signer === undefined ? {} : { signer }),
-    ...(options.confirmations === undefined
+    ...(confirmations === undefined
       ? {}
-      : { confirmations: options.confirmations }),
+      : { confirmations }),
   });
 
   return createD402Client({
     ...clientOptions,
     rpcClient: adapter.rpcClient,
     codec: adapter.codec,
-    errorDecoder: options.errorDecoder ?? adapter.errorDecoder,
+    errorDecoder: adapter.errorDecoder,
     ...(txSender !== undefined
       ? { txSender }
       : adapter.txSender === undefined ? {} : { txSender: adapter.txSender }),

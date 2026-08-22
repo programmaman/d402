@@ -1,5 +1,4 @@
-import type { AbstractProvider } from "ethers";
-import type { D402BlockReference } from "../core/index.js";
+import type { D402BlockReference, D402RpcClient } from "../core/index.js";
 import { createBlockReferenceCache } from "./cache.js";
 import type { BlockReferenceCache } from "./cache.js";
 
@@ -12,11 +11,11 @@ export type SettlementReferenceResolution =
     };
 
 export async function resolveSettlementReference(
-  provider: AbstractProvider,
+  rpcClient: D402RpcClient,
   cache: BlockReferenceCache | null,
   expected: D402BlockReference,
 ): Promise<SettlementReferenceResolution> {
-  const lookup = await (cache ?? createBlockReferenceCache(0)).getByHash(provider, expected);
+  const lookup = await (cache ?? createBlockReferenceCache(0)).getByHash(rpcClient, expected);
   if (lookup.ok) {
     return { ok: true, reference: lookup.reference };
   }

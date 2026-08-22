@@ -35,6 +35,8 @@ import {
 } from "./payment-verifier.js";
 import { None, type PaymentConsumer } from "./payment-consumer.js";
 import { FundedOrSettledPayment } from "./verification-policy.js";
+import { emitLog, NoopLogger } from "../runtime/logger.js";
+import type { D402Logger } from "../runtime/logger.js";
 
 export class PaymentAuthorizer<
   Req extends Request = Request,
@@ -47,9 +49,11 @@ export class PaymentAuthorizer<
   readonly #consumer: PaymentConsumer<Result>;
   readonly #referenceCache;
   readonly #refunds: D402RefundRoute | undefined;
+  readonly #logger: D402Logger;
 
   constructor(config: PaymentAuthorizationConfig<Req, Result>) {
     this.#config = config;
+    this.#logger = config.paymentConfig.logger ?? NoopLogger;
     this.#authenticator = createDPaymentsAuthenticator(config.paymentConfig);
     this.#observer = createDPaymentsObserver(config.paymentConfig);
     this.#verificationPolicy = config.verificationPolicy
@@ -64,7 +68,7 @@ export class PaymentAuthorizer<
     const referenceCacheTtlMs = resolveLatestBlockCacheTtlMs(cacheSetting);
     this.#referenceCache = referenceCacheTtlMs === null
       ? null
-      : createBlockReferenceCache(referenceCacheTtlMs);
+      : createBlockReferenceCache(referenceCacheTtlMs, 256, this.#logger);
   }
 
   async authorize(
@@ -85,6 +89,17 @@ export class PaymentAuthorizer<
     const terms = await resolvePayableTerms(request, this.#config.terms);
 
     if (proof === undefined) {
+      const challengeStartedAt = Date.now();
+      emitLog(this.#logger, {
+        level: "debug",
+        event: "settlement.challenge.started",
+        message: "Resolving settlement timing for a payment challenge.",
+        context: {
+          resource: terms.resource,
+          settlementWindow: this.#config.paymentConfig.settlementWindow,
+          cacheEnabled: this.#referenceCache !== null,
+        },
+      });
       let challengeSettlement;
       try {
         challengeSettlement = await resolveChallengeSettlementTerms(
@@ -93,6 +108,16 @@ export class PaymentAuthorizer<
           this.#referenceCache,
         );
       } catch (cause) {
+        emitLog(this.#logger, {
+          level: "error",
+          event: "settlement.challenge.failed",
+          message: "Failed to resolve settlement timing for a payment challenge.",
+          context: {
+            resource: terms.resource,
+            durationMs: Date.now() - challengeStartedAt,
+            error: describeError(cause),
+          },
+        });
         if (cause instanceof SettlementTimingConfigurationError) {
           throw cause;
         }
@@ -108,6 +133,18 @@ export class PaymentAuthorizer<
         };
       }
 
+      emitLog(this.#logger, {
+        level: "debug",
+        event: "settlement.challenge.succeeded",
+        message: "Resolved settlement timing for a payment challenge.",
+        context: {
+          resource: terms.resource,
+          settlementTimeUnixSec: challengeSettlement.terms.settlementTimeUnixSec,
+          settlementReference: challengeSettlement.settlementReference,
+          durationMs: Date.now() - challengeStartedAt,
+        },
+      });
+
       const paymentRequest = buildServerPaymentRequest({
         request,
         terms: challengeSettlement.terms,
@@ -120,6 +157,17 @@ export class PaymentAuthorizer<
         paymentRequest.expiresAtUnixSec <=
         Math.floor(Date.now() / 1000)
       ) {
+        emitLog(this.#logger, {
+          level: "error",
+          event: "settlement.challenge.expired",
+          message: "Refusing to issue a payment challenge whose settlement time has already passed.",
+          context: {
+            resource: terms.resource,
+            expiresAtUnixSec: paymentRequest.expiresAtUnixSec,
+            nowUnixSec: Math.floor(Date.now() / 1000),
+            settlementReference: challengeSettlement.settlementReference,
+          },
+        });
         throw new Error(
           "Cannot issue a payment challenge with expired terms.",
         );
@@ -168,7 +216,7 @@ export class PaymentAuthorizer<
     let authenticatedSettlementReference: D402BlockReference | undefined;
     if (settlement.mode === "window" && settlement.settlementReference !== undefined) {
       const resolvedReference = await resolveSettlementReference(
-        this.#config.paymentConfig.provider,
+        this.#config.paymentConfig.rpcClient,
         this.#referenceCache,
         settlement.settlementReference,
       );
@@ -245,6 +293,17 @@ export class PaymentAuthorizer<
       },
     };
   }
+}
+
+function describeError(error: unknown): Readonly<Record<string, unknown>> {
+  if (error instanceof Error) {
+    return {
+      name: error.name,
+      message: error.message,
+      ...(error.stack === undefined ? {} : { stack: error.stack }),
+    };
+  }
+  return { value: String(error) };
 }
 
 function buildChallengeResponse<Req extends Request, Result>(

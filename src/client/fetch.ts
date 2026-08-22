@@ -1,5 +1,3 @@
-import type { AbstractProvider } from "ethers";
-
 import { D402_PAYMENT_PROOF_HEADER } from "../core/index.js";
 import {
   D402ConfigurationError,
@@ -31,6 +29,7 @@ import type {
 } from "./types.js";
 import { D402PaymentAction } from "./types.js";
 import type {
+  D402RpcClient,
   D402PaymentActionResult,
   D402PaymentProof,
   D402RefundRoute,
@@ -46,19 +45,16 @@ export function createD402Client(
 
   const fetchImpl = resolveFetch(options.fetch);
   const proofHeaderName = options.proofHeaderName ?? D402_PAYMENT_PROOF_HEADER;
-  const provider = (
-    options.provider ?? options.signer?.provider ?? undefined
-  ) as AbstractProvider | undefined;
-  const policyProvider = options.policy === undefined
+  const policyRpcClient = options.policy === undefined
     ? undefined
-    : requireProvider(provider, "policy validation");
+    : requireRpcClient(options.rpcClient, "policy validation");
   const connectedChainIdPromise = options.policy !== undefined
-    ? getConnectedChainId(policyProvider!)
+    ? getConnectedChainId(policyRpcClient!)
     : null;
   const onResponse = resolveResponseValidator(options.onResponse);
   const onAccepted = options.onAccepted ?? defaultPaymentActions.OnAccepted;
   const onRejected = options.onRejected ?? defaultPaymentActions.OnRejected;
-  const executor = options.executor ?? createDefaultExecutor(options, provider);
+  const executor = options.executor ?? createDefaultExecutor(options);
 
   async function sendPaidRequest(
     payment: D402PaymentAttempt,
@@ -114,7 +110,7 @@ export function createD402Client(
 
     if (options.policy !== undefined) {
       const connectedChainId = await (
-        connectedChainIdPromise ?? getConnectedChainId(policyProvider!)
+        connectedChainIdPromise ?? getConnectedChainId(policyRpcClient!)
       );
       validatePaymentPolicy({
         paymentRequest,
@@ -204,6 +200,8 @@ export function createD402Client(
         await resolvePaymentAfterAcceptance({
           paymentAttempt: result.payment,
           responseDecision,
+          codec: requireCodec(options.codec, "payment action error handling"),
+          errorDecoder: options.errorDecoder,
           executor,
           onAccepted,
           onRejected,
@@ -254,35 +252,58 @@ function resolveResponseValidator(
   return validator ?? defaultResponseValidator;
 }
 
-function requireProvider(
-  provider: AbstractProvider | null | undefined,
+function requireRpcClient(
+  rpcClient: D402RpcClient | null | undefined,
   purpose: string,
-): AbstractProvider {
-  if (provider === null || provider === undefined) {
+): D402RpcClient {
+  if (rpcClient === null || rpcClient === undefined) {
     throw new D402ConfigurationError(
-      `createD402Client requires a provider or signer.provider for ${purpose}.`,
+      `createD402Client requires an rpcClient for ${purpose}.`,
     );
   }
 
-  return provider;
+  return rpcClient;
+}
+
+function requireCodec(
+  codec: CreateD402ClientOptions["codec"],
+  purpose: string,
+) {
+  if (codec === undefined) {
+    throw new D402ConfigurationError(
+      `createD402Client requires a codec for ${purpose}.`,
+    );
+  }
+
+  return codec;
 }
 
 function createDefaultExecutor(
   options: CreateD402ClientOptions,
-  provider: AbstractProvider | null | undefined,
 ) {
-  if (options.signer === undefined) {
+  if (options.rpcClient === undefined) {
     throw new D402ConfigurationError(
-      "createD402Client requires signer when executor is not provided and the client needs to create payments.",
+      "createD402Client requires rpcClient when executor is not provided and the client needs to create payments.",
+    );
+  }
+  if (options.codec === undefined) {
+    throw new D402ConfigurationError(
+      "createD402Client requires codec when executor is not provided and the client needs to create payments.",
+    );
+  }
+  if (options.txSender === undefined) {
+    throw new D402ConfigurationError(
+      "createD402Client requires txSender when executor is not provided and the client needs to create payments.",
     );
   }
 
   const executorOptions = {
-    signer: options.signer,
-    provider: requireProvider(provider, "the default payment executor"),
-    ...(options.confirmations !== undefined
-      ? { confirmations: options.confirmations }
+    rpcClient: options.rpcClient,
+    codec: options.codec,
+    ...(options.errorDecoder !== undefined
+      ? { errorDecoder: options.errorDecoder }
       : {}),
+    txSender: options.txSender,
     ...(options.logger !== undefined
       ? { logger: options.logger }
       : {}),

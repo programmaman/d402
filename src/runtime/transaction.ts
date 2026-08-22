@@ -1,36 +1,22 @@
 import type { PreparedTx } from "@rakelabs/dpayments-sdk";
-import type {
-  AbstractProvider,
-  Signer,
-  TransactionReceipt,
-  TransactionRequest,
-  TransactionResponse,
-} from "ethers";
-import { isError } from "ethers";
 
 import { TransactionPreparedEvent } from "../core/events.js";
 import type { D402EventHandler } from "../core/events.js";
+import type {
+  D402BroadcastedTx,
+  D402TxReceipt,
+  D402TxSender,
+} from "../core/index.js";
 import { emitEvent } from "./events.js";
-
-const NONCE_RETRY_LIMIT = 3;
-const NONCE_RETRY_BASE_DELAY_MS = 300;
 
 export type BroadcastQueue = <Result>(
   operation: () => Promise<Result>,
 ) => Promise<Result>;
 
-export interface TransactionNonceRetry {
-  retry: number;
-  retryLimit: number;
-  delayMs: number;
-}
-
-export interface SendPreparedTransactionInput {
-  provider: AbstractProvider;
-  signer: Signer;
+export interface BroadcastPreparedTransactionInput {
+  txSender: D402TxSender;
   tx: PreparedTx;
   onEvent?: D402EventHandler | undefined;
-  onNonceRetry?: (retry: TransactionNonceRetry) => void;
 }
 
 export function createBroadcastQueue(): BroadcastQueue {
@@ -50,74 +36,24 @@ export function createBroadcastQueue(): BroadcastQueue {
   };
 }
 
-export function toTransactionRequest(
-  tx: PreparedTx,
-): TransactionRequest {
-  return {
-    to: tx.to,
-    data: tx.data,
-    value: BigInt(tx.value),
-    chainId: tx.chainId,
-  };
-}
+export async function broadcastPreparedTransaction(
+  input: BroadcastPreparedTransactionInput,
+): Promise<D402BroadcastedTx> {
+  emitEvent(
+    input.onEvent,
+    new TransactionPreparedEvent(input.tx),
+  );
 
-export async function sendPreparedTransaction(
-  input: SendPreparedTransactionInput,
-): Promise<TransactionResponse> {
-  async function attempt(): Promise<TransactionResponse> {
-    const request = toTransactionRequest(input.tx);
-    const from = await input.signer.getAddress();
-    const gasLimit = await input.provider.estimateGas({
-      ...request,
-      from,
-    });
-
-    emitEvent(
-      input.onEvent,
-      new TransactionPreparedEvent(input.tx),
-    );
-
-    return input.signer.sendTransaction({
-      ...request,
-      gasLimit,
-    });
-  }
-
-  for (let retry = 0; ; retry++) {
-    try {
-      return await attempt();
-    } catch (error) {
-      if (
-        !isError(error, "NONCE_EXPIRED") ||
-        retry === NONCE_RETRY_LIMIT
-      ) {
-        throw error;
-      }
-
-      const delayMs =
-        NONCE_RETRY_BASE_DELAY_MS * 2 ** retry +
-        Math.floor(Math.random() * NONCE_RETRY_BASE_DELAY_MS);
-      input.onNonceRetry?.({
-        retry: retry + 1,
-        retryLimit: NONCE_RETRY_LIMIT,
-        delayMs,
-      });
-
-      await new Promise((resolve) => {
-        setTimeout(resolve, delayMs);
-      });
-    }
-  }
+  return input.txSender.broadcastTransaction(input.tx);
 }
 
 export async function waitForSuccessfulReceipt(
-  response: TransactionResponse,
-  confirmations: number,
+  submission: D402BroadcastedTx,
   failureMessage = "dPayment transaction failed.",
-): Promise<TransactionReceipt> {
-  const receipt = await response.wait(confirmations);
+): Promise<D402TxReceipt> {
+  const receipt = await submission.waitForReceipt();
 
-  if (receipt === null || receipt.status !== 1) {
+  if (receipt.status !== "success") {
     throw new Error(failureMessage);
   }
 

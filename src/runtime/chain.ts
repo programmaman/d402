@@ -1,23 +1,23 @@
-import type { AbstractProvider } from "ethers";
+import type { D402RpcClient } from "../core/index.js";
 
 const connectedChainIdCache = new WeakMap<
-  AbstractProvider,
+  D402RpcClient,
   Promise<number>
 >();
 
 export function getConnectedChainId(
-  provider: AbstractProvider,
+  rpcClient: D402RpcClient,
 ): Promise<number> {
-  const existing = connectedChainIdCache.get(provider);
+  const existing = connectedChainIdCache.get(rpcClient);
   if (existing !== undefined) {
     return existing;
   }
 
-  const pending = provider.getNetwork().then((network) => Number(network.chainId));
-  connectedChainIdCache.set(provider, pending);
+  const pending = rpcClient.getChainId();
+  connectedChainIdCache.set(rpcClient, pending);
 
   return pending.catch((error) => {
-    connectedChainIdCache.delete(provider);
+    connectedChainIdCache.delete(rpcClient);
     throw error;
   });
 }

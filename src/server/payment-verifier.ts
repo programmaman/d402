@@ -1,19 +1,16 @@
 import {
-  ABI,
   FACTORY_ADDRESS,
   PaymentEvents,
   PaymentReader,
   PaymentState,
   ZERO_ADDRESS,
 } from "@rakelabs/dpayments-sdk";
-import {
-  createEthersAbiCodec,
-  createEthersRpcClient,
-} from "@rakelabs/ethers-adapter";
-import { getAddress } from "ethers";
-import type { AbstractProvider } from "ethers";
-import type { PaymentCreatedEvent } from "@rakelabs/dpayments-sdk";
-import type { MulticallConfig } from "@rakelabs/dpayments-sdk";
+import { requireAddress } from "@rakelabs/dpayments-sdk";
+import type {
+  AbiCodec,
+  MulticallConfig,
+  PaymentCreatedEvent,
+} from "@rakelabs/dpayments-sdk";
 import {
   derivePaymentId,
   validatePaymentSalt,
@@ -24,6 +21,8 @@ import type {
   DPaymentProof,
   D402PaymentRequest,
   D402PaymentSaltValidation,
+  D402RpcClient,
+  D402TxReceipt,
   Hex32,
 } from "../core/index.js";
 import type {
@@ -55,7 +54,8 @@ export function verifyPaymentSalt(
 }
 
 export interface DPaymentsAuthenticatorOptions {
-  provider: AbstractProvider;
+  rpcClient: D402RpcClient;
+  codec: AbiCodec;
   confirmations?: number;
   settlementWindow?: number;
   /** Trusted private-network or test-chain Multicall3 deployment. */
@@ -65,12 +65,12 @@ export interface DPaymentsAuthenticatorOptions {
 export function createDPaymentsAuthenticator(
   options: DPaymentsAuthenticatorOptions,
 ): PaymentAuthenticator {
-  const events = new PaymentEvents(createEthersAbiCodec(ABI));
+  const events = new PaymentEvents(options.codec);
   const confirmations = options.confirmations ?? D402_DEFAULT_CONFIRMATIONS;
   let connectedChainId: Promise<number> | undefined;
 
   function getVerifierChainId(): Promise<number> {
-    connectedChainId ??= getConnectedChainId(options.provider);
+    connectedChainId ??= getConnectedChainId(options.rpcClient);
     return connectedChainId;
   }
 
@@ -86,7 +86,7 @@ export function createDPaymentsAuthenticator(
     }
 
     const receiptResult = await readTransactionReceipt(
-      options.provider,
+      options.rpcClient,
       proof.txHash,
     );
     if (!receiptResult.ok) return receiptResult;
@@ -95,7 +95,7 @@ export function createDPaymentsAuthenticator(
       paymentRequest,
       dPaymentProof: proof,
       receipt: receiptResult.receipt,
-      provider: options.provider,
+      rpcClient: options.rpcClient,
       events,
       confirmations,
     });
@@ -109,7 +109,7 @@ export function createDPaymentsAuthenticator(
         ? { settlementReference: input.settlementReference }
         : {}),
       receipt: createdEventResult.receipt,
-      provider: options.provider,
+      rpcClient: options.rpcClient,
       ...(options.settlementWindow !== undefined
         ? { settlementWindow: options.settlementWindow }
         : {}),
@@ -130,7 +130,8 @@ export function createDPaymentsAuthenticator(
 }
 
 export interface DPaymentsObserverOptions {
-  provider: AbstractProvider;
+  rpcClient: D402RpcClient;
+  codec: AbiCodec;
   /** Trusted private-network or test-chain Multicall3 deployment. */
   multicall?: MulticallConfig;
 }
@@ -142,11 +143,10 @@ export function createDPaymentsObserver(
   const inFlightPaymentStateReads = new Map<string, Promise<PaymentStateReadResult>>();
 
   function getReader(): Promise<PaymentReader> {
-    const rpcClient = createEthersRpcClient(options.provider);
-    reader ??= getConnectedChainId(options.provider).then((chainId) =>
+    reader ??= getConnectedChainId(options.rpcClient).then((chainId) =>
       new PaymentReader(
-        rpcClient,
-        createEthersAbiCodec(ABI),
+        options.rpcClient,
+        options.codec,
         options.multicall ?? getDPaymentsMulticallConfig(chainId),
       ),
     );
@@ -190,9 +190,7 @@ type PaymentStateReadResult =
   | { ok: true; state: PaymentState }
   | { ok: false; reason: "provider-error"; cause: unknown };
 
-type TransactionReceipt = NonNullable<
-  Awaited<ReturnType<AbstractProvider["getTransactionReceipt"]>>
->;
+type TransactionReceipt = D402TxReceipt;
 
 type TransactionReceiptResult =
   | { ok: true; receipt: TransactionReceipt }
@@ -203,11 +201,11 @@ type TransactionReceiptResult =
     };
 
 async function readTransactionReceipt(
-  provider: AbstractProvider,
-  txHash: string,
+  rpcClient: D402RpcClient,
+  txHash: Hex32,
 ): Promise<TransactionReceiptResult> {
   try {
-    const receipt = await provider.getTransactionReceipt(txHash);
+    const receipt = await rpcClient.getTransactionReceipt(txHash);
     if (receipt === null) {
       return { ok: false, reason: "onchain-payment-not-found" };
     }
@@ -222,7 +220,7 @@ async function verifyPaymentCreatedEvent(input: {
   paymentRequest: D402PaymentRequest;
   dPaymentProof: DPaymentProof;
   receipt: TransactionReceipt;
-  provider: AbstractProvider;
+  rpcClient: D402RpcClient;
   events: PaymentEvents;
   confirmations: number;
 }): Promise<
@@ -238,7 +236,7 @@ async function verifyPaymentCreatedEvent(input: {
 > {
   const { receipt } = input;
 
-  if (receipt.status !== 1) {
+  if (receipt.status !== "success") {
     return { ok: false, reason: "failed-transaction" };
   }
 
@@ -250,7 +248,7 @@ async function verifyPaymentCreatedEvent(input: {
   } else if (input.confirmations > 1) {
     let blockNumber: number;
     try {
-      blockNumber = await input.provider.getBlockNumber();
+      blockNumber = (await input.rpcClient.getBlock("latest")).number;
     } catch (cause) {
       return { ok: false, reason: "provider-error", cause };
     }
@@ -284,7 +282,7 @@ async function verifyPaymentCreatedEvent(input: {
   const createdEvent = addressedEvents[0]!;
   let payerAddress: Address;
   try {
-    payerAddress = getAddress(createdEvent.creator).toLowerCase() as Address;
+    payerAddress = requireAddress(createdEvent.creator, "creator").toLowerCase() as Address;
   } catch (cause) {
     return {
       ok: false,
@@ -322,7 +320,7 @@ async function verifySettlementPolicy(input: {
   paymentRequest: D402PaymentRequest;
   settlementReference?: D402BlockReference;
   receipt: TransactionReceipt;
-  provider: AbstractProvider;
+  rpcClient: D402RpcClient;
   settlementWindow?: number;
 }): Promise<PaymentValidationResult> {
   if (input.settlementWindow === undefined || input.settlementReference === undefined) {
@@ -330,8 +328,8 @@ async function verifySettlementPolicy(input: {
   }
 
   const referenceResult = await readBlockReference(
-    input.provider,
-    input.settlementReference.blockHash,
+    input.rpcClient,
+    { blockHash: input.settlementReference.blockHash },
   );
   if (!referenceResult.ok) {
     return referenceResult.reason === "provider-error"
@@ -343,7 +341,7 @@ async function verifySettlementPolicy(input: {
   }
 
   const creationResult = await readBlockReference(
-    input.provider,
+    input.rpcClient,
     input.receipt.blockNumber,
   );
   if (!creationResult.ok) {
@@ -468,7 +466,7 @@ function buildAuthenticatedPayment(
     payerAddress,
     creationBlockNumber: receipt.blockNumber,
     ...(receipt.blockHash !== undefined
-      ? { creationBlockHash: receipt.blockHash as Hex32 }
+      ? { creationBlockHash: receipt.blockHash }
       : {}),
     ...(confirmations !== undefined ? { confirmations } : {}),
   };

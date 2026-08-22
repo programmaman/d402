@@ -1,25 +1,17 @@
 import {
-  ABI,
   PaymentEvents,
   ZERO_ADDRESS,
 } from "@rakelabs/dpayments-sdk";
-import { createEthersAbiCodec } from "@rakelabs/ethers-adapter";
 import type {
+  AbiCodec,
   DPayments,
   PrepareCreateErc20Result,
 } from "@rakelabs/dpayments-sdk";
 import type {
   PreparedTx,
 } from "@rakelabs/dpayments-sdk";
-import type {
-  AbstractProvider,
-  Signer,
-  TransactionReceipt,
-} from "ethers";
-import {
-  hexlify,
-  randomBytes,
-} from "ethers";
+import type { D402ErrorDecoder, D402RpcClient } from "../core/index.js";
+import { bytesToHex } from "@noble/hashes/utils.js";
 
 import {
   D402_CANONICAL_SALT,
@@ -30,10 +22,10 @@ import type {
   D402EventHandler,
   D402PaymentActionResult,
   D402PaymentRequest,
+  D402TxReceipt,
+  D402TxSender,
   Hex32,
-  PaymentAddress,
 } from "../core/index.js";
-import { D402_DEFAULT_CONFIRMATIONS } from "../runtime/defaults.js";
 import { createPinnedDPayments } from "../runtime/dpayments.js";
 import { emitLog, NoopLogger } from "../runtime/logger.js";
 import {
@@ -41,18 +33,14 @@ import {
 } from "../runtime/payment-execution-error.js";
 import type {
   D402PaymentExecutionError,
-  D402PaymentOperation,
 } from "../runtime/payment-execution-error.js";
 import { findPaymentCreatedEvent } from "../runtime/payment-events.js";
 import {
   createBroadcastQueue,
-  sendPreparedTransaction,
+  broadcastPreparedTransaction,
   waitForSuccessfulReceipt,
 } from "../runtime/transaction.js";
-import type {
-  BroadcastQueue,
-  TransactionNonceRetry,
-} from "../runtime/transaction.js";
+import type { BroadcastQueue } from "../runtime/transaction.js";
 import type { D402Logger } from "../runtime/logger.js";
 import type {
   D402CreatedPayment,
@@ -60,9 +48,10 @@ import type {
 } from "./types.js";
 
 export interface CreateDPaymentsExecutorOptions {
-  signer: Signer;
-  provider: AbstractProvider;
-  confirmations?: number;
+  rpcClient: D402RpcClient;
+  codec: AbiCodec;
+  errorDecoder?: D402ErrorDecoder;
+  txSender: D402TxSender;
   logger?: D402Logger;
   onEvent?: D402EventHandler;
 }
@@ -141,8 +130,7 @@ async function createDPaymentsPayment(
   broadcastInQueue: BroadcastQueue,
 ): Promise<D402CreatedPayment> {
   try {
-    const payerAddress =
-      await options.signer.getAddress() as Address;
+    const payerAddress = await options.txSender.getAddress();
     const paymentSalt = paymentRequest.paymentSalt ?? createPaymentSalt();
     const paymentId = derivePaymentId(
       paymentRequest,
@@ -159,62 +147,50 @@ async function createDPaymentsPayment(
       payerAddress.toLowerCase()
     ) {
       throw new Error(
-        "Signer address changed during dPayment preparation.",
+        "Transaction sender address changed during dPayment preparation.",
       );
     }
-    const confirmations = options.confirmations ??
-      D402_DEFAULT_CONFIRMATIONS;
-
     if ("approvalTx" in preparedPayment) {
       const approvalResponse = await broadcastInQueue(() =>
-        sendPreparedTransaction({
-          provider: options.provider,
-          signer: options.signer,
+        broadcastPreparedTransaction({
+          txSender: options.txSender,
           tx: preparedPayment.approvalTx,
           onEvent: options.onEvent,
-          onNonceRetry: createNonceRetryLogger(
-            options.logger,
-            "create",
-          ),
         }),
       );
-      await waitForSuccessfulReceipt(approvalResponse, confirmations);
+      await waitForSuccessfulReceipt(approvalResponse);
     }
 
     const createResponse = await broadcastInQueue(() =>
-      sendPreparedTransaction({
-        provider: options.provider,
-        signer: options.signer,
+      broadcastPreparedTransaction({
+        txSender: options.txSender,
         tx: preparedPayment.creationTx,
         onEvent: options.onEvent,
-        onNonceRetry: createNonceRetryLogger(
-          options.logger,
-          "create",
-        ),
       }),
     );
-    const receipt = await waitForSuccessfulReceipt(
-      createResponse,
-      confirmations,
-    );
+    const receipt = await waitForSuccessfulReceipt(createResponse);
     const paymentAddress = extractPaymentAddressFromReceipt(
       receipt,
       paymentRequest,
       preparedPayment.creationTx.to,
       payerAddress,
       paymentId,
+      options.codec,
     );
 
     return {
       paymentId,
       paymentAddress,
-      txHash: receipt.hash as Hex32,
+      txHash: receipt.txHash,
       paymentSalt,
       payerAddress,
     };
   } catch (cause) {
     throw normalizePaymentExecutionError({
       operation: "create",
+      codec: options.codec,
+      errorDecoder: options.errorDecoder,
+      logger: options.logger,
       cause,
     });
   }
@@ -231,9 +207,10 @@ async function preparePayment(
   paymentRequest: D402PaymentRequest,
   paymentId: Hex32,
 ): Promise<PreparedDpayment> {
-  const payerAddress = await options.signer.getAddress();
+  const payerAddress = await options.txSender.getAddress();
   const dpayments = await createPinnedDPayments({
-    provider: options.provider,
+    rpcClient: options.rpcClient,
+    codec: options.codec,
     walletAddress: payerAddress,
   });
   const prepared = paymentRequest.tokenAddress === null
@@ -279,7 +256,8 @@ async function preparePayment(
 function createPaymentSalt(): Hex32 {
   let paymentSalt: Hex32;
   do {
-    paymentSalt = hexlify(randomBytes(32)) as Hex32;
+    const bytes = globalThis.crypto.getRandomValues(new Uint8Array(32));
+    paymentSalt = `0x${bytesToHex(bytes)}`;
   } while (paymentSalt === D402_CANONICAL_SALT);
   return paymentSalt;
 }
@@ -292,7 +270,7 @@ async function sendSettlementAction(
   const action = "settle";
 
   try {
-    const walletAddress = await options.signer.getAddress();
+    const walletAddress = await options.txSender.getAddress();
     logPaymentActionStart(
       options.logger,
       action,
@@ -300,28 +278,20 @@ async function sendSettlementAction(
       walletAddress,
     );
     const dpayments = await createPinnedDPayments({
-      provider: options.provider,
+      rpcClient: options.rpcClient,
+      codec: options.codec,
       walletAddress,
     });
     const dPayment = dpayments.dPayment(payment.paymentAddress);
     const tx = dPayment.settle(walletAddress);
     const response = await broadcastInQueue(() =>
-      sendPreparedTransaction({
-        provider: options.provider,
-        signer: options.signer,
+      broadcastPreparedTransaction({
+        txSender: options.txSender,
         tx,
         onEvent: options.onEvent,
-        onNonceRetry: createNonceRetryLogger(
-          options.logger,
-          action,
-          payment.paymentAddress,
-        ),
       }),
     );
-    const receipt = await waitForSuccessfulReceipt(
-      response,
-      options.confirmations ?? D402_DEFAULT_CONFIRMATIONS,
-    );
+    const receipt = await waitForSuccessfulReceipt(response);
     emitLog(options.logger, {
       level: "info",
       event: "payment.action.confirmed",
@@ -331,15 +301,18 @@ async function sendSettlementAction(
         paymentId: payment.paymentId,
         paymentAddress: payment.paymentAddress,
         walletAddress,
-        txHash: receipt.hash,
+        txHash: receipt.txHash,
       },
     });
 
-    return { txHash: receipt.hash as Hex32 };
+    return { txHash: receipt.txHash };
   } catch (cause) {
     const error = normalizePaymentExecutionError({
       operation: "settle",
       paymentAddress: payment.paymentAddress,
+      codec: options.codec,
+      errorDecoder: options.errorDecoder,
+      logger: options.logger,
       cause,
     });
     logPaymentActionFailure(
@@ -359,7 +332,7 @@ async function raisePaymentDispute(
   broadcastInQueue: BroadcastQueue,
 ): Promise<D402PaymentActionResult> {
   try {
-    const walletAddress = await options.signer.getAddress();
+    const walletAddress = await options.txSender.getAddress();
     logPaymentActionStart(
       options.logger,
       "dispute",
@@ -367,7 +340,8 @@ async function raisePaymentDispute(
       walletAddress,
     );
     const dpayments = await createPinnedDPayments({
-      provider: options.provider,
+      rpcClient: options.rpcClient,
+      codec: options.codec,
       walletAddress,
     });
     const dPayment = dpayments.dPayment(payment.paymentAddress);
@@ -395,22 +369,13 @@ async function raisePaymentDispute(
       },
     });
     const response = await broadcastInQueue(() =>
-      sendPreparedTransaction({
-        provider: options.provider,
-        signer: options.signer,
+      broadcastPreparedTransaction({
+        txSender: options.txSender,
         tx: prepared.tx,
         onEvent: options.onEvent,
-        onNonceRetry: createNonceRetryLogger(
-          options.logger,
-          "dispute",
-          payment.paymentAddress,
-        ),
       }),
     );
-    const receipt = await waitForSuccessfulReceipt(
-      response,
-      options.confirmations ?? D402_DEFAULT_CONFIRMATIONS,
-    );
+    const receipt = await waitForSuccessfulReceipt(response);
     emitLog(options.logger, {
       level: "info",
       event: "payment.dispute.confirmed",
@@ -419,15 +384,18 @@ async function raisePaymentDispute(
         paymentId: payment.paymentId,
         paymentAddress: payment.paymentAddress,
         walletAddress,
-        txHash: receipt.hash,
+        txHash: receipt.txHash,
       },
     });
 
-    return { txHash: receipt.hash as Hex32 };
+    return { txHash: receipt.txHash };
   } catch (cause) {
     const error = normalizePaymentExecutionError({
       operation: "dispute",
       paymentAddress: payment.paymentAddress,
+      codec: options.codec,
+      errorDecoder: options.errorDecoder,
+      logger: options.logger,
       cause,
     });
     logPaymentActionFailure(
@@ -451,12 +419,15 @@ async function submitPaymentEvidence(
     throw normalizePaymentExecutionError({
       operation: "submit-evidence",
       paymentAddress: payment.paymentAddress,
+      codec: options.codec,
+      errorDecoder: options.errorDecoder,
+      logger: options.logger,
       cause: new Error("Evidence URI must not be empty."),
     });
   }
 
   try {
-    const walletAddress = await options.signer.getAddress();
+    const walletAddress = await options.txSender.getAddress();
     logPaymentActionStart(
       options.logger,
       "submit-evidence",
@@ -464,28 +435,20 @@ async function submitPaymentEvidence(
       walletAddress,
     );
     const dpayments = await createPinnedDPayments({
-      provider: options.provider,
+      rpcClient: options.rpcClient,
+      codec: options.codec,
       walletAddress,
     });
     const dPayment = dpayments.dPayment(payment.paymentAddress);
     const tx = dPayment.submitEvidence(evidenceUri, walletAddress);
     const response = await broadcastInQueue(() =>
-      sendPreparedTransaction({
-        provider: options.provider,
-        signer: options.signer,
+      broadcastPreparedTransaction({
+        txSender: options.txSender,
         tx,
         onEvent: options.onEvent,
-        onNonceRetry: createNonceRetryLogger(
-          options.logger,
-          "submit-evidence",
-          payment.paymentAddress,
-        ),
       }),
     );
-    const receipt = await waitForSuccessfulReceipt(
-      response,
-      options.confirmations ?? D402_DEFAULT_CONFIRMATIONS,
-    );
+    const receipt = await waitForSuccessfulReceipt(response);
 
     emitLog(options.logger, {
       level: "info",
@@ -495,15 +458,18 @@ async function submitPaymentEvidence(
         paymentId: payment.paymentId,
         paymentAddress: payment.paymentAddress,
         walletAddress,
-        txHash: receipt.hash,
+        txHash: receipt.txHash,
       },
     });
 
-    return { txHash: receipt.hash as Hex32 };
+    return { txHash: receipt.txHash };
   } catch (cause) {
     const error = normalizePaymentExecutionError({
       operation: "submit-evidence",
       paymentAddress: payment.paymentAddress,
+      codec: options.codec,
+      errorDecoder: options.errorDecoder,
+      logger: options.logger,
       cause,
     });
     logPaymentActionFailure(
@@ -517,36 +483,15 @@ async function submitPaymentEvidence(
   }
 }
 
-function createNonceRetryLogger(
-  logger: D402Logger,
-  operation: D402PaymentOperation,
-  paymentAddress?: PaymentAddress,
-): (retry: TransactionNonceRetry) => void {
-  return ({ retry, retryLimit, delayMs }) => {
-    emitLog(logger, {
-      level: "warn",
-      event: "payment.transaction.retry",
-      message: "Retrying transaction after an expired nonce.",
-      context: {
-        operation,
-        paymentAddress,
-        transactionError: "NONCE_EXPIRED",
-        retry,
-        retryLimit,
-        delayMs,
-      },
-    });
-  };
-}
-
 function extractPaymentAddressFromReceipt(
-  receipt: TransactionReceipt,
+  receipt: D402TxReceipt,
   paymentRequest: D402PaymentRequest,
   factoryAddress: string,
   payerAddress: string,
   paymentId: Hex32,
+  codec: AbiCodec,
 ): Address {
-  const events = new PaymentEvents(createEthersAbiCodec(ABI));
+  const events = new PaymentEvents(codec);
   const createdEvent = findPaymentCreatedEvent({
     logs: receipt.logs,
     factoryAddress,

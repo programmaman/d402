@@ -1,12 +1,8 @@
-import { ABI } from "@rakelabs/dpayments-sdk";
-import {
-  createEthersAbiCodec,
-  decodeEthersError,
-} from "@rakelabs/ethers-adapter";
+import type { AbiCodec } from "@rakelabs/dpayments-sdk";
 
-import type { PaymentAddress } from "../core/index.js";
-
-const codec = createEthersAbiCodec(ABI);
+import type { D402ErrorDecoder, PaymentAddress } from "../core/index.js";
+import { emitLog, NoopLogger } from "./logger.js";
+import type { D402Logger } from "./logger.js";
 
 export type D402PaymentOperation =
   | "create"
@@ -20,6 +16,9 @@ export type D402PaymentOperation =
 export interface D402PaymentExecutionErrorInput {
   operation: D402PaymentOperation;
   paymentAddress?: PaymentAddress;
+  codec: AbiCodec;
+  errorDecoder?: D402ErrorDecoder | undefined;
+  logger?: D402Logger | undefined;
   cause: unknown;
 }
 
@@ -41,7 +40,21 @@ export class D402PaymentExecutionError extends Error {
   readonly transactionError: string | undefined;
 
   constructor(input: D402PaymentExecutionErrorInput) {
-    const decoded = decodeEthersError(input.cause, codec);
+    const logger = input.logger ?? NoopLogger;
+    const adapterDecoded = input.errorDecoder?.(input.cause);
+    emitLog(logger, {
+      level: "debug",
+      event: "payment.execution.error_decoder.completed",
+      message: "Provider error decoder completed.",
+      context: {
+        decoder: "adapter",
+        cause: describeErrorForLog(input.cause),
+        decoded: describeErrorForLog(adapterDecoded),
+        decodedName: adapterDecoded?.name,
+        returnedUndefined: adapterDecoded === undefined,
+      },
+    });
+    const decoded = adapterDecoded;
     const dpaymentsError = decoded?.name;
     const transactionError = decodeTransactionError(input.cause);
     const baseMessage = operationMessages[input.operation];
@@ -58,6 +71,69 @@ export class D402PaymentExecutionError extends Error {
     this.dpaymentsError = dpaymentsError;
     this.transactionError = transactionError;
   }
+}
+
+export function decodePaymentError(
+  cause: unknown,
+  codec: AbiCodec,
+  logger: D402Logger = NoopLogger,
+): { name: string } | undefined {
+  const data = findErrorData(cause);
+  const decoded = data === undefined ? undefined : codec.decodeError(data);
+  emitLog(logger, {
+    level: "debug",
+    event: "payment.execution.error_decoder.completed",
+    message: "Fallback payment error decoder completed.",
+    context: {
+      decoder: "codec-fallback",
+      foundRevertData: data !== undefined,
+      revertSelector: data?.slice(0, 10),
+      decodedName: decoded?.name,
+      returnedUndefined: decoded === undefined,
+    },
+  });
+  return decoded;
+}
+
+function findErrorData(cause: unknown): `0x${string}` | undefined {
+  if (typeof cause !== "object" || cause === null) {
+    return undefined;
+  }
+
+  if ("data" in cause && typeof cause.data === "string" && isHexData(cause.data)) {
+    return cause.data;
+  }
+
+  if ("error" in cause) {
+    const nested = findErrorData(cause.error);
+    if (nested !== undefined) return nested;
+  }
+
+  if ("cause" in cause) {
+    return findErrorData(cause.cause);
+  }
+
+  return undefined;
+}
+
+function isHexData(value: string): value is `0x${string}` {
+  return /^0x[0-9a-fA-F]*$/.test(value);
+}
+
+function describeErrorForLog(value: unknown, depth = 0): unknown {
+  if (value === null || typeof value !== "object") return value;
+  if (depth >= 5) return "[truncated]";
+
+  const object = value as Record<string, unknown>;
+  const result: Record<string, unknown> = {};
+  for (const key of Object.getOwnPropertyNames(value)) {
+    if (["stack", "request", "requestBody"].includes(key)) continue;
+    const property = object[key];
+    result[key] = key === "cause" || key === "error"
+      ? describeErrorForLog(property, depth + 1)
+      : property;
+  }
+  return result;
 }
 
 function decodeTransactionError(cause: unknown): string | undefined {
