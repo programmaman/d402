@@ -75,7 +75,7 @@ export function validatePaymentPolicy(input: {
 
   if (
     policy.minSettlementWindowSec !== undefined &&
-    BigInt(paymentRequest.settlementTimeUnixSec) <
+    BigInt(paymentRequest.settlementTimeUnixSec) <=
       BigInt(now + policy.minSettlementWindowSec)
   ) {
     throw new D402PolicyViolationError(

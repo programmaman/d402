@@ -1,5 +1,6 @@
 import canonicalize from "canonicalize";
-import { keccak256, toUtf8Bytes } from "ethers";
+import { keccak_256 } from "@noble/hashes/sha3.js";
+import { bytesToHex, utf8ToBytes } from "@noble/hashes/utils.js";
 
 import { D402_CANONICAL_SALT } from "./constants.js";
 import { parsePaymentRequest } from "./payment-request.js";
@@ -45,7 +46,7 @@ export function derivePaymentId(
     throw new Error("canonicalize returned no output");
   }
 
-  return keccak256(toUtf8Bytes(canonical)) as Hex32;
+  return `0x${bytesToHex(keccak_256(utf8ToBytes(canonical)))}`;
 }
 
 export function validatePaymentSalt(

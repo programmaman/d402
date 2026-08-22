@@ -1,12 +1,15 @@
-import type { AbstractProvider } from "ethers";
 import type {
   D402BlockReference,
+  D402RpcClient,
   Hex32,
 } from "../core/index.js";
+import {
+  emitLog,
+  NoopLogger,
+} from "../runtime/logger.js";
+import type { D402Logger } from "../runtime/logger.js";
 
-type ResolvedBlock = NonNullable<
-  Awaited<ReturnType<AbstractProvider["getBlock"]>>
->;
+type ResolvedBlock = Awaited<ReturnType<D402RpcClient["getBlock"]>>;
 
 export type BlockReferenceReadResult =
   | { ok: true; reference: D402BlockReference }
@@ -17,10 +20,6 @@ export type BlockReferenceReadResult =
     };
 
 export function toBlockReference(block: ResolvedBlock): D402BlockReference {
-  if (block.hash === null) {
-    throw new Error("Resolved block has no hash.");
-  }
-
   return {
     blockNumber: block.number,
     blockHash: block.hash.toLowerCase() as Hex32,
@@ -38,17 +37,64 @@ export function sameBlockReference(
 }
 
 export async function readBlockReference(
-  provider: AbstractProvider,
-  blockHashOrBlockTag: Parameters<AbstractProvider["getBlock"]>[0],
+  rpcClient: D402RpcClient,
+  blockReference: Parameters<D402RpcClient["getBlock"]>[0],
+  logger: D402Logger = NoopLogger,
 ): Promise<BlockReferenceReadResult> {
-  try {
-    const block = await provider.getBlock(blockHashOrBlockTag);
-    if (block === null || block.hash === null) {
-      return { ok: false, reason: "not-found" };
-    }
+  const startedAt = Date.now();
+  emitLog(logger, {
+    level: "debug",
+    event: "settlement.reference.read.started",
+    message: "Reading a blockchain block reference.",
+    context: { blockReference: describeBlockReference(blockReference) },
+  });
 
-    return { ok: true, reference: toBlockReference(block) };
+  try {
+    const block = await rpcClient.getBlock(blockReference);
+    const reference = toBlockReference(block);
+    emitLog(logger, {
+      level: "debug",
+      event: "settlement.reference.read.succeeded",
+      message: "Read a blockchain block reference.",
+      context: {
+        blockReference: describeBlockReference(blockReference),
+        blockNumber: reference.blockNumber,
+        blockHash: reference.blockHash,
+        blockTimestampUnixSec: reference.blockTimestampUnixSec,
+        durationMs: Date.now() - startedAt,
+      },
+    });
+    return { ok: true, reference };
   } catch (cause) {
+    emitLog(logger, {
+      level: "error",
+      event: "settlement.reference.read.failed",
+      message: "Failed to read a blockchain block reference.",
+      context: {
+        blockReference: describeBlockReference(blockReference),
+        durationMs: Date.now() - startedAt,
+        error: describeError(cause),
+      },
+    });
     return { ok: false, reason: "provider-error", cause };
   }
+}
+
+function describeBlockReference(
+  reference: Parameters<D402RpcClient["getBlock"]>[0],
+): string | Readonly<Record<string, unknown>> {
+  return typeof reference === "object"
+    ? reference
+    : String(reference);
+}
+
+function describeError(error: unknown): Readonly<Record<string, unknown>> {
+  if (error instanceof Error) {
+    return {
+      name: error.name,
+      message: error.message,
+      ...(error.stack === undefined ? {} : { stack: error.stack }),
+    };
+  }
+  return { value: String(error) };
 }

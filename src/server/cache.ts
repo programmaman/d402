@@ -1,9 +1,13 @@
-import type { AbstractProvider } from "ethers";
-import type { D402BlockReference } from "../core/index.js";
+import type { D402BlockReference, D402RpcClient } from "../core/index.js";
 import {
   readBlockReference,
   sameBlockReference,
 } from "./block-reference.js";
+import {
+  emitLog,
+  NoopLogger,
+} from "../runtime/logger.js";
+import type { D402Logger } from "../runtime/logger.js";
 
 export type BlockReferenceLookup =
   | {
@@ -18,9 +22,9 @@ export type BlockReferenceLookup =
     };
 
 export interface BlockReferenceCache {
-  getLatest(provider: AbstractProvider): Promise<BlockReferenceLookup>;
+  getLatest(rpcClient: D402RpcClient): Promise<BlockReferenceLookup>;
   getByHash(
-    provider: AbstractProvider,
+    rpcClient: D402RpcClient,
     expected: D402BlockReference,
   ): Promise<BlockReferenceLookup>;
 }
@@ -55,15 +59,16 @@ interface ProviderState {
 export function createBlockReferenceCache(
   ttlMs: number,
   maxEntries = 256,
+  logger: D402Logger = NoopLogger,
 ): BlockReferenceCache {
   if (!Number.isInteger(maxEntries) || maxEntries <= 0) {
     throw new Error(`maxEntries must be a positive integer, got ${maxEntries}`);
   }
 
-  const states = new WeakMap<AbstractProvider, ProviderState>();
+  const states = new WeakMap<D402RpcClient, ProviderState>();
 
-  function stateFor(provider: AbstractProvider): ProviderState {
-    const existing = states.get(provider);
+  function stateFor(rpcClient: D402RpcClient): ProviderState {
+    const existing = states.get(rpcClient);
     if (existing !== undefined) {
       return existing;
     }
@@ -72,7 +77,7 @@ export function createBlockReferenceCache(
       byHashPending: new Map(),
       historical: new Map(),
     };
-    states.set(provider, created);
+    states.set(rpcClient, created);
     return created;
   }
 
@@ -88,17 +93,35 @@ export function createBlockReferenceCache(
   }
 
   return {
-    async getLatest(provider) {
-      const state = stateFor(provider);
+    async getLatest(rpcClient) {
+      const state = stateFor(rpcClient);
       const nowMs = Date.now();
       if (state.latest !== undefined && nowMs - state.latest.cachedAtMs < ttlMs) {
+        emitLog(logger, {
+          level: "debug",
+          event: "settlement.reference.cache.hit",
+          message: "Using the cached latest block reference.",
+          context: { reference: "latest", ageMs: nowMs - state.latest.cachedAtMs },
+        });
         return { ok: true, reference: state.latest.reference, source: "cache" };
       }
       if (state.latestPending !== undefined) {
+        emitLog(logger, {
+          level: "debug",
+          event: "settlement.reference.cache.wait",
+          message: "Waiting for an in-flight latest block reference read.",
+          context: { reference: "latest" },
+        });
         return state.latestPending;
       }
 
-      const pending = readLatest(provider, state, insertHistorical);
+      emitLog(logger, {
+        level: "debug",
+        event: "settlement.reference.cache.miss",
+        message: "The latest block reference was not cached.",
+        context: { reference: "latest", ttlMs },
+      });
+      const pending = readLatest(rpcClient, state, insertHistorical, logger);
       state.latestPending = pending;
       try {
         return await pending;
@@ -106,11 +129,17 @@ export function createBlockReferenceCache(
         if (state.latestPending === pending) delete state.latestPending;
       }
     },
-    async getByHash(provider, expected) {
-      const state = stateFor(provider);
+    async getByHash(rpcClient, expected) {
+      const state = stateFor(rpcClient);
       const key = expected.blockHash.toLowerCase();
       const cached = state.historical.get(key);
       if (cached !== undefined) {
+        emitLog(logger, {
+          level: "debug",
+          event: "settlement.reference.cache.hit",
+          message: "Using the cached historical block reference.",
+          context: { reference: expected.blockHash, cacheType: "historical" },
+        });
         state.historical.delete(key);
         state.historical.set(key, cached);
         return sameBlockReference(cached, expected)
@@ -119,9 +148,24 @@ export function createBlockReferenceCache(
       }
 
       const pendingExisting = state.byHashPending.get(key);
-      if (pendingExisting !== undefined) return pendingExisting;
+      if (pendingExisting !== undefined) {
+        emitLog(logger, {
+          level: "debug",
+          event: "settlement.reference.cache.wait",
+          message: "Waiting for an in-flight historical block reference read.",
+          context: { reference: expected.blockHash, cacheType: "historical" },
+        });
+        return pendingExisting;
+      }
 
-      const pending = readByHash(provider, expected, state, insertHistorical);
+      emitLog(logger, {
+        level: "debug",
+        event: "settlement.reference.cache.miss",
+        message: "The historical block reference was not cached.",
+        context: { reference: expected.blockHash, cacheType: "historical" },
+      });
+
+      const pending = readByHash(rpcClient, expected, state, insertHistorical, logger);
       state.byHashPending.set(key, pending);
       try {
         return await pending;
@@ -133,11 +177,12 @@ export function createBlockReferenceCache(
 }
 
 async function readLatest(
-  provider: AbstractProvider,
+  rpcClient: D402RpcClient,
   state: ProviderState,
   insertHistorical: (state: ProviderState, reference: D402BlockReference) => void,
+  logger: D402Logger,
 ): Promise<BlockReferenceLookup> {
-  const result = await readBlockReference(provider, "latest");
+  const result = await readBlockReference(rpcClient, "latest", logger);
   if (!result.ok) return result;
 
   state.latest = { reference: result.reference, cachedAtMs: Date.now() };
@@ -146,12 +191,15 @@ async function readLatest(
 }
 
 async function readByHash(
-  provider: AbstractProvider,
+  rpcClient: D402RpcClient,
   expected: D402BlockReference,
   state: ProviderState,
   insertHistorical: (state: ProviderState, reference: D402BlockReference) => void,
+  logger: D402Logger,
 ): Promise<BlockReferenceLookup> {
-  const result = await readBlockReference(provider, expected.blockHash);
+  const result = await readBlockReference(rpcClient, {
+    blockHash: expected.blockHash,
+  }, logger);
   if (!result.ok) return result;
   if (!sameBlockReference(result.reference, expected)) {
     return { ok: false, reason: "mismatch" };

@@ -10,8 +10,10 @@ import type {
 } from "../runtime/payment-execution-error.js";
 import { D402PaymentAction } from "./types.js";
 import type {
+  D402ErrorDecoder,
   D402PaymentActionResult,
 } from "../core/index.js";
+import type { AbiCodec } from "@rakelabs/dpayments-sdk";
 import type {
   D402AcceptedPaymentAction,
   D402CreatedPayment,
@@ -28,6 +30,8 @@ export async function resolvePaymentAfterAcceptance(input: {
   onAccepted: D402AcceptedPaymentAction;
   onRejected: D402RejectedPaymentAction;
   executor: D402PaymentExecutor;
+  codec: AbiCodec;
+  errorDecoder?: D402ErrorDecoder | undefined;
   requestRefund: (
     payment: D402PaymentAttempt,
     reason?: string,
@@ -50,7 +54,13 @@ export async function resolvePaymentAfterAcceptance(input: {
       const result = await input.executor.settlePayment(payment);
       return { action: "settled", txHash: result.txHash };
     } catch (cause) {
-      throw paymentExecutionError("settle", payment, cause);
+      throw paymentExecutionError(
+        "settle",
+        payment,
+        cause,
+        input.codec,
+        input.errorDecoder,
+      );
     }
   }
 
@@ -80,7 +90,13 @@ export async function resolvePaymentAfterAcceptance(input: {
     );
     return { action: "disputed", txHash: result.txHash };
   } catch (cause) {
-    throw paymentExecutionError("dispute", payment, cause);
+    throw paymentExecutionError(
+      "dispute",
+      payment,
+      cause,
+      input.codec,
+      input.errorDecoder,
+    );
   }
 }
 
@@ -88,10 +104,14 @@ function paymentExecutionError(
   operation: D402PaymentOperation,
   payment: D402CreatedPayment,
   cause: unknown,
+  codec: AbiCodec,
+  errorDecoder?: D402ErrorDecoder,
 ): D402PaymentExecutionError {
   return normalizePaymentExecutionError({
     operation,
     paymentAddress: payment.paymentAddress,
+    codec,
+    errorDecoder,
     cause,
   });
 }

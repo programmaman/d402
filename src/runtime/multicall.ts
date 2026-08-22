@@ -20,6 +20,5 @@ export function getDPaymentsMulticallConfig(
 
   return {
     address,
-    requireSuccess: true,
   };
 }

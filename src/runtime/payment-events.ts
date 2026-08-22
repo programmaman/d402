@@ -1,5 +1,7 @@
-import { TOPIC_PAYMENT_CREATED } from "@rakelabs/dpayments-sdk";
-import { zeroPadValue } from "ethers";
+import {
+  requireAddress,
+  TOPIC_PAYMENT_CREATED,
+} from "@rakelabs/dpayments-sdk";
 import type {
   EvmLog,
   PaymentCreatedEvent,
@@ -53,8 +55,8 @@ export function findPaymentCreatedEvent(input: {
   const expectedTopic = TOPIC_PAYMENT_CREATED.toLowerCase();
   const expectedFactory = input.factoryAddress.toLowerCase();
   const expectedPaymentId = input.paymentId.toLowerCase();
-  const expectedCreator = zeroPadValue(input.creator, 32).toLowerCase();
-  const expectedPayee = zeroPadValue(input.payee, 32).toLowerCase();
+  const expectedCreator = padAddressTopic(input.creator);
+  const expectedPayee = padAddressTopic(input.payee);
 
   for (const log of input.logs) {
     if (log.address === undefined || log.topics === undefined) {
@@ -99,4 +101,9 @@ export function findPaymentCreatedEvent(input: {
   }
 
   return undefined;
+}
+
+function padAddressTopic(value: string): string {
+  const address = requireAddress(value, "address").slice(2).toLowerCase();
+  return `0x${"0".repeat(24)}${address}`;
 }

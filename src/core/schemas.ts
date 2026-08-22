@@ -1,4 +1,4 @@
-import { getAddress, isHexString } from "ethers";
+import { requireAddress } from "@rakelabs/dpayments-sdk";
 import { z } from "zod";
 
 import {
@@ -22,12 +22,12 @@ const addressError = "must be an EVM address";
 
 export const hex32Schema = z
   .string()
-  .refine((value) => isHexString(value, 32), { message: hex32Error })
+  .regex(/^0x[0-9a-fA-F]{64}$/, { message: hex32Error })
   .transform((value) => value.toLowerCase() as Hex32);
 
 export const addressSchema = z.string().transform((value, ctx) => {
   try {
-    return getAddress(value).toLowerCase() as Address;
+    return requireAddress(value, "address").toLowerCase() as Address;
   } catch {
     ctx.addIssue({
       code: "custom",

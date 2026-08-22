@@ -1,6 +1,6 @@
 {
   "name": "d402",
-  "version": "0.3.3",
+  "version": "0.4.0",
   "description": "HTTP 402 payment agreement SDK backed by on-chain state.",
   "type": "module",
   "license": "Apache-2.0",
@@ -9,6 +9,9 @@
     "url": "git+https://github.com/programmaman/d402.git"
   },
   "sideEffects": false,
+  "engines": {
+    "node": ">=20.19.0"
+  },
   "keywords": [
     "http-payments",
     "402-payment-required",
@@ -23,9 +26,6 @@
     "payment-proofs",
     "refunds"
   ],
-  "engines": {
-    "node": ">=20"
-  },
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
@@ -82,13 +82,19 @@
     "LICENSE"
   ],
   "scripts": {
-    "build": "tsc -p tsconfig.json",
-    "clean": "node -e \"fs.rmSync('dist',{recursive:true,force:true})\"",
+    "build": "npm run clean && npm run build:core && npm run build:adapters",
+    "build:core": "tsc -p tsconfig.json",
+    "build:adapters": "npm --prefix adapters/ethers run build && npm --prefix adapters/viem run build",
+    "clean": "node -e \"const { rmSync } = require('node:fs'); for (const dir of ['dist', 'adapters/ethers/dist', 'adapters/viem/dist']) rmSync(dir, { recursive: true, force: true });\"",
     "dev": "tsx src/index.ts",
     "lint": "eslint src",
     "lint:fix": "eslint src --fix",
-    "prepack": "npm run clean && npm run build",
-    "test": "npm run build && vitest run --dir test",
+    "prepack": "npm run build",
+    "test": "npm run build && npm run test:unit && npm run test:adapters && npm --prefix e2e_tests run test:adapter:ethers && npm --prefix e2e_tests run test:adapter:viem",
+    "test:unit": "vitest run --dir test",
+    "test:adapters": "npm --prefix adapters/ethers run test && npm --prefix adapters/viem run test",
+    "test:ethers": "npm run build && npm --prefix e2e_tests run test:adapter:ethers",
+    "test:viem": "npm run build && npm --prefix e2e_tests run test:adapter:viem",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "pack:check": "npm pack --dry-run"
   },
@@ -96,20 +102,22 @@
     "access": "public"
   },
   "dependencies": {
-    "@rakelabs/dpayments-sdk": "^0.1.5",
+    "@noble/hashes": "^2.0.1",
+    "@rakelabs/dpayments-sdk": "^0.2.1",
     "canonicalize": "^3.0.0",
-    "ethers": "^6.17.0",
     "zod": "^4.4.3"
   },
   "devDependencies": {
-    "@eslint/js": "^10.0.1",
     "@emnapi/core": "1.11.1",
     "@emnapi/runtime": "1.11.1",
+    "@eslint/js": "^10.0.1",
     "@types/node": "^26.0.1",
     "eslint": "^10.6.0",
+    "ethers": "^6.17.0",
     "tsx": "^4.22.4",
     "typescript": "^6.0.3",
     "typescript-eslint": "^8.62.0",
+    "viem": "^2.55.19",
     "vitest": "^4.1.9"
   }
 }

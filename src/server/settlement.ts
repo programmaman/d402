@@ -1,16 +1,18 @@
-import type { AbstractProvider } from "ethers";
 import type {
   D402BlockReference,
   D402PaymentRequest,
+  D402RpcClient,
 } from "../core/index.js";
 import type { PayableTerms, ResolvedPayableTerms } from "./types.js";
 import type { BlockReferenceCache } from "./cache.js";
 import { readBlockReference } from "./block-reference.js";
+import type { D402Logger } from "../runtime/logger.js";
 
 export interface SettlementConfig {
-  provider: AbstractProvider;
+  rpcClient: D402RpcClient;
   settlementWindow?: number;
   settlementTimeUnixSec?: number;
+  logger?: D402Logger;
 }
 
 export class SettlementTimingConfigurationError extends Error {
@@ -36,8 +38,12 @@ export async function resolveChallengeSettlementTerms(
 
   if (paymentConfig.settlementWindow !== undefined) {
     const lookup = referenceCache
-      ? await referenceCache.getLatest(paymentConfig.provider)
-      : await readBlockReference(paymentConfig.provider, "latest");
+      ? await referenceCache.getLatest(paymentConfig.rpcClient)
+      : await readBlockReference(
+        paymentConfig.rpcClient,
+        "latest",
+        paymentConfig.logger,
+      );
     if (!lookup.ok) {
       throw lookup.cause instanceof Error
         ? lookup.cause

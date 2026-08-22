@@ -1,4 +1,6 @@
-import { decodeDPaymentError } from "@rakelabs/dpayments-sdk";
+import {
+  D402PaymentExecutionError,
+} from "../runtime/payment-execution-error.js";
 
 import type {
   PaymentActions,
@@ -31,12 +33,9 @@ export function Once(
         await actions.consumePayment(context.payment.paymentAddress);
         return { ok: true, result: undefined };
       } catch (error) {
-        const decoded = decodeDPaymentError(error);
-
         if (
-          decoded !== null
-          && "error" in decoded
-          && decoded.error === "AlreadyConsumed"
+          error instanceof D402PaymentExecutionError &&
+          error.dpaymentsError === "AlreadyConsumed"
         ) {
           return {
             ok: false,
