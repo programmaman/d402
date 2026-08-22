@@ -41,7 +41,7 @@ export class D402PaymentExecutionError extends Error {
 
   constructor(input: D402PaymentExecutionErrorInput) {
     const logger = input.logger ?? NoopLogger;
-    const adapterDecoded = input.errorDecoder?.(input.cause);
+    const decoded = input.errorDecoder?.(input.cause);
     emitLog(logger, {
       level: "debug",
       event: "payment.execution.error_decoder.completed",
@@ -49,12 +49,11 @@ export class D402PaymentExecutionError extends Error {
       context: {
         decoder: "adapter",
         cause: describeErrorForLog(input.cause),
-        decoded: describeErrorForLog(adapterDecoded),
-        decodedName: adapterDecoded?.name,
-        returnedUndefined: adapterDecoded === undefined,
+        decoded: describeErrorForLog(decoded),
+        decodedName: decoded?.name,
+        returnedUndefined: decoded === undefined,
       },
     });
-    const decoded = adapterDecoded;
     const dpaymentsError = decoded?.name;
     const transactionError = decodeTransactionError(input.cause);
     const baseMessage = operationMessages[input.operation];
