@@ -1,0 +1,39 @@
+{
+  "name": "@d402/ethers",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Ethers integration for d402.",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist/"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "npm run build && vitest run --config vitest.config.ts",
+    "lint": "eslint src test"
+  },
+  "peerDependencies": {
+    "d402": "^0.4.0",
+    "ethers": "^6.17.0"
+  },
+  "dependencies": {
+    "@rakelabs/dpayments-sdk": "^0.2.1",
+    "@rakelabs/ethers-adapter": "^0.1.0"
+  },
+  "devDependencies": {
+    "d402": "file:../..",
+    "ethers": "^6.17.0"
+  }
+}
