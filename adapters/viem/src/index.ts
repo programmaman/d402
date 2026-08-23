@@ -1,4 +1,9 @@
 export {
+  createViemClient,
+  type ViemClientOptions,
+} from "./client.js";
+
+export {
   createViemAdapter,
   type ViemAdapter,
   type ViemAdapterOptions,

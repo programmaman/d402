@@ -1,5 +1,5 @@
 export {
-  createClient,
+  createEthersClient,
   type EthersClientOptions,
 } from "./client.js";
 
