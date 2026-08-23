@@ -1,4 +1,5 @@
 import type {
+  AbiCodec,
   DecodedError,
   EvmLog,
   PreparedTx,
@@ -41,4 +42,11 @@ export interface D402TxSender {
   getAddress(): Promise<Address>;
   /** Broadcasts a prepared transaction without waiting for confirmation. */
   broadcastTransaction(tx: PreparedTx): Promise<D402BroadcastedTx>;
+}
+
+export interface D402Adapter {
+  readonly rpcClient: D402RpcClient;
+  readonly codec: AbiCodec;
+  readonly errorDecoder?: D402ErrorDecoder;
+  readonly txSender?: D402TxSender;
 }

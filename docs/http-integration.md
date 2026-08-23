@@ -89,7 +89,7 @@ import {
 } from "d402/server";
 
 const route = payable({
-  paymentConfig,
+  ...paymentConfig,
   terms,
   handler,
 

@@ -30,10 +30,8 @@ import {
 } from "d402/server";
 
 const routeConfig = {
-  paymentConfig: {
-    provider,
-    signer: payee,
-  },
+  adapter,
+  payment: {},
   terms,
   refunds: {
     url: "/refund",
@@ -74,9 +72,9 @@ reference formats it supports.
 For cross-origin preflight, cookies, and bearer credentials on the refund
 request, see [HTTP and Framework Integration](./http-integration.md).
 
-The original route configuration is reused for its provider, signer, and
-payment-verification settings. The refund handler does not invoke the original
-terms resolver, recovery hook, consumer, or protected handler.
+The original route configuration is reused for its adapter and payment
+verification settings. The refund handler does not invoke the original terms
+resolver, recovery hook, consumer, or protected handler.
 
 ## Configure the client
 

@@ -19,10 +19,8 @@ subscription, entitlement, or other business object:
 
 ```ts
 const route = payable({
-  paymentConfig: {
-    provider,
-    identifier: "server",
-  },
+  adapter,
+  payment: { identifier: "server" },
   terms,
   handler,
 });
@@ -36,10 +34,8 @@ even if multiple clients receive identical terms:
 
 ```ts
 const route = payable({
-  paymentConfig: {
-    provider,
-    identifier: "client",
-  },
+  adapter,
+  payment: { identifier: "client" },
   terms,
   handler,
 });
@@ -54,14 +50,14 @@ most one protected operation:
 ```ts
 import { Once, payable, paymentActions } from "d402/server";
 
-const actions = paymentActions({ provider, signer: payee });
+const actions = paymentActions({
+  adapter,
+  payment: {},
+});
 
 const route = payable({
-  paymentConfig: {
-    provider,
-    signer: payee,
-    identifier: "client",
-  },
+  adapter,
+  payment: { identifier: "client" },
   consumer: Once(actions),
   terms,
   handler,
@@ -102,10 +98,7 @@ server identity.
 
 ```ts
 const orderCheckout = payable({
-  paymentConfig: {
-    provider,
-    resource: ({ url }) => `order:${new URL(url).searchParams.get("orderId")}`,
-  },
+  adapter,
   terms: async (request) => {
     const order = await orders.loadRequired(request);
 
@@ -118,6 +111,8 @@ const orderCheckout = payable({
       agreement: {
         id: `order:${order.id}:v${order.priceVersion}`,
       },
+      resource: ({ url }) =>
+        `order:${new URL(url).searchParams.get("orderId")}`,
       expiresAtUnixSec: order.quoteExpiresAtUnixSec,
     };
   },
@@ -189,10 +184,8 @@ payments:
 
 ```ts
 const paidSearch = payable({
-  paymentConfig: {
-    provider,
-    identifier: "client",
-  },
+  adapter,
+  payment: { identifier: "client" },
   terms: searchTerms,
   handler: runSearch,
 });
@@ -240,7 +233,10 @@ lifecycle actions from an authorized server process:
 ```ts
 import { paymentActions } from "d402/server";
 
-const actions = paymentActions({ provider, signer: payee });
+const actions = paymentActions({
+  adapter,
+  payment: {},
+});
 
 await actions.refundPayment(paymentAddress);
 await actions.settlePayment(paymentAddress);

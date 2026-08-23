@@ -2,7 +2,7 @@ import {
   D402_CANONICAL_SALT,
   D402_VERSION,
 } from "../core/constants.js";
-import { parsePaymentRequest } from "../core/payment-request.js";
+import { parsePaymentRequest } from "../core/index.js";
 import type { D402PaymentRequest } from "../core/types.js";
 import type {
   PaymentIdentifier,
@@ -82,7 +82,7 @@ function completeTermsFromRequest(
 
   if (settlementTimeUnixSec === undefined) {
     throw new Error(
-      "settlementTimeUnixSec must be provided by paymentConfig.settlementWindow, paymentConfig.settlementTimeUnixSec, or terms.settlementTimeUnixSec",
+      "settlementTimeUnixSec must be provided by payment.settlementWindow, payment.settlementTimeUnixSec, or terms.settlementTimeUnixSec",
     );
   }
 
@@ -112,7 +112,7 @@ function assertPayableTermsDoNotSelectSalt(
 ): void {
   if (Object.prototype.hasOwnProperty.call(terms, "paymentSalt")) {
     throw new Error(
-      "paymentSalt cannot be configured through payable terms; use paymentConfig.identifier",
+      "paymentSalt cannot be configured through payable terms; use payment.identifier",
     );
   }
 }

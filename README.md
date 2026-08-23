@@ -7,7 +7,7 @@ the retried request from its proof.
 ## Install
 
 ```sh
-npm install d402 ethers
+npm install d402 @d402/ethers ethers
 ```
 
 ## 1. Protect a complete route
@@ -17,12 +17,14 @@ route:
 
 ```ts
 import { JsonRpcProvider, Wallet } from "ethers";
+import { createEthersAdapter } from "@d402/ethers";
 import { payable } from "d402/server";
 
 const provider = new JsonRpcProvider(process.env.RPC_URL);
 // Any ethers Signer works here, including a KMS or custody-backed signer.
 // Signer is only needed if the server performs an on-chain action during the request (for example, Once consumption or refunds).
 const payee = new Wallet(process.env.PAYEE_PRIVATE_KEY, provider);
+const adapter = createEthersAdapter({ provider, signer: payee });
 const terms = {
   chainId: 100,
   payeeAddress: payee.address,
@@ -33,11 +35,8 @@ const terms = {
 };
 
 export const GET = payable({
-  paymentConfig: {
-    provider,
-    signer: payee,
-    settlementWindow: 3600,
-  },
+  adapter,
+  payment: { settlementWindow: 3600 },
   terms,
   handler: (_request, payment) =>
     Response.json({
@@ -58,12 +57,8 @@ Use `PaymentAuthorizer` when your framework or application owns the controller:
 import { PaymentAuthorizer } from "d402/server";
 
 const reportPayment = new PaymentAuthorizer({
-  paymentConfig: {
-    provider,
-    // This may also be a KMS or custody-backed ethers Signer.
-    signer: payee,
-    settlementWindow: 3600,
-  },
+  adapter,
+  payment: { settlementWindow: 3600 },
   terms,
 });
 
@@ -97,17 +92,13 @@ most one protected operation:
 import { Once, payable, paymentActions } from "d402/server";
 
 const actions = paymentActions({
-  provider,
-  // Use the payee's Wallet, KMS, or custody-backed ethers Signer.
-  signer: payee,
+  adapter,
+  payment: {},
 });
 
 const download = payable({
-  paymentConfig: {
-    provider,
-    signer: payee,
-    settlementWindow: 3600,
-  },
+  adapter,
+  payment: { settlementWindow: 3600 },
   terms,
   consumer: Once(actions),
   handler: async () =>
@@ -125,11 +116,8 @@ invoice. Put the order ID in the terms so retries reconstruct the same payment:
 
 ```ts
 const orderRoute = payable({
-  paymentConfig: {
-    provider,
-    // This may also be a KMS or custody-backed ethers Signer.
-    signer: payee,
-  },
+  adapter,
+  payment: {},
   terms: (request) => {
     const orderId = new URL(request.url).pathname.split("/").at(-1);
 
@@ -159,17 +147,13 @@ payment instead of reusing an order identity:
 import { Once, payable, paymentActions } from "d402/server";
 
 const actions = paymentActions({
-  provider,
-  // Use the payee's Wallet, KMS, or custody-backed ethers Signer.
-  signer: payee,
+  adapter,
+  payment: {},
 });
 
 const independentPaymentRoute = payable({
-  paymentConfig: {
-    provider,
-    signer: payee,
-    identifier: "client",
-  },
+  adapter,
+  payment: { identifier: "client" },
   terms,
   consumer: Once(actions),
   handler,

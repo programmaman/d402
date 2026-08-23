@@ -53,9 +53,9 @@ export class PaymentAuthorizer<
 
   constructor(config: PaymentAuthorizationConfig<Req, Result>) {
     this.#config = config;
-    this.#logger = config.paymentConfig.logger ?? NoopLogger;
-    this.#authenticator = createDPaymentsAuthenticator(config.paymentConfig);
-    this.#observer = createDPaymentsObserver(config.paymentConfig);
+    this.#logger = config.payment.logger ?? NoopLogger;
+    this.#authenticator = createDPaymentsAuthenticator(config);
+    this.#observer = createDPaymentsObserver(config);
     this.#verificationPolicy = config.verificationPolicy
       ?? FundedOrSettledPayment;
     this.#consumer = config.consumer ?? (None as PaymentConsumer<Result>);
@@ -63,8 +63,8 @@ export class PaymentAuthorizer<
       ? undefined
       : refundsSchema.parse(config.refunds);
 
-    const cacheSetting = config.paymentConfig.cache
-      ?? (config.paymentConfig.settlementWindow !== undefined ? true : undefined);
+    const cacheSetting = config.payment.cache
+      ?? (config.payment.settlementWindow !== undefined ? true : undefined);
     const referenceCacheTtlMs = resolveLatestBlockCacheTtlMs(cacheSetting);
     this.#referenceCache = referenceCacheTtlMs === null
       ? null
@@ -96,14 +96,14 @@ export class PaymentAuthorizer<
         message: "Resolving settlement timing for a payment challenge.",
         context: {
           resource: terms.resource,
-          settlementWindow: this.#config.paymentConfig.settlementWindow,
+          settlementWindow: this.#config.payment.settlementWindow,
           cacheEnabled: this.#referenceCache !== null,
         },
       });
       let challengeSettlement;
       try {
         challengeSettlement = await resolveChallengeSettlementTerms(
-          this.#config.paymentConfig,
+          this.#config,
           terms,
           this.#referenceCache,
         );
@@ -148,8 +148,8 @@ export class PaymentAuthorizer<
       const paymentRequest = buildServerPaymentRequest({
         request,
         terms: challengeSettlement.terms,
-        ...(this.#config.paymentConfig.identifier !== undefined
-          ? { identifier: this.#config.paymentConfig.identifier }
+        ...(this.#config.payment.identifier !== undefined
+          ? { identifier: this.#config.payment.identifier }
           : {}),
       });
 
@@ -184,7 +184,7 @@ export class PaymentAuthorizer<
     }
 
     const settlement = resolveProofSettlementTerms(
-      this.#config.paymentConfig,
+      this.#config,
       terms,
       proof.settlementReference,
     );
@@ -200,8 +200,8 @@ export class PaymentAuthorizer<
     const paymentRequest = buildServerPaymentRequest({
       request,
       terms: settlement.terms,
-      ...(this.#config.paymentConfig.identifier !== undefined
-        ? { identifier: this.#config.paymentConfig.identifier }
+      ...(this.#config.payment.identifier !== undefined
+        ? { identifier: this.#config.payment.identifier }
         : {}),
     });
     const { dPaymentProof } = proof;
@@ -216,7 +216,7 @@ export class PaymentAuthorizer<
     let authenticatedSettlementReference: D402BlockReference | undefined;
     if (settlement.mode === "window" && settlement.settlementReference !== undefined) {
       const resolvedReference = await resolveSettlementReference(
-        this.#config.paymentConfig.rpcClient,
+        this.#config.adapter.rpcClient,
         this.#referenceCache,
         settlement.settlementReference,
       );

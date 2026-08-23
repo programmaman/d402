@@ -7,8 +7,6 @@ import {
 } from "@rakelabs/dpayments-sdk";
 import { requireAddress } from "@rakelabs/dpayments-sdk";
 import type {
-  AbiCodec,
-  MulticallConfig,
   PaymentCreatedEvent,
 } from "@rakelabs/dpayments-sdk";
 import {
@@ -29,6 +27,7 @@ import type {
   PaymentState as D402PaymentState,
   AuthenticatedPayment,
   AuthenticatedPaymentContext,
+  PaymentConfig,
   PaymentAuthenticator,
   PaymentFailure,
   PaymentObserver,
@@ -53,24 +52,15 @@ export function verifyPaymentSalt(
   return validatePaymentSalt(paymentRequest, dPaymentProof.paymentSalt);
 }
 
-export interface DPaymentsAuthenticatorOptions {
-  rpcClient: D402RpcClient;
-  codec: AbiCodec;
-  confirmations?: number;
-  settlementWindow?: number;
-  /** Trusted private-network or test-chain Multicall3 deployment. */
-  multicall?: MulticallConfig;
-}
-
 export function createDPaymentsAuthenticator(
-  options: DPaymentsAuthenticatorOptions,
+  config: PaymentConfig,
 ): PaymentAuthenticator {
-  const events = new PaymentEvents(options.codec);
-  const confirmations = options.confirmations ?? D402_DEFAULT_CONFIRMATIONS;
+  const events = new PaymentEvents(config.adapter.codec);
+  const confirmations = config.payment.confirmations ?? D402_DEFAULT_CONFIRMATIONS;
   let connectedChainId: Promise<number> | undefined;
 
   function getVerifierChainId(): Promise<number> {
-    connectedChainId ??= getConnectedChainId(options.rpcClient);
+    connectedChainId ??= getConnectedChainId(config.adapter.rpcClient);
     return connectedChainId;
   }
 
@@ -86,7 +76,7 @@ export function createDPaymentsAuthenticator(
     }
 
     const receiptResult = await readTransactionReceipt(
-      options.rpcClient,
+      config.adapter.rpcClient,
       proof.txHash,
     );
     if (!receiptResult.ok) return receiptResult;
@@ -95,7 +85,7 @@ export function createDPaymentsAuthenticator(
       paymentRequest,
       dPaymentProof: proof,
       receipt: receiptResult.receipt,
-      rpcClient: options.rpcClient,
+      rpcClient: config.adapter.rpcClient,
       events,
       confirmations,
     });
@@ -109,9 +99,9 @@ export function createDPaymentsAuthenticator(
         ? { settlementReference: input.settlementReference }
         : {}),
       receipt: createdEventResult.receipt,
-      rpcClient: options.rpcClient,
-      ...(options.settlementWindow !== undefined
-        ? { settlementWindow: options.settlementWindow }
+      rpcClient: config.adapter.rpcClient,
+      ...(config.payment.settlementWindow !== undefined
+        ? { settlementWindow: config.payment.settlementWindow }
         : {}),
     });
     if (!settlementResult.ok) return settlementResult;
@@ -129,25 +119,18 @@ export function createDPaymentsAuthenticator(
   };
 }
 
-export interface DPaymentsObserverOptions {
-  rpcClient: D402RpcClient;
-  codec: AbiCodec;
-  /** Trusted private-network or test-chain Multicall3 deployment. */
-  multicall?: MulticallConfig;
-}
-
 export function createDPaymentsObserver(
-  options: DPaymentsObserverOptions,
+  config: PaymentConfig,
 ): PaymentObserver {
   let reader: Promise<PaymentReader> | undefined;
   const inFlightPaymentStateReads = new Map<string, Promise<PaymentStateReadResult>>();
 
   function getReader(): Promise<PaymentReader> {
-    reader ??= getConnectedChainId(options.rpcClient).then((chainId) =>
+    reader ??= getConnectedChainId(config.adapter.rpcClient).then((chainId) =>
       new PaymentReader(
-        options.rpcClient,
-        options.codec,
-        options.multicall ?? getDPaymentsMulticallConfig(chainId),
+        config.adapter.rpcClient,
+        config.adapter.codec,
+        config.payment.multicall ?? getDPaymentsMulticallConfig(chainId),
       ),
     );
     return reader;

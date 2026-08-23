@@ -18,12 +18,12 @@ export interface EthersClientOptions extends Omit<
 }
 
 /**
- * Ethers-backed compatibility constructor.
+ * Ethers-backed convenience constructor.
  *
  * The adapter accepts provider/signer construction inputs and supplies the
  * neutral components consumed by d402 core.
  */
-export function createClient(
+export function createEthersClient(
   options: EthersClientOptions,
 ): Promise<D402Client> {
   const {

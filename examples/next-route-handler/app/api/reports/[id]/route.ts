@@ -1,14 +1,16 @@
 import { JsonRpcProvider } from "ethers";
+import { createEthersAdapter } from "@d402/ethers";
 
 import { payable } from "d402/server";
 
 const provider = new JsonRpcProvider(requireEnv("RPC_URL"));
+const adapter = createEthersAdapter({ provider });
 const chainId = Number(requireEnv("CHAIN_ID"));
 const payeeAddress = requireEnv("PAYEE_ADDRESS") as `0x${string}`;
 
 const protectReport = payable({
-  paymentConfig: {
-    provider,
+  adapter,
+  payment: {
     confirmations: 1,
     settlementWindow: 3600,
   },

@@ -111,14 +111,14 @@ Use `Once(actions)` when one payment should authorize at most one handler
 execution. `Once` claims the payment on-chain before entering the handler:
 
 ```ts
-const actions = paymentActions({ provider, signer: payee });
+const actions = paymentActions({
+  adapter,
+  payment: {},
+});
 
 const route = payable({
-  paymentConfig: {
-    provider,
-    signer: payee,
-    identifier: "client",
-  },
+  adapter,
+  payment: { identifier: "client" },
   consumer: Once(actions),
   terms,
   handler,

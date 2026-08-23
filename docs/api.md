@@ -267,6 +267,15 @@ import {
 } from "d402/server";
 ```
 
+Server configuration is shared across routes and actions:
+
+```ts
+interface PaymentConfig {
+  adapter: D402Adapter;
+  payment: PaymentOptions;
+}
+```
+
 ### `payable(options)`
 
 Wraps a request handler and returns a function that either:
@@ -276,15 +285,16 @@ Wraps a request handler and returns a function that either:
 
 Important options:
 
-- `paymentConfig.provider`: ethers provider used for verification.
-- `paymentConfig.confirmations`: required payment transaction confirmations.
-- `paymentConfig.settlementWindow`: optional settlement window in seconds for
+- `adapter`: provider-neutral chain capabilities used for verification and
+  optional server actions.
+- `payment.confirmations`: required payment transaction confirmations.
+- `payment.settlementWindow`: optional settlement window in seconds for
   dynamic relative settlement timing.
-- `paymentConfig.settlementTimeUnixSec`: explicit settlement time.
-- `paymentConfig.cache`: optional cache setting for settlement-window support.
-- `paymentConfig.logger`: optional structured record sink for server payment
+- `payment.settlementTimeUnixSec`: explicit settlement time.
+- `payment.cache`: optional cache setting for settlement-window support.
+- `payment.logger`: optional structured record sink for server payment
   actions. It has the same failure-isolated behavior as the client logger.
-- `paymentConfig.multicall`: optional trusted Multicall3 configuration used by
+- `payment.multicall`: optional trusted Multicall3 configuration used by
   canonical payment-state observation.
 - `terms`: static terms or a function of the request. Its optional `resource`
   may be a string or function of the request; it defaults to the incoming URL.
@@ -299,7 +309,7 @@ Important options:
   observation. `FundedOrSettledPayment` is the default; the exported
   `FundedPayment` accepts only payments whose current state is `funded`.
 - `consumer`: optional payment-consumption policy. Use
-  `Once(actions)` with a shared `paymentActions({ provider, signer })` instance
+  `Once(actions)` with a shared `paymentActions({ adapter, payment })` instance
   to consume a verified payment before the
   protected handler runs, or `None` to state the reusable policy explicitly.
   Routes are reusable by default. `Once` is an at-most-once authorization
@@ -342,7 +352,10 @@ behavior.
 Creates a `PaymentActions` object containing the server-side lifecycle methods:
 
 ```ts
-const actions = paymentActions({ provider, signer });
+const actions = paymentActions({
+  adapter,
+  payment: { confirmations: 1 },
+});
 
 await actions.settlePayment(paymentAddress);
 await actions.refundPayment(paymentAddress);
@@ -351,9 +364,10 @@ await actions.submitEvidence(paymentAddress, "ipfs://QmEvidence");
 await actions.appealPayment(paymentAddress);
 ```
 
-The configuration requires `provider` and `signer`; `confirmations` is
-optional. Reuse the returned object for payable consumers, lifecycle workers,
-and recovery flows that use that configuration.
+The configuration contains the provider-neutral `adapter` and the server
+`payment` options. The adapter must expose `txSender` for broadcast actions.
+Reuse the returned object for payable consumers, lifecycle workers, and recovery
+flows that use that configuration.
 
 `paymentActions()` creates an independent action object for each call. Each
 object privately orders its own broadcasts, while nonce selection remains
@@ -408,7 +422,10 @@ intentionally permits or rejects a particular current payment state. Use
 consumption:
 
 ```ts
-const actions = paymentActions({ provider, signer });
+const actions = paymentActions({
+  adapter,
+  payment: { confirmations: 1 },
+});
 const consumer = Once(actions);
 ```
 
@@ -432,7 +449,7 @@ const databaseOnce: PaymentConsumer = {
 };
 
 const route = payable({
-  paymentConfig,
+  ...paymentConfig,
   consumer: databaseOnce,
   terms,
   handler,

@@ -39,7 +39,7 @@ underlying resolution outcome is not yet modeled in d402.
 - Verify payment creation and live payment state.
 - Initiate a dispute through the client executor.
 - Submit an evidence URI through `actions.submitEvidence()`, where `actions`
-  is returned by `paymentActions({ provider, signer })`.
+  is returned by `paymentActions({ adapter, payment })`.
 - Provide server-side appeal and settlement/refund transaction helpers.
 - Reject access for disputed or resolved payments.
 
@@ -73,7 +73,10 @@ refund when policy approves. See [Refunds](./refunds.md).
 ```ts
 import { paymentActions } from "d402/server";
 
-const actions = paymentActions({ provider, signer });
+const actions = paymentActions({
+  adapter,
+  payment: {},
+});
 
 const result = await evidencePublisher.publish({
   title: `d402 evidence for ${paymentId}`,

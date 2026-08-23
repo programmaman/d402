@@ -3,6 +3,7 @@ import type { AbstractProvider, Signer } from "ethers";
 import type { PreparedTx } from "@rakelabs/dpayments-sdk";
 
 import {
+  createEthersClient,
   createEthersTxSender,
 } from "../src/index.js";
 import { createEthersAdapter } from "../src/adapter.js";
@@ -27,6 +28,10 @@ const preparedTx: PreparedTx = {
 };
 
 describe("@d402/ethers adapter", () => {
+  it("exports the named Ethers client constructor", () => {
+    expect(createEthersClient).toBeTypeOf("function");
+  });
+
   it("creates a read-only adapter from a provider", () => {
     const adapter = createEthersAdapter({ provider });
 

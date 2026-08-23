@@ -2,6 +2,7 @@ import "dotenv/config";
 
 import express from "express";
 import { JsonRpcProvider, Wallet } from "ethers";
+import { createEthersAdapter } from "@d402/ethers";
 
 import { Once, payable, paymentActions } from "d402/server";
 
@@ -10,15 +11,15 @@ const chainId = Number(requireEnv("CHAIN_ID"));
 const provider = new JsonRpcProvider(requireEnv("RPC_URL"));
 const payee = new Wallet(requireEnv("PAYEE_PRIVATE_KEY"), provider);
 const payeeAddress = payee.address as `0x${string}`;
+const adapter = createEthersAdapter({ provider, signer: payee });
 const actions = paymentActions({
-  provider,
-  signer: payee,
+  adapter,
+  payment: { confirmations: 1 },
 });
 
 const protectedDownload = payable({
-  paymentConfig: {
-    provider,
-    signer: payee,
+  adapter,
+  payment: {
     confirmations: 1,
     identifier: "client",
     settlementWindow: 3600,

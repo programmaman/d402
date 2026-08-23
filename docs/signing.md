@@ -118,9 +118,8 @@ Servers can also send dPayment action transactions with their own signer.
 import { paymentActions } from "d402/server";
 
 const actions = paymentActions({
-  provider,
-  signer,
-  confirmations: 2,
+  adapter,
+  payment: { confirmations: 2 },
 });
 
 await actions.settlePayment(paymentAddress);
