@@ -1,16 +1,35 @@
 {
   "name": "@d402/viem",
   "version": "0.1.0",
-  "private": true,
   "description": "Viem integration for d402.",
   "type": "module",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/programmaman/d402.git",
+    "directory": "adapters/viem"
+  },
+  "bugs": {
+    "url": "https://github.com/programmaman/d402/issues"
+  },
+  "homepage": "https://github.com/programmaman/d402#readme",
+  "keywords": [
+    "d402",
+    "http-402",
+    "payments",
+    "viem"
+  ],
+  "sideEffects": false,
   "engines": {
     "node": ">=20"
   },
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "files": [
-    "dist/"
+    "dist/",
+    "README.md",
+    "CHANGELOG.md",
+    "LICENSE"
   ],
   "exports": {
     ".": {
@@ -38,5 +57,8 @@
     "typescript": "^6.0.3",
     "viem": "2.55.19",
     "vitest": "^4.1.9"
+  },
+  "publishConfig": {
+    "access": "public"
   }
 }
