@@ -9,8 +9,8 @@ All notable public changes to d402 are documented here.
 - Removed d402 core's runtime dependency on ethers and viem.
 - Standardized client and executor composition around four neutral capabilities:
   `rpcClient`, `codec`, `errorDecoder`, and `txSender`.
-- Preserved direct custom integration by allowing applications to provide those
-  capabilities without constructing a provider-specific adapter object.
+- Added the shared `D402Adapter` contract so applications can provide those
+  capabilities through one provider-neutral adapter object.
 - Retained custom payment executors for relayers, custodial wallets, and other
   integrations that do not use the standard dPayments execution path.
 
@@ -26,12 +26,18 @@ All notable public changes to d402 are documented here.
 
 ### API cleanup
 
+- Split payment configuration into `adapter` and `payment` sections. Routes,
+  `paymentActions()`, verification, settlement, and refund helpers now share
+  the same nested `{ adapter, payment }` composition API.
+- Added `PaymentOptions` for confirmations, settlement timing, caching,
+  identifiers, logging, events, and multicall settings.
 - Removed client-side confirmation options. Transaction confirmation depth is
   now configured on the adapter transaction sender; server verification
   confirmations remain part of server payment configuration.
 - Simplified `Once()` to accept only the payment actions it consumes.
-- Removed unused adapter types and provider-specific dependencies from shared
-  protocol code.
+- Removed unused provider-specific adapter type aliases and provider-specific
+  dependencies from shared protocol code.
+- Updated the public documentation and runnable examples for the new API.
 
 ## 0.3.3 - 2026-08-13
 
