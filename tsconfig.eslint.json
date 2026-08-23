@@ -12,6 +12,10 @@
   },
   "include": [
     "src/**/*.ts",
+    "adapters/ethers/src/**/*.ts",
+    "adapters/ethers/test/**/*.ts",
+    "adapters/viem/src/**/*.ts",
+    "adapters/viem/test/**/*.ts",
     "eslint.config.js"
   ]
 }

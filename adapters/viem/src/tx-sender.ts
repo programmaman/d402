@@ -28,8 +28,10 @@ export function createViemTxSender(
   let sendQueue = Promise.resolve();
 
   return {
-    async getAddress() {
-      return getAccountAddress(options.walletClient.account);
+    getAddress() {
+      return Promise.resolve().then(() =>
+        getAccountAddress(options.walletClient.account),
+      );
     },
 
     async broadcastTransaction(transaction: PreparedTx) {
@@ -113,7 +115,7 @@ function getAccountAddress(
     );
   }
 
-  return address as `0x${string}`;
+  return address;
 }
 
 function toViemTransaction(

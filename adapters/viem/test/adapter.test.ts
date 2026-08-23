@@ -9,9 +9,9 @@ import {
 } from "viem";
 
 import {
+  createViemAdapter,
   createViemTxSender,
-} from "../src";
-import { createViemAdapter } from "../src";
+} from "../src/index.js";
 import { createViemRpcClient } from "../src/rpc-client.js";
 
 const decodeViemError = vi.hoisted(() => vi.fn());
@@ -220,7 +220,7 @@ describe("@d402/viem adapter", () => {
       publicClient: {
         ...publicClient,
         estimateGas,
-      } as unknown as PublicClient,
+      },
       walletClient,
     });
 
@@ -247,7 +247,7 @@ describe("@d402/viem adapter", () => {
     const rpcClient = createViemRpcClient({
       ...publicClient,
       getBlock,
-    } as unknown as PublicClient);
+    });
 
     await expect(rpcClient.getBlock("latest")).resolves.toMatchObject({
       number: 191,
@@ -271,7 +271,7 @@ describe("@d402/viem adapter", () => {
     const rpcClient = createViemRpcClient({
       ...publicClient,
       getTransactionReceipt,
-    } as unknown as PublicClient);
+    });
 
     await expect(rpcClient.getTransactionReceipt(
       "0x0000000000000000000000000000000000000000000000000000000000000003",
@@ -291,7 +291,7 @@ describe("@d402/viem adapter", () => {
       getTransactionReceipt: vi.fn().mockRejectedValue(
         new TransactionReceiptNotFoundError({ hash }),
       ),
-    } as unknown as PublicClient);
+    });
 
     await expect(rpcClient.getTransactionReceipt(hash)).resolves.toBeNull();
   });

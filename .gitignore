@@ -3,22 +3,6 @@ node_modules/
 dist/
 coverage/
 *.tsbuildinfo
-tsconfig.test.json
 .env
 .env.*
 !.env.example
-/test/
-/e2e_tests/
-/non-public/
-/demo/cloudflare-demo/
-/adapters/ethers/.upstream/
-/adapters/viem/.upstream/viem/
-/docs/migration-0.3-to-0.4.md
-/demo/UTC--2026-08-03T13-05-08.008Z--7f8880845d4f215594c6fcf07f884f635216d958
-/.codex/skills/architecture-boundary-review/SKILL.md
-/demo/MyEtherWallet _ The Best Crypto Wallet For Web3.pdf
-/docs/ml-llm-crash-course.md
-/docs/job-application-tracker-extension-spec.md
-/.codex/config.toml
-/AGENTS.md
-/.dockerignore
