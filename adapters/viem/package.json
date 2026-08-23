@@ -41,7 +41,8 @@
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "npm run build && vitest run --config vitest.config.ts",
-    "lint": "eslint src test"
+    "lint": "eslint src test",
+    "prepack": "npm run build"
   },
   "peerDependencies": {
     "d402": "^0.4.0",
@@ -54,6 +55,7 @@
   "devDependencies": {
     "@types/node": "^26.0.1",
     "d402": "file:../..",
+    "eslint": "^10.6.0",
     "typescript": "^6.0.3",
     "viem": "2.55.19",
     "vitest": "^4.1.9"

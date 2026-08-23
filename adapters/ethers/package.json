@@ -41,7 +41,8 @@
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "npm run build && vitest run --config vitest.config.ts",
-    "lint": "eslint src test"
+    "lint": "eslint src test",
+    "prepack": "npm run build"
   },
   "peerDependencies": {
     "d402": "^0.4.0",
@@ -52,8 +53,12 @@
     "@rakelabs/ethers-adapter": "^0.1.0"
   },
   "devDependencies": {
+    "@types/node": "^26.0.1",
     "d402": "file:../..",
-    "ethers": "^6.17.0"
+    "eslint": "^10.6.0",
+    "ethers": "^6.17.0",
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.9"
   },
   "publishConfig": {
     "access": "public"
