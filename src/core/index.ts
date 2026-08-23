@@ -22,6 +22,7 @@ export type { D402CanonicalSalt } from "./constants.js";
 export type {
   D402BlockInfo,
   D402BroadcastedTx,
+  D402Adapter,
   D402ErrorDecoder,
   D402RpcClient,
   D402TxReceipt,

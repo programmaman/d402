@@ -42,7 +42,7 @@ export function resolveLatestBlockCacheTtlMs(
 
   if (!Number.isInteger(cache) || cache <= 0) {
     throw new Error(
-      `paymentConfig.cache must be a positive integer, got ${cache}`,
+      `payment.cache must be a positive integer, got ${cache}`,
     );
   }
 

@@ -1,16 +1,11 @@
-import { ABI } from "@rakelabs/dpayments-sdk";
-import type { AbiCodec } from "@rakelabs/dpayments-sdk";
-import type { PublicClient, WalletClient } from "viem";
+import {ABI} from "@rakelabs/dpayments-sdk";
+import type {PublicClient, WalletClient} from "viem";
 
-import type {
-  D402ErrorDecoder,
-  D402RpcClient,
-  D402TxSender,
-} from "d402/core";
-import { decodeViemError } from "@rakelabs/viem-adapter";
-import { createViemAbiCodec } from "./codec.js";
-import { createViemRpcClient } from "./rpc-client.js";
-import { createViemTxSender } from "./tx-sender.js";
+import type {D402Adapter, D402ErrorDecoder,} from "d402/core";
+import {decodeViemError} from "@rakelabs/viem-adapter";
+import {createViemAbiCodec} from "./codec.js";
+import {createViemRpcClient} from "./rpc-client.js";
+import {createViemTxSender} from "./tx-sender.js";
 
 export interface ViemAdapterOptions {
   publicClient: PublicClient;
@@ -18,16 +13,9 @@ export interface ViemAdapterOptions {
   confirmations?: number;
 }
 
-export interface ViemAdapter {
-  readonly rpcClient: D402RpcClient;
-  readonly codec: AbiCodec;
-  readonly errorDecoder: D402ErrorDecoder;
-  readonly txSender?: D402TxSender;
-}
-
 export function createViemAdapter(
   options: ViemAdapterOptions,
-): ViemAdapter {
+): D402Adapter {
   const rpcClient = createViemRpcClient(options.publicClient);
   const codec = createViemAbiCodec(ABI);
   const errorDecoder: D402ErrorDecoder = (error) =>
@@ -42,20 +30,10 @@ export function createViemAdapter(
           : { confirmations: options.confirmations }),
       });
 
-  const components: {
-    rpcClient: D402RpcClient;
-    codec: AbiCodec;
-    errorDecoder: D402ErrorDecoder;
-    txSender?: D402TxSender;
-  } = {
-    rpcClient,
-    codec,
-    errorDecoder,
-  };
-
-  if (txSender !== undefined) {
-    components.txSender = txSender;
-  }
-
-  return components;
+  return {
+      rpcClient,
+      codec,
+      errorDecoder,
+      ...(txSender === undefined ? {} : {txSender}),
+  } satisfies D402Adapter;
 }

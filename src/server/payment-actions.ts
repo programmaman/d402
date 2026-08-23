@@ -1,6 +1,5 @@
 import type {
   D402PaymentActionResult,
-  D402TxSender,
   PaymentAddress,
 } from "../core/index.js";
 import { createPinnedDPayments } from "../runtime/dpayments.js";
@@ -24,37 +23,25 @@ import type {
   PaymentActions,
   PaymentConfig,
 } from "./types.js";
-import type { D402Logger } from "../runtime/logger.js";
-
-type ResolvedPaymentConfig = PaymentConfig & {
-  txSender: D402TxSender;
-  logger: D402Logger;
-};
-
 const ACTION_TRANSACTION_FAILURE_MESSAGE =
   "DPayments action transaction failed after broadcast or was not mined successfully.";
 
 export function paymentActions(config: PaymentConfig): PaymentActions {
-  if (config.txSender === undefined) {
+  if (config.adapter.txSender === undefined) {
     throw new Error(
-      "paymentConfig.txSender is required for payment actions so the adapter can broadcast, retry, and confirm settlement, refund, consumption, evidence, or appeal transactions.",
+      "adapter.txSender is required for payment actions so the adapter can broadcast, retry, and confirm settlement, refund, consumption, evidence, or appeal transactions.",
     );
   }
-  const actionConfig: ResolvedPaymentConfig = {
-    ...config,
-    txSender: config.txSender,
-    logger: config.logger ?? NoopLogger,
-  };
   const broadcastInQueue = createBroadcastQueue();
 
   return {
     settlePayment(payment) {
       return executePaymentOperation(
-        actionConfig,
+        config,
         "settle",
         payment,
         () => sendPaymentAction(
-          actionConfig,
+          config,
           payment,
           "settle",
           broadcastInQueue,
@@ -63,11 +50,11 @@ export function paymentActions(config: PaymentConfig): PaymentActions {
     },
     refundPayment(payment) {
       return executePaymentOperation(
-        actionConfig,
+        config,
         "refund",
         payment,
         () => sendPaymentAction(
-          actionConfig,
+          config,
           payment,
           "refund",
           broadcastInQueue,
@@ -76,11 +63,11 @@ export function paymentActions(config: PaymentConfig): PaymentActions {
     },
     consumePayment(payment) {
       return executePaymentOperation(
-        actionConfig,
+        config,
         "consume",
         payment,
         () => sendPaymentAction(
-          actionConfig,
+          config,
           payment,
           "consume",
           broadcastInQueue,
@@ -89,11 +76,11 @@ export function paymentActions(config: PaymentConfig): PaymentActions {
     },
     submitEvidence(payment, evidenceUri) {
       return executePaymentOperation(
-        actionConfig,
+        config,
         "submit-evidence",
         payment,
         () => sendEvidenceAction(
-          actionConfig,
+          config,
           payment,
           evidenceUri,
           broadcastInQueue,
@@ -102,11 +89,11 @@ export function paymentActions(config: PaymentConfig): PaymentActions {
     },
     appealPayment(payment) {
       return executePaymentOperation(
-        actionConfig,
+        config,
         "appeal",
         payment,
         () => sendAppealAction(
-          actionConfig,
+          config,
           payment,
           broadcastInQueue,
         ),
@@ -116,7 +103,7 @@ export function paymentActions(config: PaymentConfig): PaymentActions {
 }
 
 async function executePaymentOperation<Result>(
-  config: ResolvedPaymentConfig,
+  config: PaymentConfig,
   operation: D402PaymentOperation,
   paymentAddress: PaymentAddress,
   execute: () => Promise<Result>,
@@ -124,15 +111,16 @@ async function executePaymentOperation<Result>(
   try {
     return await execute();
   } catch (cause) {
+    const logger = config.payment.logger ?? NoopLogger;
     const error = normalizePaymentExecutionError({
       operation,
       paymentAddress,
-      codec: config.codec,
-      errorDecoder: config.errorDecoder,
-      logger: config.logger,
+      codec: config.adapter.codec,
+      errorDecoder: config.adapter.errorDecoder,
+      logger,
       cause,
     });
-    emitLog(config.logger, {
+    emitLog(logger, {
       level: "error",
       event: "payment.execution.failed",
       message: "Payment execution failed.",
@@ -154,13 +142,15 @@ async function executePaymentOperation<Result>(
 }
 
 async function sendPaymentAction(
-  config: ResolvedPaymentConfig,
+  config: PaymentConfig,
   paymentAddress: PaymentAddress,
   action: "settle" | "refund" | "consume",
   broadcastInQueue: BroadcastQueue,
 ): Promise<D402PaymentActionResult> {
-  const walletAddress = await config.txSender.getAddress();
-  emitLog(config.logger, {
+  const txSender = config.adapter.txSender!;
+  const logger = config.payment.logger ?? NoopLogger;
+  const walletAddress = await txSender.getAddress();
+  emitLog(logger, {
     level: "debug",
     event: "payment.action.started",
     message: "Payment action started.",
@@ -171,8 +161,8 @@ async function sendPaymentAction(
     },
   });
   const dpayments = await createPinnedDPayments({
-    rpcClient: config.rpcClient,
-    codec: config.codec,
+    rpcClient: config.adapter.rpcClient,
+    codec: config.adapter.codec,
     walletAddress,
   });
   const dPayment = dpayments.dPayment(paymentAddress);
@@ -183,16 +173,16 @@ async function sendPaymentAction(
       : dPayment.consume(walletAddress);
   const response = await broadcastInQueue(() =>
     broadcastPreparedTransaction({
-      txSender: config.txSender,
+      txSender,
       tx,
-      onEvent: config.onEvent,
+      onEvent: config.payment.onEvent,
     }),
   );
   const receipt = await waitForSuccessfulReceipt(
     response,
     ACTION_TRANSACTION_FAILURE_MESSAGE,
   );
-  emitLog(config.logger, {
+  emitLog(logger, {
     level: "info",
     event: "payment.action.confirmed",
     message: "Payment action confirmed.",
@@ -208,13 +198,15 @@ async function sendPaymentAction(
 }
 
 async function sendEvidenceAction(
-  config: ResolvedPaymentConfig,
+  config: PaymentConfig,
   paymentAddress: PaymentAddress,
   evidenceUri: string,
   broadcastInQueue: BroadcastQueue,
 ): Promise<D402PaymentActionResult> {
-  const walletAddress = await config.txSender.getAddress();
-  emitLog(config.logger, {
+  const txSender = config.adapter.txSender!;
+  const logger = config.payment.logger ?? NoopLogger;
+  const walletAddress = await txSender.getAddress();
+  emitLog(logger, {
     level: "debug",
     event: "payment.evidence.started",
     message: "Payment evidence submission started.",
@@ -224,24 +216,24 @@ async function sendEvidenceAction(
     },
   });
   const dpayments = await createPinnedDPayments({
-    rpcClient: config.rpcClient,
-    codec: config.codec,
+    rpcClient: config.adapter.rpcClient,
+    codec: config.adapter.codec,
     walletAddress,
   });
   const dPayment = dpayments.dPayment(paymentAddress);
   const tx = dPayment.submitEvidence(evidenceUri, walletAddress);
   const response = await broadcastInQueue(() =>
     broadcastPreparedTransaction({
-      txSender: config.txSender,
+      txSender,
       tx,
-      onEvent: config.onEvent,
+      onEvent: config.payment.onEvent,
     }),
   );
   const receipt = await waitForSuccessfulReceipt(
     response,
     ACTION_TRANSACTION_FAILURE_MESSAGE,
   );
-  emitLog(config.logger, {
+  emitLog(logger, {
     level: "info",
     event: "payment.evidence.confirmed",
     message: "Payment evidence submission confirmed.",
@@ -256,12 +248,14 @@ async function sendEvidenceAction(
 }
 
 async function sendAppealAction(
-  config: ResolvedPaymentConfig,
+  config: PaymentConfig,
   paymentAddress: PaymentAddress,
   broadcastInQueue: BroadcastQueue,
 ): Promise<PaymentAppealResult> {
-  const walletAddress = await config.txSender.getAddress();
-  emitLog(config.logger, {
+  const txSender = config.adapter.txSender!;
+  const logger = config.payment.logger ?? NoopLogger;
+  const walletAddress = await txSender.getAddress();
+  emitLog(logger, {
     level: "debug",
     event: "payment.appeal.started",
     message: "Payment appeal started.",
@@ -271,8 +265,8 @@ async function sendAppealAction(
     },
   });
   const dpayments = await createPinnedDPayments({
-    rpcClient: config.rpcClient,
-    codec: config.codec,
+    rpcClient: config.adapter.rpcClient,
+    codec: config.adapter.codec,
     walletAddress,
   });
   const dPayment = dpayments.dPayment(paymentAddress);
@@ -282,16 +276,16 @@ async function sendAppealAction(
   );
   const response = await broadcastInQueue(() =>
     broadcastPreparedTransaction({
-      txSender: config.txSender,
+      txSender,
       tx: prepared.tx,
-      onEvent: config.onEvent,
+      onEvent: config.payment.onEvent,
     }),
   );
   const receipt = await waitForSuccessfulReceipt(
     response,
     ACTION_TRANSACTION_FAILURE_MESSAGE,
   );
-  emitLog(config.logger, {
+  emitLog(logger, {
     level: "info",
     event: "payment.appeal.confirmed",
     message: "Payment appeal confirmed.",

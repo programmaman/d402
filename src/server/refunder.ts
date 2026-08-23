@@ -39,19 +39,17 @@ export function refunder<
   }
   refundsSchema.parse(routeConfig.refunds);
 
-  const txSender = routeConfig.paymentConfig.txSender;
+  const txSender = routeConfig.adapter.txSender;
   if (txSender === undefined) {
     throw new Error(
-      "paymentConfig.txSender is required for refunder so the payee can broadcast refunds.",
+      "adapter.txSender is required for refunder so the payee can broadcast refunds.",
     );
   }
 
   const signerAddress = txSender.getAddress();
-  const authenticator = createDPaymentsAuthenticator(
-    routeConfig.paymentConfig,
-  );
-  const observer = createDPaymentsObserver(routeConfig.paymentConfig);
-  const actions = paymentActions(routeConfig.paymentConfig);
+  const authenticator = createDPaymentsAuthenticator(routeConfig);
+  const observer = createDPaymentsObserver(routeConfig);
+  const actions = paymentActions(routeConfig);
 
   return async function handleRefundRequest(request: Req): Promise<Response> {
     const parsed = await parseRefundRequest(request);

@@ -2,7 +2,6 @@ export { payable } from "./payable.js";
 export { refunder } from "./refunder.js";
 export { PaymentAuthorizer } from "./payment-authorizer.js";
 export { createDPaymentsObserver } from "./payment-verifier.js";
-export type { DPaymentsObserverOptions } from "./payment-verifier.js";
 export {
   decodeD402PaymentProof,
 } from "./payment-proof.js";
@@ -45,6 +44,7 @@ export type {
   AuthenticatedPayment,
   AuthenticatedPaymentContext,
   PaymentConfig,
+  PaymentOptions,
   PaymentIdentifier,
   PaymentAppealPeriod,
   PaymentAppealResult,

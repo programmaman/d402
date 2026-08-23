@@ -22,7 +22,7 @@ Use `payable()` when d402 can own the complete route:
 
 ```ts
 const route = payable({
-  paymentConfig,
+  ...paymentConfig,
   terms,
   handler,
 });
@@ -32,7 +32,7 @@ Use `PaymentAuthorizer` when your controller owns the surrounding work:
 
 ```ts
 const payment = new PaymentAuthorizer({
-  paymentConfig,
+  ...paymentConfig,
   terms,
 });
 

@@ -5,7 +5,6 @@ export {
 
 export {
   createViemAdapter,
-  type ViemAdapter,
   type ViemAdapterOptions,
 } from "./adapter.js";
 

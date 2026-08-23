@@ -1,6 +1,6 @@
 import type {
   Address,
-  D402ErrorDecoder,
+  D402Adapter,
   D402PaymentActionResult,
   D402PaymentChallenge,
   D402RefundRoute,
@@ -8,12 +8,9 @@ import type {
   D402BlockReference,
   D402EventHandler,
   D402PaymentRequest,
-  D402RpcClient,
-  D402TxSender,
   Hex32,
   PaymentAddress,
 } from "../core/index.js";
-import type { AbiCodec } from "@rakelabs/dpayments-sdk";
 import type { MulticallConfig } from "@rakelabs/dpayments-sdk";
 import type { D402Logger } from "../runtime/logger.js";
 import type { PaymentConsumer } from "./payment-consumer.js";
@@ -47,11 +44,7 @@ export type PaymentIdentifier =
   | "server"
   | "client";
 
-export interface PaymentConfig {
-  rpcClient: D402RpcClient;
-  codec: AbiCodec;
-  errorDecoder?: D402ErrorDecoder;
-  txSender?: D402TxSender;
+export interface PaymentOptions {
   confirmations?: number;
   settlementWindow?: number;
   settlementTimeUnixSec?: number;
@@ -61,6 +54,11 @@ export interface PaymentConfig {
   onEvent?: D402EventHandler;
   /** Trusted private-network or test-chain Multicall3 deployment. */
   multicall?: MulticallConfig;
+}
+
+export interface PaymentConfig {
+  adapter: D402Adapter;
+  payment: PaymentOptions;
 }
 
 export type PayableTerms<
@@ -272,8 +270,7 @@ export interface PayableRouteConfig<
   Req extends Request = Request,
   Result = void,
   Res = Response,
-> {
-  paymentConfig: PaymentConfig;
+> extends PaymentConfig {
   terms: PayableTermsResolver<Req>;
   handler: PayableHandler<Req, Result, Res>;
   verificationPolicy?: VerificationPolicy;

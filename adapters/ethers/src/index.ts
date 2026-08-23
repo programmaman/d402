@@ -5,7 +5,6 @@ export {
 
 export {
   createEthersAdapter,
-  type EthersAdapter,
   type EthersAdapterOptions,
 } from "./adapter.js";
 

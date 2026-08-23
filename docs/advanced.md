@@ -79,9 +79,8 @@ Use a string when the same payment terms protect one stable URL.
 
 ```ts
 const authorizationConfig = {
-  paymentConfig: {
-    provider,
-  },
+  adapter,
+  payment: {},
   terms: {
     ...terms,
     resource: "https://api.example.com/reports/monthly",
@@ -98,9 +97,8 @@ than the literal request URL.
 
 ```ts
 const authorizationConfig = {
-  paymentConfig: {
-    provider,
-  },
+  adapter,
+  payment: {},
   terms: {
     chainId: 100,
     payeeAddress,
@@ -122,7 +120,7 @@ The client defaults to matching the URL it retries. When the server uses a
 custom identifier, pass the same string or resolver as the client's `resource`
 option. Use a stable public URL pattern or opaque application identifier and
 constrain it with client policy. If each request needs a distinct payment
-identity, use `paymentConfig.identifier: "client"` or put a stable request or
+identity, use `payment.identifier: "client"` or put a stable request or
 order ID in `agreement.id`.
 
 ### Framework request metadata and request bodies
@@ -133,7 +131,8 @@ Use resolver context when a framework extends the standard `Request` type:
 import type { NextRequest } from "next/server";
 
 const authorizationConfig = {
-  paymentConfig: { provider },
+  adapter,
+  payment: {},
   terms: async (
     _request,
     { originalRequest, bodyRequest },
@@ -172,7 +171,7 @@ metadata and the clone for body reads so the handler retains its body.
 Both public forms enter the same authorizer:
 
 ```text
-payable({ authorization config, handler })
+payable({ adapter, payment, handler })
                    |
                    v
           PaymentAuthorizer.authorize(request)
@@ -253,7 +252,7 @@ to be available.
 import { FundedPayment } from "d402/server";
 
 const authorizationConfig = {
-  paymentConfig,
+  ...paymentConfig,
   terms,
   verificationPolicy: FundedPayment,
 } satisfies PaymentAuthorizationConfig;
@@ -286,7 +285,7 @@ authenticated payment request, proof, observed payment, and consumer result.
 
 ```ts
 const authorizationConfig = {
-  paymentConfig,
+  ...paymentConfig,
   terms,
 } satisfies PaymentAuthorizationConfig;
 
@@ -329,14 +328,14 @@ the server payment actions once and inject them into the consumer:
 ```ts
 import { Once, paymentActions } from "d402/server";
 
-const actions = paymentActions({ provider, signer: payee });
+const paymentConfig = {
+  adapter,
+  payment: { identifier: "client" },
+};
+const actions = paymentActions(paymentConfig);
 
 const authorizationConfig = {
-  paymentConfig: {
-    provider,
-    signer: payee,
-    identifier: "client",
-  },
+  ...paymentConfig,
   consumer: Once(actions),
   terms,
 } satisfies PaymentAuthorizationConfig;
@@ -438,7 +437,7 @@ const recovery: PaymentRecovery = async ({ payment }) => {
 };
 
 const authorizationConfig = {
-  paymentConfig,
+  ...paymentConfig,
   terms,
   recovery,
   consumer: Once(actions),
@@ -594,7 +593,7 @@ function DatabaseOnce(chainId: number): PaymentConsumer {
 }
 
 const authorizationConfig = {
-  paymentConfig,
+  ...paymentConfig,
   consumer: DatabaseOnce(chainId),
   terms,
 } satisfies PaymentAuthorizationConfig;
@@ -657,7 +656,7 @@ SKU, order state, agreement metadata, quotas, or server-side entitlements.
 import { None } from "d402/server";
 
 const authorizationConfig = {
-  paymentConfig,
+  ...paymentConfig,
   terms,
   consumer: None,
 } satisfies PaymentAuthorizationConfig;
@@ -676,7 +675,7 @@ Store a usage count when one payment buys a fixed number of uses.
 
 ```ts
 const authorizationConfig = {
-  paymentConfig,
+  ...paymentConfig,
   terms,
 } satisfies PaymentAuthorizationConfig;
 
@@ -857,7 +856,10 @@ The d402 server action helper also exposes common server-side lifecycle actions
 for consumers, workers, and recovery flows:
 
 ```ts
-const actions = paymentActions({ provider, signer });
+const actions = paymentActions({
+  adapter,
+  payment: {},
+});
 
 await actions.settlePayment(paymentAddress);
 await actions.refundPayment(paymentAddress);
@@ -897,7 +899,10 @@ const logger: D402Logger = (record) => {
   applicationLogger[record.level](record.context, record.message);
 };
 
-const actions = paymentActions({ provider, signer, logger });
+const actions = paymentActions({
+  adapter,
+  payment: { logger },
+});
 ```
 
 The same option is accepted by `createD402Client()` and
