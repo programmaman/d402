@@ -2,7 +2,6 @@ import { DPayments, FACTORY_ADDRESS } from "@rakelabs/dpayments-sdk";
 import type { AbiCodec } from "@rakelabs/dpayments-sdk";
 
 import type { D402RpcClient } from "../core/index.js";
-import { getConnectedChainId } from "./chain.js";
 
 const quickDisputablePayment = Object.freeze({
   address: "0x2813C7F3c4AABBa045e10f1eFAc835E342DE4E0A",
@@ -23,7 +22,7 @@ export interface CreatePinnedDPaymentsOptions {
 export async function createPinnedDPayments(
   options: CreatePinnedDPaymentsOptions,
 ): Promise<DPayments> {
-  const chainId = await getConnectedChainId(options.rpcClient);
+  const chainId = await options.rpcClient.getChainId();
   const walletAddress = options.walletAddress.toLowerCase();
   let walletCache = dpaymentsCache.get(options.rpcClient);
 

@@ -48,9 +48,6 @@ export function createD402Client(
   const policyRpcClient = options.policy === undefined
     ? undefined
     : requireRpcClient(options.rpcClient, "policy validation");
-  const connectedChainIdPromise = options.policy !== undefined
-    ? getConnectedChainId(policyRpcClient!)
-    : null;
   const onResponse = resolveResponseValidator(options.onResponse);
   const onAccepted = options.onAccepted ?? defaultPaymentActions.OnAccepted;
   const onRejected = options.onRejected ?? defaultPaymentActions.OnRejected;
@@ -109,9 +106,7 @@ export function createD402Client(
     });
 
     if (options.policy !== undefined) {
-      const connectedChainId = await (
-        connectedChainIdPromise ?? getConnectedChainId(policyRpcClient!)
-      );
+      const connectedChainId = await getConnectedChainId(policyRpcClient!);
       validatePaymentPolicy({
         paymentRequest,
         connectedChainId,

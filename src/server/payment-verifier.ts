@@ -57,19 +57,13 @@ export function createDPaymentsAuthenticator(
 ): PaymentAuthenticator {
   const events = new PaymentEvents(config.adapter.codec);
   const confirmations = config.payment.confirmations ?? D402_DEFAULT_CONFIRMATIONS;
-  let connectedChainId: Promise<number> | undefined;
-
-  function getVerifierChainId(): Promise<number> {
-    connectedChainId ??= getConnectedChainId(config.adapter.rpcClient);
-    return connectedChainId;
-  }
 
   return async function authenticateDPaymentsPayment(input) {
     const { paymentRequest } = input;
     const proof = input.dPaymentProof;
     const chainResult = await verifyChain(
       paymentRequest,
-      getVerifierChainId(),
+      getConnectedChainId(config.adapter.rpcClient),
     );
     if (!chainResult.ok) {
       return chainResult;
@@ -122,18 +116,16 @@ export function createDPaymentsAuthenticator(
 export function createDPaymentsObserver(
   config: PaymentConfig,
 ): PaymentObserver {
-  let reader: Promise<PaymentReader> | undefined;
   const inFlightPaymentStateReads = new Map<string, Promise<PaymentStateReadResult>>();
 
-  function getReader(): Promise<PaymentReader> {
-    reader ??= getConnectedChainId(config.adapter.rpcClient).then((chainId) =>
-      new PaymentReader(
-        config.adapter.rpcClient,
-        config.adapter.codec,
-        config.payment.multicall ?? getDPaymentsMulticallConfig(chainId),
-      ),
+  async function getReader(): Promise<PaymentReader> {
+    const chainId = await getConnectedChainId(config.adapter.rpcClient);
+
+    return new PaymentReader(
+      config.adapter.rpcClient,
+      config.adapter.codec,
+      config.payment.multicall ?? getDPaymentsMulticallConfig(chainId),
     );
-    return reader;
   }
 
   return async function observeDPaymentsPayment(context: Readonly<AuthenticatedPaymentContext>) {

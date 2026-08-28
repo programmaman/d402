@@ -2,6 +2,20 @@
 
 All notable public changes to d402 are documented here.
 
+## 0.4.1 - 2026-08-28
+
+### Runtime correctness
+
+- Chain-dependent operations now read the current chain ID from the injected
+  RPC client instead of reusing a value for the lifetime of the client or
+  server component.
+- The client no longer reads the chain ID during construction; policy checks
+  read it when a payment challenge is received.
+- Server payment observation now creates its chain-dependent reader using the
+  current chain, so provider network changes are not hidden by stale state.
+- Retained reuse of DPayments objects keyed by the current chain and wallet
+  address.
+
 ## 0.4.0 - 2026-08-22
 
 ### Provider-neutral integration
