@@ -1,0 +1,173 @@
+name: Pre-publish
+
+on:
+  push:
+    branches:
+      - "release/**"
+
+  pull_request:
+    branches:
+      - master
+    paths:
+      - "package.json"
+      - "package-lock.json"
+      - "CHANGELOG.md"
+      - "src/**"
+      - "adapters/**"
+      - ".github/workflows/publish.yml"
+      - ".github/workflows/pre-publish.yml"
+
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to validate, for example v0.4.1"
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pre-publish-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  pre-publish:
+    name: Validate release
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            adapters/ethers/package-lock.json
+            adapters/viem/package-lock.json
+
+      - name: Install root dependencies
+        run: npm ci
+
+      - name: Install adapter dependencies
+        run: |
+          npm --prefix adapters/ethers ci
+          npm --prefix adapters/viem ci
+
+      - name: Resolve release metadata
+        id: release
+        shell: bash
+        env:
+          RELEASE_TAG_INPUT: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+
+          PACKAGE_VERSION="$(node -p "require('./package.json').version")"
+
+          if [ -n "$RELEASE_TAG_INPUT" ]; then
+            case "$RELEASE_TAG_INPUT" in
+              v*) ;;
+              *)
+                echo "Release tag must begin with v, got: $RELEASE_TAG_INPUT"
+                exit 1
+                ;;
+            esac
+
+            RELEASE_TAG="$RELEASE_TAG_INPUT"
+            TAG_VERSION="${RELEASE_TAG#v}"
+          else
+            TAG_VERSION="$PACKAGE_VERSION"
+            RELEASE_TAG="v${PACKAGE_VERSION}"
+          fi
+
+          if [ "$TAG_VERSION" != "$PACKAGE_VERSION" ]; then
+            echo "Tag version ($TAG_VERSION) does not match package.json version ($PACKAGE_VERSION)."
+            exit 1
+          fi
+
+          if ! grep -q "^## ${PACKAGE_VERSION}\( \|$\)" CHANGELOG.md; then
+            echo "No CHANGELOG.md entry found for version ${PACKAGE_VERSION}."
+            exit 1
+          fi
+
+          awk -v version="$PACKAGE_VERSION" '
+            $0 ~ "^## " version "( |$)" { found=1; next }
+            found && /^## / { exit }
+            found { print }
+          ' CHANGELOG.md > release-notes.md
+
+          if ! grep -q '[^[:space:]]' release-notes.md; then
+            echo "CHANGELOG.md entry for ${PACKAGE_VERSION} is empty."
+            exit 1
+          fi
+
+          if [[ "$PACKAGE_VERSION" == *-* ]]; then
+            NPM_TAG="next"
+          else
+            NPM_TAG="latest"
+          fi
+
+          echo "version=$PACKAGE_VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag=$RELEASE_TAG" >> "$GITHUB_OUTPUT"
+          echo "npm_tag=$NPM_TAG" >> "$GITHUB_OUTPUT"
+
+          echo "Release tag: $RELEASE_TAG"
+          echo "Package version: $PACKAGE_VERSION"
+          echo "npm tag: $NPM_TAG"
+
+      - name: Verify release version is not already published
+        shell: bash
+        env:
+          RELEASE_VERSION: ${{ steps.release.outputs.version }}
+        run: |
+          set -euo pipefail
+
+          set +e
+          OUTPUT="$(npm view "d402@${RELEASE_VERSION}" version \
+            --registry=https://registry.npmjs.org 2>&1)"
+          STATUS=$?
+          set -e
+
+          if [ "$STATUS" -eq 0 ]; then
+            echo "d402@${RELEASE_VERSION} is already published."
+            echo "$OUTPUT"
+            exit 1
+          fi
+
+          if ! grep -qi "E404" <<< "$OUTPUT"; then
+            echo "Could not determine whether d402@${RELEASE_VERSION} is already published."
+            echo "$OUTPUT"
+            exit 1
+          fi
+
+          echo "d402@${RELEASE_VERSION} is not currently published."
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Build
+        run: npm run build
+
+      - name: Test adapters
+        run: npm run test:adapters
+
+      - name: Verify package contents
+        run: npm run pack:check
+
+      - name: Verify publish package
+        env:
+          NPM_TAG: ${{ steps.release.outputs.npm_tag }}
+        run: |
+          npm publish \
+            --dry-run \
+            --provenance \
+            --access public \
+            --tag "$NPM_TAG"
