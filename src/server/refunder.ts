@@ -39,14 +39,15 @@ export function refunder<
   }
   refundsSchema.parse(routeConfig.refunds);
 
-  const txSender = routeConfig.adapter.txSender;
-  if (txSender === undefined) {
+  const signer = routeConfig.adapter.signer;
+  const broadcaster = routeConfig.adapter.broadcaster;
+  if (signer === undefined || broadcaster === undefined) {
     throw new Error(
-      "adapter.txSender is required for refunder so the payee can broadcast refunds.",
+      "The configured adapter requires both signer and broadcaster for refunder.",
     );
   }
 
-  const signerAddress = txSender.getAddress();
+  const signerAddress = signer.getAddress();
   const authenticator = createDPaymentsAuthenticator(routeConfig);
   const observer = createDPaymentsObserver(routeConfig);
   const actions = paymentActions(routeConfig);
