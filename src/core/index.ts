@@ -26,7 +26,8 @@ export type {
   D402ErrorDecoder,
   D402RpcClient,
   D402TxReceipt,
-  D402TxSender,
+  D402Signer,
+  D402TxBroadcaster,
 } from "./adapter.js";
 export type {
   Address,
@@ -44,6 +45,8 @@ export type {
   D402RefundRoute,
   D402PaymentSaltValidation,
   DecimalString,
+  Hex,
   Hex32,
   PaymentAddress,
+  SignedTx,
 } from "./types.js";

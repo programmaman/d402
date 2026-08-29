@@ -9,7 +9,8 @@ import type {
   D402RefundRoute,
   D402RpcClient,
   D402EventHandler,
-  D402TxSender,
+  D402Signer,
+  D402TxBroadcaster,
   Hex32,
 } from "../core/index.js";
 import type { D402Logger } from "../runtime/logger.js";
@@ -60,7 +61,8 @@ export interface CreateD402ClientOptions {
   rpcClient?: D402RpcClient;
   codec?: AbiCodec;
   errorDecoder?: D402ErrorDecoder;
-  txSender?: D402TxSender;
+  signer?: D402Signer;
+  broadcaster?: D402TxBroadcaster;
   fetch?: typeof globalThis.fetch;
   proofHeaderName?: string;
   policy?: D402ClientPolicy;

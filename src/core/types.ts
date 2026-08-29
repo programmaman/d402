@@ -1,6 +1,8 @@
 import type { D402CanonicalSalt } from "./constants.js";
 
 export type Hex32 = `0x${string}`;
+export type Hex = `0x${string}`;
+export type SignedTx = Hex;
 export type Address = `0x${string}`;
 export type PaymentAddress = Address;
 export type DecimalString = `${bigint}`;

@@ -5,7 +5,8 @@ import type { D402EventHandler } from "../core/events.js";
 import type {
   D402BroadcastedTx,
   D402TxReceipt,
-  D402TxSender,
+  D402Signer,
+  D402TxBroadcaster,
 } from "../core/index.js";
 import { emitEvent } from "./events.js";
 
@@ -13,8 +14,9 @@ export type BroadcastQueue = <Result>(
   operation: () => Promise<Result>,
 ) => Promise<Result>;
 
-export interface BroadcastPreparedTransactionInput {
-  txSender: D402TxSender;
+export interface ExecutePreparedTransactionInput {
+  signer: D402Signer;
+  broadcaster: D402TxBroadcaster;
   tx: PreparedTx;
   onEvent?: D402EventHandler | undefined;
 }
@@ -36,15 +38,17 @@ export function createBroadcastQueue(): BroadcastQueue {
   };
 }
 
-export async function broadcastPreparedTransaction(
-  input: BroadcastPreparedTransactionInput,
+export async function executePreparedTransaction(
+  input: ExecutePreparedTransactionInput,
 ): Promise<D402BroadcastedTx> {
   emitEvent(
     input.onEvent,
     new TransactionPreparedEvent(input.tx),
   );
 
-  return input.txSender.broadcastTransaction(input.tx);
+  const signedTx = await input.signer.signTx(input.tx);
+
+  return input.broadcaster.broadcastTx(signedTx);
 }
 
 export async function waitForSuccessfulReceipt(

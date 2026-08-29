@@ -23,7 +23,8 @@ import type {
   D402PaymentActionResult,
   D402PaymentRequest,
   D402TxReceipt,
-  D402TxSender,
+  D402Signer,
+  D402TxBroadcaster,
   Hex32,
 } from "../core/index.js";
 import { createPinnedDPayments } from "../runtime/dpayments.js";
@@ -37,7 +38,7 @@ import type {
 import { findPaymentCreatedEvent } from "../runtime/payment-events.js";
 import {
   createBroadcastQueue,
-  broadcastPreparedTransaction,
+  executePreparedTransaction,
   waitForSuccessfulReceipt,
 } from "../runtime/transaction.js";
 import type { BroadcastQueue } from "../runtime/transaction.js";
@@ -51,7 +52,8 @@ export interface CreateDPaymentsExecutorOptions {
   rpcClient: D402RpcClient;
   codec: AbiCodec;
   errorDecoder?: D402ErrorDecoder;
-  txSender: D402TxSender;
+  signer: D402Signer;
+  broadcaster: D402TxBroadcaster;
   logger?: D402Logger;
   onEvent?: D402EventHandler;
 }
@@ -130,7 +132,7 @@ async function createDPaymentsPayment(
   broadcastInQueue: BroadcastQueue,
 ): Promise<D402CreatedPayment> {
   try {
-    const payerAddress = await options.txSender.getAddress();
+    const payerAddress = await options.signer.getAddress();
     const paymentSalt = paymentRequest.paymentSalt ?? createPaymentSalt();
     const paymentId = derivePaymentId(
       paymentRequest,
@@ -152,8 +154,9 @@ async function createDPaymentsPayment(
     }
     if ("approvalTx" in preparedPayment) {
       const approvalResponse = await broadcastInQueue(() =>
-        broadcastPreparedTransaction({
-          txSender: options.txSender,
+        executePreparedTransaction({
+          signer: options.signer,
+          broadcaster: options.broadcaster,
           tx: preparedPayment.approvalTx,
           onEvent: options.onEvent,
         }),
@@ -162,8 +165,9 @@ async function createDPaymentsPayment(
     }
 
     const createResponse = await broadcastInQueue(() =>
-      broadcastPreparedTransaction({
-        txSender: options.txSender,
+      executePreparedTransaction({
+        signer: options.signer,
+        broadcaster: options.broadcaster,
         tx: preparedPayment.creationTx,
         onEvent: options.onEvent,
       }),
@@ -207,7 +211,7 @@ async function preparePayment(
   paymentRequest: D402PaymentRequest,
   paymentId: Hex32,
 ): Promise<PreparedDpayment> {
-  const payerAddress = await options.txSender.getAddress();
+  const payerAddress = await options.signer.getAddress();
   const dpayments = await createPinnedDPayments({
     rpcClient: options.rpcClient,
     codec: options.codec,
@@ -270,7 +274,7 @@ async function sendSettlementAction(
   const action = "settle";
 
   try {
-    const walletAddress = await options.txSender.getAddress();
+    const walletAddress = await options.signer.getAddress();
     logPaymentActionStart(
       options.logger,
       action,
@@ -285,8 +289,9 @@ async function sendSettlementAction(
     const dPayment = dpayments.dPayment(payment.paymentAddress);
     const tx = dPayment.settle(walletAddress);
     const response = await broadcastInQueue(() =>
-      broadcastPreparedTransaction({
-        txSender: options.txSender,
+      executePreparedTransaction({
+        signer: options.signer,
+        broadcaster: options.broadcaster,
         tx,
         onEvent: options.onEvent,
       }),
@@ -332,7 +337,7 @@ async function raisePaymentDispute(
   broadcastInQueue: BroadcastQueue,
 ): Promise<D402PaymentActionResult> {
   try {
-    const walletAddress = await options.txSender.getAddress();
+    const walletAddress = await options.signer.getAddress();
     logPaymentActionStart(
       options.logger,
       "dispute",
@@ -369,8 +374,9 @@ async function raisePaymentDispute(
       },
     });
     const response = await broadcastInQueue(() =>
-      broadcastPreparedTransaction({
-        txSender: options.txSender,
+      executePreparedTransaction({
+        signer: options.signer,
+        broadcaster: options.broadcaster,
         tx: prepared.tx,
         onEvent: options.onEvent,
       }),
@@ -427,7 +433,7 @@ async function submitPaymentEvidence(
   }
 
   try {
-    const walletAddress = await options.txSender.getAddress();
+    const walletAddress = await options.signer.getAddress();
     logPaymentActionStart(
       options.logger,
       "submit-evidence",
@@ -442,8 +448,9 @@ async function submitPaymentEvidence(
     const dPayment = dpayments.dPayment(payment.paymentAddress);
     const tx = dPayment.submitEvidence(evidenceUri, walletAddress);
     const response = await broadcastInQueue(() =>
-      broadcastPreparedTransaction({
-        txSender: options.txSender,
+      executePreparedTransaction({
+        signer: options.signer,
+        broadcaster: options.broadcaster,
         tx,
         onEvent: options.onEvent,
       }),

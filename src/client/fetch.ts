@@ -286,9 +286,14 @@ function createDefaultExecutor(
       "createD402Client requires codec when executor is not provided and the client needs to create payments.",
     );
   }
-  if (options.txSender === undefined) {
+  if (options.signer === undefined) {
     throw new D402ConfigurationError(
-      "createD402Client requires txSender when executor is not provided and the client needs to create payments.",
+      "createD402Client requires signer when executor is not provided and the client needs to create payments.",
+    );
+  }
+  if (options.broadcaster === undefined) {
+    throw new D402ConfigurationError(
+      "createD402Client requires broadcaster when executor is not provided and the client needs to create payments.",
     );
   }
 
@@ -298,7 +303,8 @@ function createDefaultExecutor(
     ...(options.errorDecoder !== undefined
       ? { errorDecoder: options.errorDecoder }
       : {}),
-    txSender: options.txSender,
+    signer: options.signer,
+    broadcaster: options.broadcaster,
     ...(options.logger !== undefined
       ? { logger: options.logger }
       : {}),
