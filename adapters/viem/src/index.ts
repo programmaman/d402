@@ -9,5 +9,9 @@ export {
 } from "./adapter.js";
 
 export {
-  createViemTxSender,
-} from "./tx-sender.js";
+  createViemSigner,
+} from "./signer.js";
+
+export {
+  createViemTxBroadcaster,
+} from "./tx-broadcaster.js";

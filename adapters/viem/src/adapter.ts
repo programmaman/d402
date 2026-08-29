@@ -5,7 +5,8 @@ import type {D402Adapter, D402ErrorDecoder,} from "d402/core";
 import {decodeViemError} from "@rakelabs/viem-adapter";
 import {createViemAbiCodec} from "./codec.js";
 import {createViemRpcClient} from "./rpc-client.js";
-import {createViemTxSender} from "./tx-sender.js";
+import {createViemSigner} from "./signer.js";
+import {createViemTxBroadcaster} from "./tx-broadcaster.js";
 
 export interface ViemAdapterOptions {
   publicClient: PublicClient;
@@ -20,20 +21,24 @@ export function createViemAdapter(
   const codec = createViemAbiCodec(ABI);
   const errorDecoder: D402ErrorDecoder = (error) =>
     decodeViemError(error, codec);
-  const txSender = options.walletClient === undefined
+  const broadcaster = createViemTxBroadcaster({
+    publicClient: options.publicClient,
+    ...(options.confirmations === undefined
+      ? {}
+      : { confirmations: options.confirmations }),
+  });
+  const signer = options.walletClient === undefined
     ? undefined
-    : createViemTxSender({
+    : createViemSigner({
         publicClient: options.publicClient,
         walletClient: options.walletClient,
-        ...(options.confirmations === undefined
-          ? {}
-          : { confirmations: options.confirmations }),
       });
 
   return {
-      rpcClient,
-      codec,
-      errorDecoder,
-      ...(txSender === undefined ? {} : {txSender}),
+    rpcClient,
+    codec,
+    errorDecoder,
+    broadcaster,
+    ...(signer === undefined ? {} : { signer }),
   } satisfies D402Adapter;
 }

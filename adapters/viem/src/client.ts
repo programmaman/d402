@@ -3,18 +3,22 @@ import type {
   CreateD402ClientOptions,
   D402Client,
 } from "d402/client";
-import type { D402TxSender } from "d402/core";
+import type {
+  D402Signer,
+  D402TxBroadcaster,
+} from "d402/core";
 import type { PublicClient, WalletClient } from "viem";
 import { createViemAdapter } from "./adapter.js";
 
 export interface ViemClientOptions extends Omit<
   CreateD402ClientOptions,
-  "rpcClient" | "codec" | "errorDecoder" | "txSender"
+  "rpcClient" | "codec" | "errorDecoder" | "signer" | "broadcaster"
 > {
   publicClient: PublicClient;
   walletClient?: WalletClient;
   confirmations?: number;
-  txSender?: D402TxSender;
+  signer?: D402Signer;
+  broadcaster?: D402TxBroadcaster;
 }
 
 export function createViemClient(
@@ -24,7 +28,8 @@ export function createViemClient(
     publicClient,
     walletClient,
     confirmations,
-    txSender,
+    signer,
+    broadcaster,
     ...clientOptions
   } = options;
   const adapter = createViemAdapter({
@@ -40,8 +45,7 @@ export function createViemClient(
     ...(adapter.errorDecoder === undefined
       ? {}
       : { errorDecoder: adapter.errorDecoder }),
-    ...(txSender !== undefined
-      ? { txSender }
-      : adapter.txSender === undefined ? {} : { txSender: adapter.txSender }),
+    signer: signer ?? adapter.signer,
+    broadcaster: broadcaster ?? adapter.broadcaster,
   });
 }
