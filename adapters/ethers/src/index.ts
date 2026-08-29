@@ -9,5 +9,9 @@ export {
 } from "./adapter.js";
 
 export {
-  createEthersTxSender,
-} from "./tx-sender.js";
+  createEthersSigner,
+} from "./signer.js";
+
+export {
+  createEthersTxBroadcaster,
+} from "./tx-broadcaster.js";
