@@ -4,17 +4,19 @@ import type {
   CreateD402ClientOptions,
   D402Client,
 } from "d402/client";
-import type { D402TxSender } from "d402/core";
 import { createEthersAdapter } from "./adapter.js";
 
 export interface EthersClientOptions extends Omit<
   CreateD402ClientOptions,
-  "rpcClient" | "codec" | "errorDecoder"
+  | "rpcClient"
+  | "codec"
+  | "errorDecoder"
+  | "signer"
+  | "broadcaster"
 > {
   provider: AbstractProvider;
   signer?: Signer;
   confirmations?: number;
-  txSender?: D402TxSender;
 }
 
 /**
@@ -30,7 +32,6 @@ export function createEthersClient(
     provider,
     signer,
     confirmations,
-    txSender,
     ...clientOptions
   } = options;
   const adapter = createEthersAdapter({
@@ -46,8 +47,9 @@ export function createEthersClient(
     rpcClient: adapter.rpcClient,
     codec: adapter.codec,
     errorDecoder: adapter.errorDecoder,
-    ...(txSender !== undefined
-      ? { txSender }
-      : adapter.txSender === undefined ? {} : { txSender: adapter.txSender }),
+    ...(adapter.signer === undefined ? {} : { signer: adapter.signer }),
+    ...(adapter.broadcaster === undefined
+      ? {}
+      : { broadcaster: adapter.broadcaster }),
   });
 }

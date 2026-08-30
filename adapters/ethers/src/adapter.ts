@@ -1,11 +1,12 @@
 import {ABI} from "@rakelabs/dpayments-sdk";
-import type {AbstractProvider, Signer,} from "ethers";
+import type { AbstractProvider, Signer } from "ethers";
 
-import type {D402Adapter, D402ErrorDecoder,} from "d402/core";
+import type { D402Adapter, D402ErrorDecoder } from "d402/core";
 import {decodeEthersError} from "@rakelabs/ethers-adapter";
 import {createEthersAbiCodec} from "./codec.js";
 import {createEthersRpcClient} from "./rpc-client.js";
-import {createEthersTxSender} from "./tx-sender.js";
+import { createEthersSigner } from "./signer.js";
+import { createEthersTxBroadcaster } from "./tx-broadcaster.js";
 
 export interface EthersAdapterOptions {
   provider: AbstractProvider;
@@ -21,20 +22,24 @@ export function createEthersAdapter(
   const errorDecoder: D402ErrorDecoder = (error) =>
     decodeEthersError(error, codec);
 
-  const txSender = options.signer === undefined
+  const broadcaster = createEthersTxBroadcaster({
+    provider: options.provider,
+    ...(options.confirmations === undefined
+      ? {}
+      : { confirmations: options.confirmations }),
+  });
+  const signer = options.signer === undefined
     ? undefined
-    : createEthersTxSender({
+    : createEthersSigner({
         provider: options.provider,
         signer: options.signer,
-        ...(options.confirmations === undefined
-          ? {}
-          : { confirmations: options.confirmations }),
       });
 
   return {
     rpcClient,
     codec,
     errorDecoder,
-    ...(txSender === undefined ? {} : {txSender}),
+    broadcaster,
+    ...(signer === undefined ? {} : { signer }),
   } satisfies D402Adapter;
 }
