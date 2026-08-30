@@ -10,6 +10,12 @@ the retried request from its proof.
 npm install d402 @d402/ethers ethers
 ```
 
+For Viem:
+
+```sh
+npm install d402 @d402/viem viem
+```
+
 ## 1. Protect a complete route
 
 Use `payable()` when the protected handler can be expressed as a Fetch-style
