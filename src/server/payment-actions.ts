@@ -12,7 +12,7 @@ import type {
 } from "../runtime/payment-execution-error.js";
 import {
   createBroadcastQueue,
-  broadcastPreparedTransaction,
+  executePreparedTransaction,
   waitForSuccessfulReceipt,
 } from "../runtime/transaction.js";
 import type {
@@ -27,9 +27,11 @@ const ACTION_TRANSACTION_FAILURE_MESSAGE =
   "DPayments action transaction failed after broadcast or was not mined successfully.";
 
 export function paymentActions(config: PaymentConfig): PaymentActions {
-  if (config.adapter.txSender === undefined) {
+  const signer = config.adapter.signer;
+  const broadcaster = config.adapter.broadcaster;
+  if (signer === undefined || broadcaster === undefined) {
     throw new Error(
-      "adapter.txSender is required for payment actions so the adapter can broadcast, retry, and confirm settlement, refund, consumption, evidence, or appeal transactions.",
+      "The configured adapter requires both signer and broadcaster for payment actions.",
     );
   }
   const broadcastInQueue = createBroadcastQueue();
@@ -147,9 +149,10 @@ async function sendPaymentAction(
   action: "settle" | "refund" | "consume",
   broadcastInQueue: BroadcastQueue,
 ): Promise<D402PaymentActionResult> {
-  const txSender = config.adapter.txSender!;
+  const signer = config.adapter.signer!;
+  const broadcaster = config.adapter.broadcaster!;
   const logger = config.payment.logger ?? NoopLogger;
-  const walletAddress = await txSender.getAddress();
+  const walletAddress = await signer.getAddress();
   emitLog(logger, {
     level: "debug",
     event: "payment.action.started",
@@ -172,8 +175,9 @@ async function sendPaymentAction(
       ? dPayment.voluntaryRefund(walletAddress)
       : dPayment.consume(walletAddress);
   const response = await broadcastInQueue(() =>
-    broadcastPreparedTransaction({
-      txSender,
+    executePreparedTransaction({
+      signer,
+      broadcaster,
       tx,
       onEvent: config.payment.onEvent,
     }),
@@ -203,9 +207,10 @@ async function sendEvidenceAction(
   evidenceUri: string,
   broadcastInQueue: BroadcastQueue,
 ): Promise<D402PaymentActionResult> {
-  const txSender = config.adapter.txSender!;
+  const signer = config.adapter.signer!;
+  const broadcaster = config.adapter.broadcaster!;
   const logger = config.payment.logger ?? NoopLogger;
-  const walletAddress = await txSender.getAddress();
+  const walletAddress = await signer.getAddress();
   emitLog(logger, {
     level: "debug",
     event: "payment.evidence.started",
@@ -223,8 +228,9 @@ async function sendEvidenceAction(
   const dPayment = dpayments.dPayment(paymentAddress);
   const tx = dPayment.submitEvidence(evidenceUri, walletAddress);
   const response = await broadcastInQueue(() =>
-    broadcastPreparedTransaction({
-      txSender,
+    executePreparedTransaction({
+      signer,
+      broadcaster,
       tx,
       onEvent: config.payment.onEvent,
     }),
@@ -252,9 +258,10 @@ async function sendAppealAction(
   paymentAddress: PaymentAddress,
   broadcastInQueue: BroadcastQueue,
 ): Promise<PaymentAppealResult> {
-  const txSender = config.adapter.txSender!;
+  const signer = config.adapter.signer!;
+  const broadcaster = config.adapter.broadcaster!;
   const logger = config.payment.logger ?? NoopLogger;
-  const walletAddress = await txSender.getAddress();
+  const walletAddress = await signer.getAddress();
   emitLog(logger, {
     level: "debug",
     event: "payment.appeal.started",
@@ -275,8 +282,9 @@ async function sendAppealAction(
     walletAddress,
   );
   const response = await broadcastInQueue(() =>
-    broadcastPreparedTransaction({
-      txSender,
+    executePreparedTransaction({
+      signer,
+      broadcaster,
       tx: prepared.tx,
       onEvent: config.payment.onEvent,
     }),
