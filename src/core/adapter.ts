@@ -7,7 +7,7 @@ import type {
   RpcClient,
 } from "@rakelabs/dpayments-sdk";
 
-import type { Address, Hex32 } from "./types.js";
+import type { Address, Hex32, SignedTx } from "./types.js";
 
 export type D402ErrorDecoder = (
   error: unknown,
@@ -27,6 +27,24 @@ export interface D402BroadcastedTx {
   waitForReceipt(): Promise<D402TxReceipt>;
 }
 
+export type D402BroadcastResult =
+  | {
+      ok: true;
+      submission: D402BroadcastedTx;
+    }
+  | {
+      ok: false;
+      retryable: true;
+      reason: "nonce-conflict";
+      cause: unknown;
+    }
+  | {
+      ok: false;
+      retryable: false;
+      reason: string;
+      cause: unknown;
+    };
+
 export interface D402BlockInfo {
   readonly number: number;
   readonly timestamp: number;
@@ -38,15 +56,19 @@ export interface D402RpcClient extends RpcClient {
   getBlock(reference: ReadBlockReference): Promise<D402BlockInfo>;
 }
 
-export interface D402TxSender {
+export interface D402Signer {
   getAddress(): Promise<Address>;
-  /** Broadcasts a prepared transaction without waiting for confirmation. */
-  broadcastTransaction(tx: PreparedTx): Promise<D402BroadcastedTx>;
+  signTx(tx: PreparedTx): Promise<SignedTx>;
+}
+
+export interface D402TxBroadcaster {
+  broadcastTx(tx: SignedTx): Promise<D402BroadcastResult>;
 }
 
 export interface D402Adapter {
   readonly rpcClient: D402RpcClient;
   readonly codec: AbiCodec;
   readonly errorDecoder?: D402ErrorDecoder;
-  readonly txSender?: D402TxSender;
+  readonly signer?: D402Signer;
+  readonly broadcaster?: D402TxBroadcaster;
 }

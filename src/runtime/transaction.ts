@@ -5,7 +5,8 @@ import type { D402EventHandler } from "../core/events.js";
 import type {
   D402BroadcastedTx,
   D402TxReceipt,
-  D402TxSender,
+  D402Signer,
+  D402TxBroadcaster,
 } from "../core/index.js";
 import { emitEvent } from "./events.js";
 
@@ -13,11 +14,15 @@ export type BroadcastQueue = <Result>(
   operation: () => Promise<Result>,
 ) => Promise<Result>;
 
-export interface BroadcastPreparedTransactionInput {
-  txSender: D402TxSender;
+export interface ExecutePreparedTransactionInput {
+  signer: D402Signer;
+  broadcaster: D402TxBroadcaster;
   tx: PreparedTx;
   onEvent?: D402EventHandler | undefined;
 }
+
+const NONCE_RETRY_LIMIT = 3;
+const NONCE_RETRY_BASE_DELAY_MS = 300;
 
 export function createBroadcastQueue(): BroadcastQueue {
   let queue: Promise<unknown> = Promise.resolve();
@@ -36,15 +41,41 @@ export function createBroadcastQueue(): BroadcastQueue {
   };
 }
 
-export async function broadcastPreparedTransaction(
-  input: BroadcastPreparedTransactionInput,
+export async function executePreparedTransaction(
+  input: ExecutePreparedTransactionInput,
 ): Promise<D402BroadcastedTx> {
   emitEvent(
     input.onEvent,
     new TransactionPreparedEvent(input.tx),
   );
 
-  return input.txSender.broadcastTransaction(input.tx);
+  for (let attempt = 0; ; attempt += 1) {
+    const signedTx = await input.signer.signTx(input.tx);
+    const result = await input.broadcaster.broadcastTx(signedTx);
+
+    if (result.ok) {
+      return result.submission;
+    }
+
+    if (
+      !result.retryable ||
+      result.reason !== "nonce-conflict" ||
+      attempt >= NONCE_RETRY_LIMIT
+    ) {
+      throw result.cause;
+    }
+
+    await delay(
+      NONCE_RETRY_BASE_DELAY_MS * 2 ** attempt +
+      Math.floor(Math.random() * NONCE_RETRY_BASE_DELAY_MS),
+    );
+  }
+}
+
+function delay(milliseconds: number): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, milliseconds);
+  });
 }
 
 export async function waitForSuccessfulReceipt(
