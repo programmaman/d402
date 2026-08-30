@@ -165,10 +165,8 @@ type PaymentStateReadResult =
   | { ok: true; state: PaymentState }
   | { ok: false; reason: "provider-error"; cause: unknown };
 
-type TransactionReceipt = D402TxReceipt;
-
 type TransactionReceiptResult =
-  | { ok: true; receipt: TransactionReceipt }
+  | { ok: true; receipt: D402TxReceipt }
   | {
       ok: false;
       reason: "onchain-payment-not-found" | "provider-error";
@@ -194,14 +192,14 @@ async function readTransactionReceipt(
 async function verifyPaymentCreatedEvent(input: {
   paymentRequest: D402PaymentRequest;
   dPaymentProof: DPaymentProof;
-  receipt: TransactionReceipt;
+  receipt: D402TxReceipt;
   rpcClient: D402RpcClient;
   events: PaymentEvents;
   confirmations: number;
 }): Promise<
   | {
       ok: true;
-      receipt: TransactionReceipt;
+      receipt: D402TxReceipt;
       createdEvent: PaymentCreatedEvent;
       paymentId: Hex32;
       payerAddress: Address;
@@ -294,7 +292,7 @@ async function verifyPaymentCreatedEvent(input: {
 async function verifySettlementPolicy(input: {
   paymentRequest: D402PaymentRequest;
   settlementReference?: D402BlockReference;
-  receipt: TransactionReceipt;
+  receipt: D402TxReceipt;
   rpcClient: D402RpcClient;
   settlementWindow?: number;
 }): Promise<PaymentValidationResult> {
@@ -400,18 +398,13 @@ function readPaymentStateOnce(
   const pending = readPaymentState(reader, paymentAddress);
   inFlightPaymentStateReads.set(key, pending);
 
-  void pending.then(
-    () => {
-      if (inFlightPaymentStateReads.get(key) === pending) {
-        inFlightPaymentStateReads.delete(key);
-      }
-    },
-    () => {
-      if (inFlightPaymentStateReads.get(key) === pending) {
-        inFlightPaymentStateReads.delete(key);
-      }
-    },
-  );
+  const cleanup = () => {
+    if (inFlightPaymentStateReads.get(key) === pending) {
+      inFlightPaymentStateReads.delete(key);
+    }
+  };
+
+  void pending.then(cleanup, cleanup);
 
   return pending;
 }
@@ -431,7 +424,7 @@ function buildAuthenticatedPayment(
   proof: DPaymentProof,
   paymentId: Hex32,
   payerAddress: Address,
-  receipt: TransactionReceipt,
+  receipt: D402TxReceipt,
   confirmations?: number,
 ): AuthenticatedPayment {
   return {

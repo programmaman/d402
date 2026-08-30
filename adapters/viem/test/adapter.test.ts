@@ -1,20 +1,17 @@
-import { describe, expect, it, vi } from "vitest";
-import type { PreparedTx } from "@rakelabs/dpayments-sdk";
+import {describe, expect, it, vi} from "vitest";
+import type {PreparedTx} from "@rakelabs/dpayments-sdk";
 import {
+  type Account,
+  InvalidInputRpcError,
   NonceTooHighError,
   NonceTooLowError,
-  TransactionReceiptNotFoundError,
-  type Account,
   type PublicClient,
+  TransactionReceiptNotFoundError,
   type WalletClient,
 } from "viem";
 
-import {
-  createViemAdapter,
-  createViemSigner,
-  createViemTxBroadcaster,
-} from "../src/index.js";
-import { createViemRpcClient } from "../src/rpc-client.js";
+import {createViemAdapter, createViemSigner, createViemTxBroadcaster,} from "../src";
+import {createViemRpcClient} from "../src/rpc-client.js";
 
 const decodeViemError = vi.hoisted(() => vi.fn());
 vi.mock("@rakelabs/viem-adapter", async (importOriginal) => ({
@@ -178,6 +175,26 @@ describe("@d402/viem adapter", () => {
       cause,
     });
     expect(sendRawTransaction).toHaveBeenCalledTimes(1);
+  });
+
+  it("normalizes raw RPC nonce conflicts through Viem", async () => {
+    const cause = new InvalidInputRpcError(
+      new Error("Nonce too low. Expected nonce to be 8 but got 7."),
+    );
+    const sendRawTransaction = vi.fn().mockRejectedValue(cause);
+    const broadcaster = createViemTxBroadcaster({
+      publicClient: {
+        ...publicClient,
+        sendRawTransaction,
+      } as unknown as PublicClient,
+    });
+
+    await expect(broadcaster.broadcastTx("0xsigned")).resolves.toMatchObject({
+      ok: false,
+      retryable: true,
+      reason: "nonce-conflict",
+      cause,
+    });
   });
 
   it("classifies nonce-too-high errors as retryable without retrying", async () => {

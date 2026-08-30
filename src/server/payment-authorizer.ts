@@ -5,6 +5,7 @@ import {
 import {
   buildPaymentVerificationErrorReason,
   buildPaymentVerificationErrorResponse,
+  statusForPaymentFailure,
 } from "./payment-verification-error.js";
 import { readD402PaymentProofFromRequest } from "./payment-proof.js";
 import { buildServerPaymentRequest, resolvePayableTerms } from "./payment-request.js";
@@ -35,7 +36,11 @@ import {
 } from "./payment-verifier.js";
 import { None, type PaymentConsumer } from "./payment-consumer.js";
 import { FundedOrSettledPayment } from "./verification-policy.js";
-import { emitLog, NoopLogger } from "../runtime/logger.js";
+import {
+  describeError,
+  emitLog,
+  NoopLogger,
+} from "../runtime/logger.js";
 import type { D402Logger } from "../runtime/logger.js";
 
 export class PaymentAuthorizer<
@@ -295,17 +300,6 @@ export class PaymentAuthorizer<
   }
 }
 
-function describeError(error: unknown): Readonly<Record<string, unknown>> {
-  if (error instanceof Error) {
-    return {
-      name: error.name,
-      message: error.message,
-      ...(error.stack === undefined ? {} : { stack: error.stack }),
-    };
-  }
-  return { value: String(error) };
-}
-
 function buildChallengeResponse<Req extends Request, Result>(
   config: PaymentAuthorizationConfig<Req, Result>,
   paymentRequest: D402PaymentRequest,
@@ -329,21 +323,10 @@ function buildVerificationFailureResponse<Req extends Request, Result>(
   const builder = config.buildPaymentVerificationErrorResponse
     ?? buildPaymentVerificationErrorResponse;
   return builder({
-    status: statusForVerificationFailure(failure.reason),
+    status: statusForPaymentFailure(failure.reason),
     reason: buildPaymentVerificationErrorReason(failure.reason),
     failure,
   });
-}
-
-function statusForVerificationFailure(
-  reason: PaymentFailure["reason"],
-): 422 | 425 | 503 | 504 {
-  if (reason === "onchain-payment-not-found" || reason === "insufficient-confirmations") {
-    return 425;
-  }
-  if (reason === "provider-timeout") return 504;
-  if (reason === "provider-error" || reason === "reference-provider-error") return 503;
-  return 422;
 }
 
 function isTimeoutError(cause: unknown): boolean {

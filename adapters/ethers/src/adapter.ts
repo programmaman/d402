@@ -31,7 +31,6 @@ export function createEthersAdapter(
   const signer = options.signer === undefined
     ? undefined
     : createEthersSigner({
-        provider: options.provider,
         signer: options.signer,
       });
 

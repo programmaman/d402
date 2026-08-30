@@ -30,7 +30,6 @@ export function createViemAdapter(
   const signer = options.walletClient === undefined
     ? undefined
     : createViemSigner({
-        publicClient: options.publicClient,
         walletClient: options.walletClient,
       });
 

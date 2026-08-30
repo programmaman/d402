@@ -13,6 +13,20 @@ export type D402Logger = (
 
 export const NoopLogger: D402Logger = () => {};
 
+export function describeError(
+  error: unknown,
+): Readonly<Record<string, unknown>> {
+  if (error instanceof Error) {
+    return {
+      name: error.name,
+      message: error.message,
+      ...(error.stack === undefined ? {} : { stack: error.stack }),
+    };
+  }
+
+  return { value: String(error) };
+}
+
 export function emitLog(
   logger: D402Logger,
   record: D402LogRecord,

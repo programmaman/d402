@@ -72,53 +72,6 @@ export class D402PaymentExecutionError extends Error {
   }
 }
 
-export function decodePaymentError(
-  cause: unknown,
-  codec: AbiCodec,
-  logger: D402Logger = NoopLogger,
-): { name: string } | undefined {
-  const data = findErrorData(cause);
-  const decoded = data === undefined ? undefined : codec.decodeError(data);
-  emitLog(logger, {
-    level: "debug",
-    event: "payment.execution.error_decoder.completed",
-    message: "Fallback payment error decoder completed.",
-    context: {
-      decoder: "codec-fallback",
-      foundRevertData: data !== undefined,
-      revertSelector: data?.slice(0, 10),
-      decodedName: decoded?.name,
-      returnedUndefined: decoded === undefined,
-    },
-  });
-  return decoded;
-}
-
-function findErrorData(cause: unknown): `0x${string}` | undefined {
-  if (typeof cause !== "object" || cause === null) {
-    return undefined;
-  }
-
-  if ("data" in cause && typeof cause.data === "string" && isHexData(cause.data)) {
-    return cause.data;
-  }
-
-  if ("error" in cause) {
-    const nested = findErrorData(cause.error);
-    if (nested !== undefined) return nested;
-  }
-
-  if ("cause" in cause) {
-    return findErrorData(cause.cause);
-  }
-
-  return undefined;
-}
-
-function isHexData(value: string): value is `0x${string}` {
-  return /^0x[0-9a-fA-F]*$/.test(value);
-}
-
 function describeErrorForLog(value: unknown, depth = 0): unknown {
   if (value === null || typeof value !== "object") return value;
   if (depth >= 5) return "[truncated]";

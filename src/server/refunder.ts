@@ -16,7 +16,10 @@ import {
   createDPaymentsObserver,
   verifyPaymentSalt,
 } from "./payment-verifier.js";
-import { buildPaymentVerificationErrorReason } from "./payment-verification-error.js";
+import {
+  buildPaymentVerificationErrorReason,
+  statusForPaymentFailure,
+} from "./payment-verification-error.js";
 import type {
   PayableRouteConfig,
   PaymentFailure,
@@ -202,20 +205,4 @@ function refundHeaders(): HeadersInit {
     "Content-Type": D402_REFUND_REQUEST_CONTENT_TYPE,
     "Cache-Control": "no-store",
   };
-}
-
-function statusForPaymentFailure(
-  reason: PaymentFailureReason,
-): 422 | 425 | 503 | 504 {
-  if (
-    reason === "onchain-payment-not-found" ||
-    reason === "insufficient-confirmations"
-  ) {
-    return 425;
-  }
-  if (reason === "provider-timeout") return 504;
-  if (reason === "provider-error" || reason === "reference-provider-error") {
-    return 503;
-  }
-  return 422;
 }

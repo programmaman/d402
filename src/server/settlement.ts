@@ -99,8 +99,7 @@ function fixedSettlementTime(
   terms: ResolvedPayableTerms,
 ): D402PaymentRequest["settlementTimeUnixSec"] {
   if (config.payment.settlementTimeUnixSec !== undefined) return String(config.payment.settlementTimeUnixSec) as `${bigint}`;
-  const termTime = (terms as Partial<Pick<PayableTerms, "settlementTimeUnixSec">>)
-    .settlementTimeUnixSec;
+  const termTime = terms.settlementTimeUnixSec;
   if (termTime !== undefined) return termTime;
   throw new SettlementTimingConfigurationError(
     "settlementTimeUnixSec must be provided by payment.settlementWindow, payment.settlementTimeUnixSec, or terms.settlementTimeUnixSec",
@@ -122,8 +121,7 @@ export function validateSettlementTimingConfiguration(
   config: PaymentConfig,
   terms: PayableTerms,
 ): void {
-  const termTime = (terms as Partial<Pick<PayableTerms, "settlementTimeUnixSec">>)
-    .settlementTimeUnixSec;
+  const termTime = terms.settlementTimeUnixSec;
   if (config.payment.settlementWindow !== undefined && config.payment.settlementTimeUnixSec !== undefined) {
     throw new SettlementTimingConfigurationError(
       "payment.settlementWindow and payment.settlementTimeUnixSec cannot both be set; choose one source of settlement timing",

@@ -9,6 +9,7 @@ import {
   NonceTooLowError,
   type PublicClient,
 } from "viem";
+import { getNodeError } from "viem/utils";
 
 import { assertHex32 } from "./hash.js";
 import { normalizeViemReceipt } from "./receipt.js";
@@ -80,8 +81,8 @@ function isNonceConflict(error: unknown): boolean {
     return false;
   }
 
-  return error.walk((cause) =>
-    cause instanceof NonceTooLowError ||
-    cause instanceof NonceTooHighError
-  ) !== null;
+  const normalized = getNodeError(error, {});
+
+  return normalized instanceof NonceTooLowError ||
+    normalized instanceof NonceTooHighError;
 }

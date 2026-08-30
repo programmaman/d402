@@ -4,13 +4,11 @@ import type {
   SignedTx,
 } from "d402/core";
 import type {
-  AbstractProvider,
   Signer,
   TransactionRequest,
 } from "ethers";
 
 export interface EthersSignerOptions {
-  provider: AbstractProvider;
   signer: Signer;
 }
 

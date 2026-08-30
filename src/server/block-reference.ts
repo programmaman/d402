@@ -4,6 +4,7 @@ import type {
   Hex32,
 } from "../core/index.js";
 import {
+  describeError,
   emitLog,
   NoopLogger,
 } from "../runtime/logger.js";
@@ -26,7 +27,6 @@ export function toBlockReference(block: ResolvedBlock): D402BlockReference {
     blockTimestampUnixSec: String(block.timestamp) as `${bigint}`,
   };
 }
-
 export function sameBlockReference(
   left: D402BlockReference,
   right: D402BlockReference,
@@ -35,7 +35,6 @@ export function sameBlockReference(
     && left.blockHash.toLowerCase() === right.blockHash.toLowerCase()
     && left.blockTimestampUnixSec === right.blockTimestampUnixSec;
 }
-
 export async function readBlockReference(
   rpcClient: D402RpcClient,
   blockReference: Parameters<D402RpcClient["getBlock"]>[0],
@@ -86,15 +85,4 @@ function describeBlockReference(
   return typeof reference === "object"
     ? reference
     : String(reference);
-}
-
-function describeError(error: unknown): Readonly<Record<string, unknown>> {
-  if (error instanceof Error) {
-    return {
-      name: error.name,
-      message: error.message,
-      ...(error.stack === undefined ? {} : { stack: error.stack }),
-    };
-  }
-  return { value: String(error) };
 }

@@ -1,9 +1,8 @@
 import type { PreparedTx } from "@rakelabs/dpayments-sdk";
 import type { D402Signer } from "d402/core";
-import type { PublicClient, WalletClient } from "viem";
+import type { WalletClient } from "viem";
 
 export interface ViemSignerOptions {
-  publicClient: PublicClient;
   walletClient: WalletClient;
 }
 
@@ -12,19 +11,11 @@ export function createViemSigner(
 ): D402Signer {
   return {
     async getAddress() {
-      const account = options.walletClient.account;
+      const account = getAccount(options.walletClient);
 
-      if (account === undefined) {
-        throw new Error(
-          "Viem wallet client does not have an account.",
-        );
-      }
-
-      if (typeof account === "string") {
-        return account;
-      }
-
-      return account.address;
+      return typeof account === "string"
+        ? account
+        : account.address;
     },
 
     async signTx(transaction: PreparedTx) {

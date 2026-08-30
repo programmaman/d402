@@ -67,12 +67,11 @@ export function buildServerPaymentRequest(
 
 function completeTermsFromRequest(
   request: Request,
-  terms: PayableTerms,
+  terms: ResolvedPayableTerms,
   identifier: PaymentIdentifier | undefined,
 ): D402PaymentRequest {
-  const partialTerms = terms as Partial<D402PaymentRequest>;
-  const settlementTimeUnixSec = partialTerms.settlementTimeUnixSec;
-  const resolvedResource = partialTerms.resource ?? request.url;
+  const settlementTimeUnixSec = terms.settlementTimeUnixSec;
+  const resolvedResource = terms.resource ?? request.url;
 
   if (resolvedResource === undefined) {
     throw new Error(
@@ -87,9 +86,9 @@ function completeTermsFromRequest(
   }
 
   const completedRequest = {
-    version: partialTerms.version ?? D402_VERSION,
+    version: terms.version ?? D402_VERSION,
     resource: resolvedResource,
-    method: partialTerms.method ?? request.method,
+    method: terms.method ?? request.method,
     chainId: terms.chainId,
     payeeAddress: terms.payeeAddress,
     tokenAddress: terms.tokenAddress,

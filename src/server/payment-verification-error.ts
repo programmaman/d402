@@ -49,6 +49,22 @@ export function buildPaymentVerificationErrorReason(
   }
 }
 
+export function statusForPaymentFailure(
+  reason: PaymentFailureReason,
+): 422 | 425 | 503 | 504 {
+  if (
+    reason === "onchain-payment-not-found" ||
+    reason === "insufficient-confirmations"
+  ) {
+    return 425;
+  }
+  if (reason === "provider-timeout") return 504;
+  if (reason === "provider-error" || reason === "reference-provider-error") {
+    return 503;
+  }
+  return 422;
+}
+
 export function buildPaymentVerificationErrorResponse(
   init: PaymentVerificationErrorBuilderInput,
 ): Response {

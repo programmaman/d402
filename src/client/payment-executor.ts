@@ -601,14 +601,19 @@ function safeErrorContext(error: unknown): Readonly<Record<string, unknown>> {
     message?: unknown;
     code?: unknown;
   };
+  const context: Record<string, unknown> = {};
 
-  return {
-    ...(typeof known.name === "string" ? { errorName: known.name } : {}),
-    ...(typeof known.message === "string"
-      ? { errorMessage: known.message }
-      : {}),
-    ...(typeof known.code === "string" || typeof known.code === "number"
-      ? { errorCode: known.code }
-      : {}),
-  };
+  if (typeof known.name === "string") {
+    context.errorName = known.name;
+  }
+
+  if (typeof known.message === "string") {
+    context.errorMessage = known.message;
+  }
+
+  if (typeof known.code === "string" || typeof known.code === "number") {
+    context.errorCode = known.code;
+  }
+
+  return context;
 }
