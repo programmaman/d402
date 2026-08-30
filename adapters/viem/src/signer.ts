@@ -43,7 +43,7 @@ export function createViemSigner(
         });
 
       return options.walletClient.signTransaction(
-        preparedRequest,
+        preparedRequest as never,
       );
     },
   };

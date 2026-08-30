@@ -45,7 +45,11 @@ export function createViemClient(
     ...(adapter.errorDecoder === undefined
       ? {}
       : { errorDecoder: adapter.errorDecoder }),
-    signer: signer ?? adapter.signer,
-    broadcaster: broadcaster ?? adapter.broadcaster,
+    ...((signer ?? adapter.signer) === undefined
+      ? {}
+      : { signer: signer ?? adapter.signer }),
+    ...((broadcaster ?? adapter.broadcaster) === undefined
+      ? {}
+      : { broadcaster: broadcaster ?? adapter.broadcaster }),
   });
 }

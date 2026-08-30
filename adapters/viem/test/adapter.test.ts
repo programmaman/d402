@@ -1,8 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
 import type { PreparedTx } from "@rakelabs/dpayments-sdk";
 import {
-  TransactionReceiptNotFoundError,
+  NonceTooHighError,
   NonceTooLowError,
+  TransactionReceiptNotFoundError,
   type Account,
   type PublicClient,
   type WalletClient,
@@ -10,7 +11,8 @@ import {
 
 import {
   createViemAdapter,
-  createViemTxSender,
+  createViemSigner,
+  createViemTxBroadcaster,
 } from "../src/index.js";
 import { createViemRpcClient } from "../src/rpc-client.js";
 
@@ -23,6 +25,9 @@ vi.mock("@rakelabs/viem-adapter", async (importOriginal) => ({
 const publicClient = {
   call: vi.fn().mockResolvedValue({ data: "0x" }),
   estimateGas: vi.fn().mockResolvedValue(21_000n),
+  sendRawTransaction: vi.fn().mockResolvedValue(
+    "0x0000000000000000000000000000000000000000000000000000000000000001",
+  ),
   getLogs: vi.fn().mockResolvedValue([]),
   getChainId: vi.fn().mockResolvedValue(1),
   getBlock: vi.fn().mockResolvedValue({
@@ -60,7 +65,8 @@ describe("@d402/viem adapter", () => {
     expect(adapter.rpcClient).toBeDefined();
     expect(adapter.codec).toBeDefined();
     expect(adapter.errorDecoder).toBeTypeOf("function");
-    expect(adapter.txSender).toBeUndefined();
+    expect(adapter.signer).toBeUndefined();
+    expect(adapter.broadcaster).toBeDefined();
   });
 
   it("delegates provider error decoding to the Viem adapter", () => {
@@ -79,9 +85,8 @@ describe("@d402/viem adapter", () => {
         address: "0x0000000000000000000000000000000000000002",
       },
       chain: undefined,
-      sendTransaction: vi.fn().mockResolvedValue(
-        "0x0000000000000000000000000000000000000000000000000000000000000001",
-      ),
+      prepareTransactionRequest: vi.fn().mockResolvedValue({}),
+      signTransaction: vi.fn().mockResolvedValue("0xsigned"),
     } as unknown as WalletClient;
 
     const adapter = createViemAdapter({
@@ -89,7 +94,8 @@ describe("@d402/viem adapter", () => {
       walletClient,
     });
 
-    expect(adapter.txSender).toBeDefined();
+    expect(adapter.signer).toBeDefined();
+    expect(adapter.broadcaster).toBeDefined();
   });
 
   it("requires an account for transaction submission", async () => {
@@ -97,37 +103,119 @@ describe("@d402/viem adapter", () => {
       account: undefined,
       chain: undefined,
     } as unknown as WalletClient;
-    const sender = createViemTxSender({
+    const signer = createViemSigner({
       publicClient,
       walletClient,
     });
 
-    await expect(sender.getAddress()).rejects.toThrow(
-      "wallet client must have an account",
+    await expect(signer.getAddress()).rejects.toThrow(
+      "Viem wallet client does not have an account",
     );
   });
 
-  it("normalizes a successful Viem receipt", async () => {
+  it("signs a prepared transaction through the wallet client", async () => {
+    const prepareTransactionRequest = vi.fn().mockResolvedValue({
+      to: preparedTx.to,
+      data: preparedTx.data,
+      value: 0n,
+      chainId: preparedTx.chainId,
+    });
+    const signTransaction = vi.fn().mockResolvedValue("0xsigned");
     const walletClient = {
       account: {
         address: "0x0000000000000000000000000000000000000002",
       },
       chain: undefined,
-      sendTransaction: vi.fn().mockResolvedValue(
-        "0x0000000000000000000000000000000000000000000000000000000000000001",
-      ),
+      prepareTransactionRequest,
+      signTransaction,
     } as unknown as WalletClient;
-    const sender = createViemTxSender({
+    const signer = createViemSigner({ publicClient, walletClient });
+
+    await expect(signer.signTx(preparedTx)).resolves.toBe("0xsigned");
+    expect(prepareTransactionRequest).toHaveBeenCalledWith(
+      expect.objectContaining({
+        to: preparedTx.to,
+        data: preparedTx.data,
+        value: 0n,
+        chainId: preparedTx.chainId,
+      }),
+    );
+    expect(signTransaction).toHaveBeenCalled();
+  });
+
+  it("normalizes a successful Viem receipt", async () => {
+    const broadcaster = createViemTxBroadcaster({
       publicClient,
-      walletClient,
     });
 
-    const submission = await sender.broadcastTransaction(preparedTx);
-    await expect(submission.waitForReceipt()).resolves.toMatchObject({
+    const result = await broadcaster.broadcastTx("0xsigned");
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      throw new Error("Expected the transaction broadcast to succeed.");
+    }
+
+    await expect(result.submission.waitForReceipt()).resolves.toMatchObject({
       status: "success",
       blockNumber: 43,
       blockHash: "0x0000000000000000000000000000000000000000000000000000000000000002",
     });
+  });
+
+  it("returns a retryable result for a nonce conflict without retrying", async () => {
+    const cause = new NonceTooLowError({ nonce: 1 });
+    const sendRawTransaction = vi.fn().mockRejectedValue(cause);
+    const broadcaster = createViemTxBroadcaster({
+      publicClient: {
+        ...publicClient,
+        sendRawTransaction,
+      } as unknown as PublicClient,
+    });
+
+    await expect(broadcaster.broadcastTx("0xsigned")).resolves.toEqual({
+      ok: false,
+      retryable: true,
+      reason: "nonce-conflict",
+      cause,
+    });
+    expect(sendRawTransaction).toHaveBeenCalledTimes(1);
+  });
+
+  it("classifies nonce-too-high errors as retryable without retrying", async () => {
+    const cause = new NonceTooHighError({ nonce: 2 });
+    const sendRawTransaction = vi.fn().mockRejectedValue(cause);
+    const broadcaster = createViemTxBroadcaster({
+      publicClient: {
+        ...publicClient,
+        sendRawTransaction,
+      } as unknown as PublicClient,
+    });
+
+    await expect(broadcaster.broadcastTx("0xsigned")).resolves.toEqual({
+      ok: false,
+      retryable: true,
+      reason: "nonce-conflict",
+      cause,
+    });
+    expect(sendRawTransaction).toHaveBeenCalledTimes(1);
+  });
+
+  it("returns a fatal result for other broadcast errors without retrying", async () => {
+    const cause = new Error("insufficient funds");
+    const sendRawTransaction = vi.fn().mockRejectedValue(cause);
+    const broadcaster = createViemTxBroadcaster({
+      publicClient: {
+        ...publicClient,
+        sendRawTransaction,
+      } as unknown as PublicClient,
+    });
+
+    await expect(broadcaster.broadcastTx("0xsigned")).resolves.toEqual({
+      ok: false,
+      retryable: false,
+      reason: "broadcast-failed",
+      cause,
+    });
+    expect(sendRawTransaction).toHaveBeenCalledTimes(1);
   });
 
   it("looks up a block with its hash through the d402 RPC client", async () => {
@@ -141,95 +229,29 @@ describe("@d402/viem adapter", () => {
     expect(publicClient.getBlock).toHaveBeenCalled();
   });
 
-  it("passes a local account through to Viem", async () => {
+  it("passes a local account through to Viem signing", async () => {
     const account = {
       address: "0x0000000000000000000000000000000000000002",
       type: "local",
     } as Account;
-    const sendTransaction = vi.fn().mockResolvedValue(
-      "0x0000000000000000000000000000000000000000000000000000000000000001",
-    );
+    const prepareTransactionRequest = vi.fn().mockResolvedValue({});
+    const signTransaction = vi.fn().mockResolvedValue("0xsigned");
     const walletClient = {
       account,
       chain: undefined,
-      sendTransaction,
+      prepareTransactionRequest,
+      signTransaction,
     } as unknown as WalletClient;
-    const sender = createViemTxSender({
+    const signer = createViemSigner({
       publicClient,
       walletClient,
     });
 
-    await sender.broadcastTransaction(preparedTx);
+    await signer.signTx(preparedTx);
 
-    expect(sendTransaction).toHaveBeenCalledWith(
+    expect(prepareTransactionRequest).toHaveBeenCalledWith(
       expect.objectContaining({ account }),
     );
-  });
-
-  it("serializes concurrent broadcasts through one wallet client", async () => {
-    let releaseFirst: (() => void) | undefined;
-    const firstBroadcastStarted = new Promise<void>((resolve) => {
-      releaseFirst = resolve;
-    });
-    const sendTransaction = vi.fn()
-      .mockImplementationOnce(async () => {
-        await firstBroadcastStarted;
-        return "0x0000000000000000000000000000000000000000000000000000000000000001";
-      })
-      .mockResolvedValueOnce(
-        "0x0000000000000000000000000000000000000000000000000000000000000002",
-      );
-    const walletClient = {
-      account: {
-        address: "0x0000000000000000000000000000000000000002",
-      },
-      chain: undefined,
-      sendTransaction,
-    } as unknown as WalletClient;
-    const sender = createViemTxSender({
-      publicClient,
-      walletClient,
-    });
-
-    const first = sender.broadcastTransaction(preparedTx);
-    await vi.waitFor(() => expect(sendTransaction).toHaveBeenCalledOnce());
-    const second = sender.broadcastTransaction(preparedTx);
-    await new Promise((resolve) => setTimeout(resolve, 25));
-
-    const callsBeforeFirstRelease = sendTransaction.mock.calls.length;
-    releaseFirst?.();
-    await Promise.all([first, second]);
-    expect(callsBeforeFirstRelease).toBe(1);
-  });
-
-  it("re-estimates after a nonce conflict", async () => {
-    const sendTransaction = vi.fn()
-      .mockRejectedValueOnce(new NonceTooLowError({ nonce: 1 }))
-      .mockResolvedValueOnce(
-        "0x0000000000000000000000000000000000000000000000000000000000000006",
-      );
-    const estimateGas = vi.fn().mockResolvedValue(21_000n);
-    const walletClient = {
-      account: {
-        address: "0x0000000000000000000000000000000000000002",
-      },
-      chain: undefined,
-      sendTransaction,
-    } as unknown as WalletClient;
-    const sender = createViemTxSender({
-      publicClient: {
-        ...publicClient,
-        estimateGas,
-      },
-      walletClient,
-    });
-
-    await expect(sender.broadcastTransaction(preparedTx)).resolves.toMatchObject({
-      txHash:
-        "0x0000000000000000000000000000000000000000000000000000000000000006",
-    });
-    expect(estimateGas).toHaveBeenCalledTimes(2);
-    expect(sendTransaction).toHaveBeenCalledTimes(2);
   });
 
   it("reads a fresh block number after the chain advances", async () => {
