@@ -59,6 +59,13 @@ Key types:
 - `Hex32`
 - `DecimalString`
 - `PaymentAddress`
+- `PreparedTx`: an unsigned transaction produced by the dPayments SDK.
+- `SignedTx`: an opaque serialized signed transaction.
+- `D402Signer`: obtains the payer address and signs `PreparedTx` values.
+- `D402TxBroadcaster`: submits `SignedTx` values and returns
+  `D402BroadcastResult`.
+- `D402BroadcastResult`: a successful pending submission or a classified
+  retryable/non-retryable broadcast failure.
 
 ## `d402/client`
 
@@ -114,8 +121,9 @@ interface D402PaymentAttempt {
 
 `client.executor` is the executor the client uses. When `executor` is supplied
 to `createD402Client()`, it is the same instance. When the client creates the
-default executor from `signer` and `provider`, that created instance is exposed
-there instead. This makes explicit payment actions available in either setup:
+default executor from `signer` and `broadcaster`, that created instance is
+exposed there instead. This makes explicit payment actions available in either
+setup:
 
 ```ts
 const { response, payment } = await client.d402Fetch(url);
@@ -168,9 +176,12 @@ response validation or take payment actions.
 
 Important options:
 
-- `provider`: ethers provider used by the default executor and chain policy.
-  It is optional when a complete custom executor is supplied without policy.
-- `signer`: ethers signer used to create dPayment transactions.
+- `rpcClient`: chain reader used for policy checks and payment preparation.
+- `codec`: ABI codec used by the default executor and payment actions.
+- `errorDecoder`: optional provider-error decoder.
+- `signer`: `D402Signer` used to obtain the payer address and sign prepared
+  dPayment transactions.
+- `broadcaster`: `D402TxBroadcaster` used to submit signed transactions.
 - `fetch`: optional fetch implementation. Defaults to global `fetch`.
 - `proofHeaderName`: optional proof header override. Defaults to `D402-Payment-Proof`.
 - `confirmations`: confirmation depth used for payment creation and server actions.
@@ -258,8 +269,22 @@ Server responsibility:
 - verify payment proofs and on-chain state
 - run settlement, refund, consumption, evidence, or appeal actions with a server signer
 
+### `Facilitator`
+
+`Facilitator` is the native signed-transaction relay. It accepts a `SignedTx`,
+passes it to `D402TxBroadcaster.broadcastTx()`, and returns the resulting
+`D402BroadcastResult`. It does not inspect, sign, construct, or retry the
+transaction. Retry requires the original `PreparedTx` and payer signer, so it
+belongs to normal d402 runtime execution rather than this relay.
+
+```ts
+const facilitator = new Facilitator(serverAdapter.broadcaster!);
+const result = await facilitator.facilitate(signedTx);
+```
+
 ```ts
 import {
+  Facilitator,
   payable,
   None,
   Once,
@@ -365,7 +390,8 @@ await actions.appealPayment(paymentAddress);
 ```
 
 The configuration contains the provider-neutral `adapter` and the server
-`payment` options. The adapter must expose `txSender` for broadcast actions.
+`payment` options. The adapter must expose both `signer` and `broadcaster` for
+server payment actions.
 Reuse the returned object for payable consumers, lifecycle workers, and recovery
 flows that use that configuration.
 
@@ -377,9 +403,11 @@ nonce races. External coordination remains optional for sustained high-volume
 traffic or centralized custody.
 
 d402 does not wrap client or server signers in ethers `NonceManager`. When a
-broadcast fails with `NONCE_EXPIRED`, d402 makes up to three fresh
-gas-estimated attempts using bounded exponential backoff with jitter. Other
-provider, signer, and contract failures are not automatically retried.
+broadcast result reports a retryable nonce conflict, d402 makes up to three
+fresh signing attempts using bounded exponential backoff with jitter. The
+adapter classifies provider-specific errors; the runtime owns retry policy and
+never re-broadcasts the same signed transaction. Other provider, signer, and
+contract failures are not automatically retried.
 
 Client and server on-chain payment failures use the same
 `D402PaymentExecutionError` constructor, exported from both `d402/client` and
