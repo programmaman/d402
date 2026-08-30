@@ -1,6 +1,6 @@
 {
   "name": "@d402/ethers",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Ethers integration for d402.",
   "type": "module",
   "license": "Apache-2.0",
@@ -45,7 +45,7 @@
     "prepack": "npm run build"
   },
   "peerDependencies": {
-    "d402": "^0.4.0",
+    "d402": "^0.5.0",
     "ethers": "^6.17.0"
   },
   "dependencies": {
