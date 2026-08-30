@@ -21,6 +21,9 @@ export interface ExecutePreparedTransactionInput {
   onEvent?: D402EventHandler | undefined;
 }
 
+const NONCE_RETRY_LIMIT = 3;
+const NONCE_RETRY_BASE_DELAY_MS = 300;
+
 export function createBroadcastQueue(): BroadcastQueue {
   let queue: Promise<unknown> = Promise.resolve();
 
@@ -46,9 +49,33 @@ export async function executePreparedTransaction(
     new TransactionPreparedEvent(input.tx),
   );
 
-  const signedTx = await input.signer.signTx(input.tx);
+  for (let attempt = 0; ; attempt += 1) {
+    const signedTx = await input.signer.signTx(input.tx);
+    const result = await input.broadcaster.broadcastTx(signedTx);
 
-  return input.broadcaster.broadcastTx(signedTx);
+    if (result.ok) {
+      return result.submission;
+    }
+
+    if (
+      !result.retryable ||
+      result.reason !== "nonce-conflict" ||
+      attempt >= NONCE_RETRY_LIMIT
+    ) {
+      throw result.cause;
+    }
+
+    await delay(
+      NONCE_RETRY_BASE_DELAY_MS * 2 ** attempt +
+      Math.floor(Math.random() * NONCE_RETRY_BASE_DELAY_MS),
+    );
+  }
+}
+
+function delay(milliseconds: number): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, milliseconds);
+  });
 }
 
 export async function waitForSuccessfulReceipt(

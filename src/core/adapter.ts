@@ -27,6 +27,24 @@ export interface D402BroadcastedTx {
   waitForReceipt(): Promise<D402TxReceipt>;
 }
 
+export type D402BroadcastResult =
+  | {
+      ok: true;
+      submission: D402BroadcastedTx;
+    }
+  | {
+      ok: false;
+      retryable: true;
+      reason: "nonce-conflict";
+      cause: unknown;
+    }
+  | {
+      ok: false;
+      retryable: false;
+      reason: string;
+      cause: unknown;
+    };
+
 export interface D402BlockInfo {
   readonly number: number;
   readonly timestamp: number;
@@ -44,7 +62,7 @@ export interface D402Signer {
 }
 
 export interface D402TxBroadcaster {
-  broadcastTx(tx: SignedTx): Promise<D402BroadcastedTx>;
+  broadcastTx(tx: SignedTx): Promise<D402BroadcastResult>;
 }
 
 export interface D402Adapter {

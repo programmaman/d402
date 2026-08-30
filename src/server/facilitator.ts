@@ -1,5 +1,5 @@
 import type {
-  D402BroadcastedTx,
+  D402BroadcastResult,
   D402TxBroadcaster,
   SignedTx,
 } from "../core/index.js";
@@ -11,7 +11,7 @@ export class Facilitator {
 
   facilitate(
     signedTx: SignedTx,
-  ): Promise<D402BroadcastedTx> {
+  ): Promise<D402BroadcastResult> {
     return this.broadcaster.broadcastTx(signedTx);
   }
 }
