@@ -80,6 +80,7 @@ describe("@d402/ethers adapter", () => {
       ),
       populateTransaction,
       signTransaction,
+      sendTransaction: vi.fn(),
     } as unknown as Signer;
 
     const d402Signer = createEthersSigner({ provider, signer });
@@ -93,6 +94,7 @@ describe("@d402/ethers adapter", () => {
       from: "0x0000000000000000000000000000000000000002",
     });
     expect(signTransaction).toHaveBeenCalled();
+    expect(signer.sendTransaction).not.toHaveBeenCalled();
   });
 
   it("broadcasts a signed transaction through the provider", async () => {
@@ -117,13 +119,58 @@ describe("@d402/ethers adapter", () => {
       } as unknown as AbstractProvider,
     });
 
-    const submission = await broadcaster.broadcastTx("0xsigned");
+    const result = await broadcaster.broadcastTx("0xsigned");
 
     expect(broadcastTransaction).toHaveBeenCalledWith("0xsigned");
-    await expect(submission.waitForReceipt()).resolves.toMatchObject({
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      throw new Error("Expected the transaction broadcast to succeed.");
+    }
+
+    await expect(result.submission.waitForReceipt()).resolves.toMatchObject({
       txHash,
       status: "success",
     });
+  });
+
+  it("returns a retryable result for a nonce conflict without retrying", async () => {
+    const cause = Object.assign(new Error("nonce expired"), {
+      code: "NONCE_EXPIRED",
+    });
+    const broadcastTransaction = vi.fn().mockRejectedValue(cause);
+    const broadcaster = createEthersTxBroadcaster({
+      provider: {
+        ...provider,
+        broadcastTransaction,
+      } as unknown as AbstractProvider,
+    });
+
+    await expect(broadcaster.broadcastTx("0xsigned")).resolves.toEqual({
+      ok: false,
+      retryable: true,
+      reason: "nonce-conflict",
+      cause,
+    });
+    expect(broadcastTransaction).toHaveBeenCalledTimes(1);
+  });
+
+  it("returns a fatal result for other broadcast failures without retrying", async () => {
+    const cause = new Error("insufficient funds");
+    const broadcastTransaction = vi.fn().mockRejectedValue(cause);
+    const broadcaster = createEthersTxBroadcaster({
+      provider: {
+        ...provider,
+        broadcastTransaction,
+      } as unknown as AbstractProvider,
+    });
+
+    await expect(broadcaster.broadcastTx("0xsigned")).resolves.toEqual({
+      ok: false,
+      retryable: false,
+      reason: "broadcast-failed",
+      cause,
+    });
+    expect(broadcastTransaction).toHaveBeenCalledTimes(1);
   });
 
   it("normalizes a successful receipt", () => {

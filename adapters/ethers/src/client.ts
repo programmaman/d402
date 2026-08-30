@@ -48,6 +48,8 @@ export function createEthersClient(
     codec: adapter.codec,
     errorDecoder: adapter.errorDecoder,
     ...(adapter.signer === undefined ? {} : { signer: adapter.signer }),
-    broadcaster: adapter.broadcaster,
+    ...(adapter.broadcaster === undefined
+      ? {}
+      : { broadcaster: adapter.broadcaster }),
   });
 }
