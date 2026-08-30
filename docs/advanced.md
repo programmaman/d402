@@ -818,6 +818,11 @@ contract.
 If the app needs lower-level lifecycle actions outside d402's proof
 verification path, call the dPayment SDK directly from the server side.
 
+The following examples intentionally use the dPayments SDK and the raw Ethers
+provider directly. They bypass d402's `D402Signer`, `D402TxBroadcaster`, and
+runtime retry policy. Use `paymentActions()` when you want d402's normal
+prepared/sign/broadcast flow and centralized nonce-conflict retry.
+
 ```ts
 import { DPayments } from "@rakelabs/dpayments-sdk";
 
@@ -830,12 +835,13 @@ Settle after the settlement time has passed.
 
 ```ts
 const tx = payment.settle(walletAddress);
-const response = await signer.sendTransaction({
+const signedTx = await signer.signTransaction({
   to: tx.to,
   data: tx.data,
   value: BigInt(tx.value),
   chainId: tx.chainId,
 });
+const response = await provider.broadcastTransaction(signedTx);
 await response.wait();
 ```
 
@@ -843,12 +849,13 @@ Refund before settlement if the server cannot fulfill the paid request.
 
 ```ts
 const tx = payment.voluntaryRefund(walletAddress);
-const response = await signer.sendTransaction({
+const signedTx = await signer.signTransaction({
   to: tx.to,
   data: tx.data,
   value: BigInt(tx.value),
   chainId: tx.chainId,
 });
+const response = await provider.broadcastTransaction(signedTx);
 await response.wait();
 ```
 
@@ -875,7 +882,9 @@ canonical on-chain one-shot consumption.
 
 d402 leaves nonce selection entirely to the signer supplied by the
 integrator. It does not wrap signers in ethers `NonceManager`, assign explicit
-nonces, or retain nonce state.
+nonces, or retain nonce state. Provider-specific submission errors are
+classified by the broadcaster, while the d402 runtime owns bounded retry
+policy.
 
 Client executors and server action helpers privately order broadcasts made
 through the same object. Independent helpers and server processes may also

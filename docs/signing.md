@@ -1,7 +1,19 @@
 # Signing Modes
 
-d402 does not own wallet connection UI. The client sends dPayment transactions
-through the `ethers` signer that the app provides.
+d402 does not own wallet connection UI. The client prepares a dPayment
+transaction, asks the `ethers` signer to sign it, and uses the adapter
+broadcaster to submit the serialized transaction.
+
+The provider-neutral boundary is:
+
+```text
+PreparedTx -> D402Signer.signTx() -> SignedTx
+SignedTx   -> D402TxBroadcaster.broadcastTx() -> D402BroadcastResult
+```
+
+For normal client and server actions, d402 retries a classified nonce conflict
+by asking the signer for a fresh signature. A facilitator only relays a
+supplied `SignedTx` once and therefore cannot perform that retry.
 
 This lets the same client work for web3 users, web2 services, and agents.
 
@@ -14,18 +26,19 @@ the protected handler.
 
 Use your app's wallet connector to get an ethers signer. Browser wallets,
 WalletConnect, and hardware wallets can prompt the user when
-`signer.sendTransaction(...)` is called.
+`signer.signTransaction(...)` is called by the d402 adapter.
 
 ```ts
 import { BrowserProvider } from "ethers";
-import { createD402Client, D402PaymentAction } from "d402/client";
+import { createEthersClient } from "@d402/ethers";
+import { D402PaymentAction } from "d402/client";
 
 const provider = new BrowserProvider(window.ethereum);
 
 await provider.send("eth_requestAccounts", []);
 const signer = await provider.getSigner();
 
-const client = await createD402Client({
+const client = await createEthersClient({
   provider,
   signer,
   policy: {
@@ -47,17 +60,19 @@ const response = await client.fetch("/api/reports/123");
 ## Web2 Services
 
 Use a programmatic signer when the app owns payment execution. This can be an
-`ethers.Wallet`, KMS signer, custodial wallet, or another signer that can send
-transactions without wallet popups.
+`ethers.Wallet`, KMS signer, custodial wallet, or another signer that can sign
+transactions without wallet popups. The adapter broadcasts the serialized
+signature through its provider.
 
 ```ts
 import { JsonRpcProvider, Wallet } from "ethers";
-import { createD402Client, D402PaymentAction } from "d402/client";
+import { createEthersClient } from "@d402/ethers";
+import { D402PaymentAction } from "d402/client";
 
 const provider = new JsonRpcProvider(process.env.RPC_URL);
 const signer = new Wallet(process.env.PAYER_PRIVATE_KEY, provider);
 
-const client = await createD402Client({
+const client = await createEthersClient({
   provider,
   signer,
   policy: {

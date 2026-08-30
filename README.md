@@ -172,11 +172,11 @@ the provider:
 
 ```ts
 import { JsonRpcProvider, Wallet } from "ethers";
-import { createD402Client } from "d402/client";
+import { createEthersClient } from "@d402/ethers";
 
 const provider = new JsonRpcProvider(process.env.RPC_URL);
 const signer = new Wallet(process.env.PAYER_PRIVATE_KEY, provider);
-const client = await createD402Client({ provider, signer });
+const client = await createEthersClient({ provider, signer });
 
 const response = await client.fetch(
   "https://api.example.com/reports/monthly",
@@ -187,12 +187,12 @@ In a browser, use the signer exposed by MetaMask or another EIP-1193 wallet:
 
 ```ts
 import { BrowserProvider } from "ethers";
-import { createD402Client } from "d402/client";
+import { createEthersClient } from "@d402/ethers";
 
 const provider = new BrowserProvider(window.ethereum);
 await provider.send("eth_requestAccounts", []);
 const signer = await provider.getSigner();
-const client = await createD402Client({ provider, signer });
+const client = await createEthersClient({ provider, signer });
 
 const response = await client.fetch(
   "https://api.example.com/reports/monthly",
@@ -200,8 +200,49 @@ const response = await client.fetch(
 ```
 
 The client signer is always the payer. Browser wallets prompt the user when
-d402 sends a payment transaction; ERC-20 payments may also require a separate
+d402 signs a payment transaction; ERC-20 payments may also require a separate
 token approval transaction.
+
+## Native facilitation
+
+Native facilitation separates signing from submission. The payment builder or
+executor produces an unsigned `PreparedTx`, the payer's `D402Signer` signs it,
+and the server's `D402TxBroadcaster` submits the opaque serialized `SignedTx`:
+
+```text
+PreparedTx
+  -> D402Signer.signTx()
+  -> SignedTx
+  -> D402TxBroadcaster.broadcastTx()
+  -> D402BroadcastResult
+```
+
+The client and server may use separate provider connections. For example, the
+client-side adapter can sign while a server-side, read-only adapter broadcasts:
+
+```ts
+import { createEthersAdapter } from "@d402/ethers";
+import { Facilitator } from "d402/server";
+
+const payerAdapter = createEthersAdapter({
+  provider: payerProvider,
+  signer: payerWallet,
+});
+const serverAdapter = createEthersAdapter({ provider: serverProvider });
+
+const signedTx = await payerAdapter.signer!.signTx(preparedTx);
+const facilitator = new Facilitator(serverAdapter.broadcaster!);
+const result = await facilitator.facilitate(signedTx);
+
+if (result.ok) {
+  await result.submission.waitForReceipt();
+}
+```
+
+The facilitator makes one broadcast attempt. It does not sign, construct,
+repair, or retry the transaction because it receives no `PreparedTx` or signer.
+Normal d402 client and server action execution owns nonce-conflict retry in the
+runtime and obtains a fresh signature for each retry.
 
 Use `client.d402Fetch()` when the completed payment attempt must be persisted
 for application recovery or later lifecycle decisions.

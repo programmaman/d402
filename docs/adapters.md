@@ -2,13 +2,14 @@
 
 d402 core is provider-neutral. It does not construct Ethers providers,
 Viem clients, wallets, transaction requests, receipts, or provider-specific
-errors. A provider integration supplies four capabilities:
+errors. A provider integration supplies five capabilities:
 
 ```ts
 rpcClient   // chain reads and normalized receipts
 codec       // ABI and event encoding/decoding
 errorDecoder // provider error -> decoded contract error
-txSender    // transaction preparation, broadcast, retry, and confirmation
+signer      // payer address lookup and transaction signing
+broadcaster // signed transaction broadcast and receipt waiting
 ```
 
 The official integrations are `@d402/ethers` and `@d402/viem`.
@@ -114,21 +115,67 @@ capabilities must be shared by multiple d402 components.
 
 The same `adapter` object can be placed in the `PaymentConfig` passed to
 `paymentActions()` and `payable()` for server-side lifecycle actions. A
-read-only adapter omits
-`walletClient` and therefore does not expose `txSender`; it is suitable for
-verification-only integrations, not for payment creation or server actions.
+read-only adapter omits `walletClient` and therefore does not expose `signer`;
+it is suitable for verification-only integrations, not for payment creation or
+server actions. Its `broadcaster` can still relay an already-signed
+transaction through native facilitation.
 
 ## Confirmation and error behavior
 
-Client transaction confirmation depth is configured when creating the adapter.
-Server verification and action confirmation depth belongs in
-`PaymentConfig.payment`. The adapter owns provider-specific nonce, gas,
-receipt, confirmation, and retry behavior for the transactions it sends.
+The transaction boundary is:
+
+```text
+PreparedTx
+  -> signer.signTx()
+  -> SignedTx
+  -> broadcaster.broadcastTx()
+  -> D402BroadcastResult
+```
+
+`signer` handles payer identity, transaction preparation, and signing.
+`broadcaster` handles one raw submission attempt and receipt waiting. Its
+result is either a pending `D402BroadcastedTx` submission or a structured
+failure. Server verification and action confirmation depth belongs in
+`PaymentConfig.payment`.
+
+For ordinary client and server action execution, d402 runtime code owns
+nonce-conflict retry. It requests a fresh signature before each retry; an
+adapter never retries or re-broadcasts the same `SignedTx`. A facilitator
+relays a supplied `SignedTx` once and returns the broadcaster result directly.
 
 Contract errors are decoded by the adapter's `errorDecoder` and normalized by
 d402 into `D402PaymentExecutionError`. d402 core does not inspect Ethers or
 Viem exception classes.
 
 For custom integrations, implement the same neutral capabilities directly and
-pass them to `createD402Client`, or place them in the `adapter` property of the
-`PaymentConfig` passed to `paymentActions` or `payable`.
+pass `signer` and `broadcaster` to `createD402Client`, or place them in the
+`adapter` property of the `PaymentConfig` passed to `paymentActions` or
+`payable`.
+
+## Native facilitation
+
+The client can sign a prepared transaction and send the opaque serialized
+transaction to a server. The server only needs a broadcaster. Keep the
+provider-specific wallet signer and the provider-neutral d402 signer distinct:
+
+```ts
+import { createEthersAdapter } from "@d402/ethers";
+import { Facilitator } from "d402/server";
+
+const payerAdapter = createEthersAdapter({
+  provider: payerProvider,
+  signer: payerWallet,
+});
+const serverAdapter = createEthersAdapter({ provider: serverProvider });
+
+const signedTx = await payerAdapter.signer!.signTx(preparedTx);
+const facilitator = new Facilitator(serverAdapter.broadcaster!);
+const result = await facilitator.facilitate(signedTx);
+
+if (!result.ok) {
+  console.error(result.reason, result.retryable);
+}
+```
+
+Handle `result.ok === false` according to its `retryable` flag. The facilitator
+does not retry a failed submission because it cannot create a new signature.

@@ -1,23 +1,30 @@
 # Upcoming Features
 
-## Facilitation
+## Native facilitation in 0.5.0
 
-Move payment execution and chain interaction to the server.
+Native signed-transaction facilitation is available in 0.5.0. The client (or
+another trusted payer service) creates and signs a `PreparedTx`, sends the
+opaque `SignedTx` to the server, and `Facilitator` relays it through a
+`D402TxBroadcaster`.
 
-Clients should not need:
+The native facilitator:
 
-- an RPC provider;
-- blockchain state reads;
-- transaction confirmation polling;
-- chain-specific payment logic.
+- accepts one `SignedTx`;
+- makes one broadcast attempt;
+- returns `D402BroadcastResult`;
+- does not sign, construct, inspect, or retry the transaction.
 
-The server or facilitator would create, observe, settle, and recover payments,
-then return the proof needed for the protected request. This should make edge
-clients lighter, reduce latency and RPC traffic, centralize payment recovery,
-and give the server a more canonical view of payment state.
+Normal d402 client and server action execution retains the prepared/sign/
+broadcast flow and performs bounded nonce-conflict retry by requesting a fresh
+signature. Alchemy/ERC-4337 execution and server-created transactions remain
+future work and are intentionally outside 0.5.0.
 
-The design must preserve client-approved terms, auditable payment creation,
-safe retry semantics, and independent verification where appropriate.
+## Future facilitation work
+
+Future work may move payment creation, chain reads, confirmation polling, or
+contract lifecycle actions to a server or specialized facilitator. Any such
+flow must preserve client-approved terms, auditable payment creation, safe
+retry semantics, and independent verification where appropriate.
 
 ## Autosigner flows
 
