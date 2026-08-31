@@ -31,6 +31,11 @@ export type {
   D402TxBroadcaster,
 } from "./adapter.js";
 export type {
+  D402Facilitator,
+  D402FacilitatorAdvertisement,
+  D402FacilitatorAdvertisements,
+} from "./facilitator.js";
+export type {
   Address,
   D402Agreement,
   D402BlockReference,

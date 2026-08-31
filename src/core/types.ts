@@ -1,4 +1,5 @@
 import type { D402CanonicalSalt } from "./constants.js";
+import type { D402FacilitatorAdvertisements } from "./facilitator.js";
 
 export type Hex32 = `0x${string}`;
 export type Hex = `0x${string}`;
@@ -75,6 +76,7 @@ export interface D402RefundRequest {
 
 export interface D402PaymentChallenge {
   paymentRequest: D402PaymentRequest;
+  facilitation?: D402FacilitatorAdvertisements;
   settlementReference?: D402BlockReference;
   reason: D402PaymentRequiredReason;
   refunds?: D402RefundRoute;

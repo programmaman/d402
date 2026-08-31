@@ -123,9 +123,20 @@ export const refundsSchema = z
   .strict()
   .transform((parsed): D402RefundRoute => ({ url: parsed.url }));
 
+export const facilitatorAdvertisementSchema = z.record(
+  z.string(),
+  z.unknown(),
+);
+
+export const facilitatorsSchema = z.record(
+  z.string(),
+  facilitatorAdvertisementSchema,
+);
+
 export const paymentChallengeSchema = z
   .object({
     paymentRequest: paymentRequestSchema,
+    facilitation: facilitatorsSchema.optional(),
     settlementReference: blockReferenceSchema.optional(),
     reason: paymentRequiredReasonSchema,
     refunds: refundsSchema.optional(),
