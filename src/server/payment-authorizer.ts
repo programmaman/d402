@@ -8,6 +8,9 @@ import {
   statusForPaymentFailure,
 } from "./payment-verification-error.js";
 import { readD402PaymentProofFromRequest } from "./payment-proof.js";
+import {
+  readD402PaymentAuthorizationFromRequest,
+} from "./payment-authorization.js";
 import { buildServerPaymentRequest, resolvePayableTerms } from "./payment-request.js";
 import { createBlockReferenceCache, resolveLatestBlockCacheTtlMs } from "./cache.js";
 import {
@@ -20,6 +23,7 @@ import { resolveSettlementReference } from "./settlement-reference.js";
 import type {
   D402BlockReference,
   D402FacilitatorAdvertisements,
+  D402PaymentAuthorization,
   D402PaymentProof,
   D402PaymentRequest,
   D402RefundRoute,
@@ -97,6 +101,8 @@ export class PaymentAuthorizer<
     request: Req,
   ): Promise<PaymentAuthorizationOutcome<Result>> {
     let proof: D402PaymentProof | undefined;
+    let authorization: D402PaymentAuthorization | undefined;
+
     try {
       proof = readD402PaymentProofFromRequest(request, this.#config.proofHeaderName);
     } catch {
@@ -108,7 +114,35 @@ export class PaymentAuthorizer<
       };
     }
 
+    try {
+      authorization = readD402PaymentAuthorizationFromRequest(request);
+    } catch {
+      return {
+        response: this.#buildPaymentFailureResponse({
+          ok: false,
+          reason: "invalid-authorization",
+        }),
+      };
+    }
+
+    if (proof !== undefined && authorization !== undefined) {
+      return {
+        response: this.#buildPaymentFailureResponse({
+          ok: false,
+          reason: "ambiguous-payment-authorization",
+        }),
+      };
+    }
+
     const terms = await resolvePayableTerms(request, this.#config.terms);
+
+    if (authorization !== undefined) {
+      return this.#facilitatePayment(
+        request,
+        terms,
+        authorization,
+      );
+    }
 
     if (proof === undefined) {
       return {
@@ -117,6 +151,84 @@ export class PaymentAuthorizer<
     }
 
     const resolved = this.#resolvePaymentProof(request, terms, proof);
+    if (!resolved.ok) {
+      return {
+        response: this.#buildPaymentFailureResponse(resolved),
+      };
+    }
+
+    return this.#authenticatePaymentProof(resolved.value);
+  }
+
+  async #facilitatePayment(
+    request: Req,
+    terms: ResolvedPayableTerms,
+    authorization: D402PaymentAuthorization,
+  ): Promise<PaymentAuthorizationOutcome<Result>> {
+    const facilitator = this.#config.facilitators?.[
+      authorization.facilitator
+    ];
+
+    if (facilitator === undefined) {
+      return {
+        response: this.#buildPaymentFailureResponse({
+          ok: false,
+          reason: "unsupported-facilitator",
+        }),
+      };
+    }
+
+    const settlement = resolveProofSettlementTerms(
+      this.#config,
+      terms,
+      authorization.settlementReference,
+    );
+
+    if (!settlement.ok) {
+      return {
+        response: this.#buildPaymentFailureResponse(settlement),
+      };
+    }
+
+    const paymentRequest = buildServerPaymentRequest({
+      request,
+      terms: settlement.terms,
+      ...(this.#config.payment.identifier !== undefined
+        ? { identifier: this.#config.payment.identifier }
+        : {}),
+    });
+
+    let proof: D402PaymentProof;
+    try {
+      proof = await facilitator.facilitate(
+        paymentRequest,
+        authorization.authorization,
+      );
+    } catch (cause) {
+      return {
+        response: this.#buildPaymentFailureResponse({
+          ok: false,
+          reason: "facilitator-error",
+          cause,
+        }),
+      };
+    }
+
+    const proofWithSettlementReference =
+      proof.settlementReference === undefined
+      && authorization.settlementReference !== undefined
+        ? {
+            ...proof,
+            settlementReference: authorization.settlementReference,
+          }
+        : proof;
+
+    const resolved = this.#resolvePaymentProof(
+      request,
+      terms,
+      proofWithSettlementReference,
+    );
+
     if (!resolved.ok) {
       return {
         response: this.#buildPaymentFailureResponse(resolved),

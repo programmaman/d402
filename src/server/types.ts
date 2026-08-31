@@ -95,6 +95,10 @@ export type ResolvedPayableTerms = Omit<PayableTerms, "resource"> & {
 export type D402PaymentVerificationFailureReason =
   | "missing-proof"
   | "invalid-proof"
+  | "invalid-authorization"
+  | "ambiguous-payment-authorization"
+  | "unsupported-facilitator"
+  | "facilitator-error"
   | "missing-settlement-reference"
   | "reference-block-mismatch"
   | "reference-settlement-out-of-bounds"

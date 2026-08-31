@@ -11,6 +11,14 @@ export function buildPaymentVerificationErrorReason(
   switch (code) {
     case "invalid-proof":
       return { code, retryable: false, message: "Payment proof could not be parsed or validated." };
+    case "invalid-authorization":
+      return { code, retryable: false, message: "Payment authorization could not be parsed or validated." };
+    case "ambiguous-payment-authorization":
+      return { code, retryable: false, message: "Submit either payment proof or payment authorization, not both." };
+    case "unsupported-facilitator":
+      return { code, retryable: false, message: "The requested payment facilitator is not supported by this route." };
+    case "facilitator-error":
+      return { code, retryable: true, message: "The payment facilitator could not complete the payment. Retry the request." };
     case "missing-settlement-reference":
       return { code, retryable: false, message: "Window-settlement payment proof is missing its settlement reference." };
     case "reference-block-mismatch":

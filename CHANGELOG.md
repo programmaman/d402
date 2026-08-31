@@ -4,11 +4,21 @@ All notable public changes to d402 are documented here.
 
 ## 0.5.0 - Unreleased
 
-- Added native transaction facilitation, allowing a client to sign a payment
-  and have a server submit it on the client’s behalf.
+### Payment facilitation
+
+- Payable routes can advertise available payment facilitators alongside their
+  payment terms.
+- Clients can select an advertised facilitator and submit a corresponding
+  payment authorization through the d402 request flow.
+- Facilitated payments return to d402's existing payment-proof verification
+  path, while direct client payments remain supported.
+
+### Integrations
+
+- Updated the Ethers and Viem integrations to support payment workflows where
+  signing and transaction submission are handled by different parties.
 - Improved transaction execution reliability across client and server payment
   flows.
-- Added support for the updated Ethers and Viem integrations.
 - Updated the Ethers and Viem adapter packages for the `0.5.0` release.
 
 ## 0.4.1 - 2026-08-28
