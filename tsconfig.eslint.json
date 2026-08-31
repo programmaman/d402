@@ -5,10 +5,15 @@
     "checkJs": false,
     "noEmit": true,
     "rootDir": ".",
+    "baseUrl": ".",
+    "ignoreDeprecations": "6.0",
     "types": [
       "node",
       "vitest/globals"
-    ]
+    ],
+    "paths": {
+      "d402/*": ["dist/*/index.d.ts"]
+    }
   },
   "include": [
     "src/**/*.ts",
@@ -16,6 +21,7 @@
     "adapters/ethers/test/**/*.ts",
     "adapters/viem/src/**/*.ts",
     "adapters/viem/test/**/*.ts",
+    "facilitator/src/**/*.ts",
     "eslint.config.js"
   ]
 }

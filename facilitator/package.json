@@ -1,0 +1,61 @@
+{
+  "name": "@d402/facilitators",
+  "version": "0.1.0",
+  "description": "Payment facilitator implementations for d402.",
+  "type": "module",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/programmaman/d402.git",
+    "directory": "facilitator"
+  },
+  "bugs": {
+    "url": "https://github.com/programmaman/d402/issues"
+  },
+  "homepage": "https://github.com/programmaman/d402#readme",
+  "keywords": [
+    "d402",
+    "http-402",
+    "payments",
+    "facilitator",
+    "web3"
+  ],
+  "sideEffects": false,
+  "engines": {
+    "node": ">=20"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist/",
+    "README.md",
+    "CHANGELOG.md",
+    "LICENSE"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "eslint src",
+    "test": "npm run build && vitest run --config vitest.config.ts",
+    "prepack": "npm run build"
+  },
+  "peerDependencies": {
+    "d402": "^0.5.0"
+  },
+  "devDependencies": {
+    "@types/node": "^26.0.1",
+    "d402": "file:..",
+    "eslint": "^10.6.0",
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.9"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}

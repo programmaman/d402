@@ -14,6 +14,7 @@ on:
       - "CHANGELOG.md"
       - "src/**"
       - "adapters/**"
+      - "facilitator/**"
       - ".github/workflows/publish.yml"
       - ".github/workflows/pre-publish.yml"
 
@@ -50,14 +51,16 @@ jobs:
             package-lock.json
             adapters/ethers/package-lock.json
             adapters/viem/package-lock.json
+            facilitator/package-lock.json
 
       - name: Install root dependencies
         run: npm ci
 
-      - name: Install adapter dependencies
+      - name: Install package dependencies
         run: |
           npm --prefix adapters/ethers ci
           npm --prefix adapters/viem ci
+          npm --prefix facilitator ci
 
       - name: Resolve release metadata
         id: release
@@ -158,6 +161,9 @@ jobs:
 
       - name: Test adapters
         run: npm run test:adapters
+
+      - name: Test facilitators
+        run: npm run test:facilitators
 
       - name: Verify package contents
         run: npm run pack:check

@@ -22,10 +22,11 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Install adapter dependencies
+      - name: Install package dependencies
         run: |
           npm --prefix adapters/ethers ci
           npm --prefix adapters/viem ci
+          npm --prefix facilitator ci
 
       - name: Build
         run: npm run build
@@ -38,6 +39,9 @@ jobs:
 
       - name: Test adapters
         run: npm run test:adapters
+
+      - name: Test facilitators
+        run: npm run test:facilitators
 
       - name: Verify package contents
         run: npm pack --dry-run
