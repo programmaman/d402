@@ -15,6 +15,7 @@ import {
   resolveProofSettlementTerms,
   SettlementTimingConfigurationError,
 } from "./settlement.js";
+import type { ProofSettlementResult } from "./settlement.js";
 import { resolveSettlementReference } from "./settlement-reference.js";
 import type {
   D402BlockReference,
@@ -28,6 +29,7 @@ import type {
   PaymentAuthorizationOutcome,
   PaymentFailure,
   PaymentRequiredResponseBuilder,
+  ResolvedPayableTerms,
 } from "./types.js";
 import {
   createDPaymentsAuthenticator,
@@ -42,6 +44,20 @@ import {
   NoopLogger,
 } from "../runtime/logger.js";
 import type { D402Logger } from "../runtime/logger.js";
+
+type ResolvedPaymentProofSettlement = Extract<
+  ProofSettlementResult,
+  { ok: true }
+>;
+
+interface ResolvedPaymentProofContext<
+  Req extends Request,
+> {
+  request: Req;
+  paymentRequest: D402PaymentRequest;
+  proof: D402PaymentProof;
+  settlement: ResolvedPaymentProofSettlement;
+}
 
 export class PaymentAuthorizer<
   Req extends Request = Request,
@@ -84,137 +100,46 @@ export class PaymentAuthorizer<
       proof = readD402PaymentProofFromRequest(request, this.#config.proofHeaderName);
     } catch {
       return {
-        response: buildVerificationFailureResponse(
-          this.#config,
-          { ok: false, reason: "invalid-proof" },
-        ),
+        response: this.#buildPaymentFailureResponse({
+          ok: false,
+          reason: "invalid-proof",
+        }),
       };
     }
 
     const terms = await resolvePayableTerms(request, this.#config.terms);
 
     if (proof === undefined) {
-      const challengeStartedAt = Date.now();
-      emitLog(this.#logger, {
-        level: "debug",
-        event: "settlement.challenge.started",
-        message: "Resolving settlement timing for a payment challenge.",
-        context: {
-          resource: terms.resource,
-          settlementWindow: this.#config.payment.settlementWindow,
-          cacheEnabled: this.#referenceCache !== null,
-        },
-      });
-      let challengeSettlement;
-      try {
-        challengeSettlement = await resolveChallengeSettlementTerms(
-          this.#config,
-          terms,
-          this.#referenceCache,
-        );
-      } catch (cause) {
-        emitLog(this.#logger, {
-          level: "error",
-          event: "settlement.challenge.failed",
-          message: "Failed to resolve settlement timing for a payment challenge.",
-          context: {
-            resource: terms.resource,
-            durationMs: Date.now() - challengeStartedAt,
-            error: describeError(cause),
-          },
-        });
-        if (cause instanceof SettlementTimingConfigurationError) {
-          throw cause;
-        }
-        return {
-          response: buildVerificationFailureResponse(
-            this.#config,
-            {
-              ok: false,
-              reason: isTimeoutError(cause) ? "provider-timeout" : "provider-error",
-              cause,
-            },
-          ),
-        };
-      }
-
-      emitLog(this.#logger, {
-        level: "debug",
-        event: "settlement.challenge.succeeded",
-        message: "Resolved settlement timing for a payment challenge.",
-        context: {
-          resource: terms.resource,
-          settlementTimeUnixSec: challengeSettlement.terms.settlementTimeUnixSec,
-          settlementReference: challengeSettlement.settlementReference,
-          durationMs: Date.now() - challengeStartedAt,
-        },
-      });
-
-      const paymentRequest = buildServerPaymentRequest({
-        request,
-        terms: challengeSettlement.terms,
-        ...(this.#config.payment.identifier !== undefined
-          ? { identifier: this.#config.payment.identifier }
-          : {}),
-      });
-
-      if (
-        paymentRequest.expiresAtUnixSec <=
-        Math.floor(Date.now() / 1000)
-      ) {
-        emitLog(this.#logger, {
-          level: "error",
-          event: "settlement.challenge.expired",
-          message: "Refusing to issue a payment challenge whose settlement time has already passed.",
-          context: {
-            resource: terms.resource,
-            expiresAtUnixSec: paymentRequest.expiresAtUnixSec,
-            nowUnixSec: Math.floor(Date.now() / 1000),
-            settlementReference: challengeSettlement.settlementReference,
-          },
-        });
-        throw new Error(
-          "Cannot issue a payment challenge with expired terms.",
-        );
-      }
-
       return {
-        response: buildChallengeResponse(
-          this.#config,
-          paymentRequest,
-          challengeSettlement.settlementReference,
-          this.#refunds,
-        ),
+        response: await this.#buildPaymentChallenge(request, terms),
       };
     }
 
-    const settlement = resolveProofSettlementTerms(
-      this.#config,
-      terms,
-      proof.settlementReference,
-    );
-    if (!settlement.ok) {
+    const resolved = this.#resolvePaymentProof(request, terms, proof);
+    if (!resolved.ok) {
       return {
-        response: buildVerificationFailureResponse(
-          this.#config,
-          { ok: false, reason: settlement.reason },
-        ),
+        response: this.#buildPaymentFailureResponse(resolved),
       };
     }
 
-    const paymentRequest = buildServerPaymentRequest({
+    return this.#authenticatePaymentProof(resolved.value);
+  }
+
+  async #authenticatePaymentProof(
+    input: ResolvedPaymentProofContext<Req>,
+  ): Promise<PaymentAuthorizationOutcome<Result>> {
+    const {
       request,
-      terms: settlement.terms,
-      ...(this.#config.payment.identifier !== undefined
-        ? { identifier: this.#config.payment.identifier }
-        : {}),
-    });
+      paymentRequest,
+      proof,
+      settlement,
+    } = input;
     const { dPaymentProof } = proof;
 
     const saltResult = verifyPaymentSalt(paymentRequest, dPaymentProof);
     if (!saltResult.ok) {
       return {
-        response: buildVerificationFailureResponse(this.#config, saltResult),
+        response: this.#buildPaymentFailureResponse(saltResult),
       };
     }
 
@@ -227,10 +152,10 @@ export class PaymentAuthorizer<
       );
       if (!resolvedReference.ok) {
         return {
-          response: buildVerificationFailureResponse(
-            this.#config,
-            { ok: false, reason: resolvedReference.reason },
-          ),
+          response: this.#buildPaymentFailureResponse({
+            ok: false,
+            reason: resolvedReference.reason,
+          }),
         };
       }
       authenticatedSettlementReference = resolvedReference.reference;
@@ -247,7 +172,7 @@ export class PaymentAuthorizer<
 
     if (!authentication.ok) {
       return {
-        response: buildVerificationFailureResponse(this.#config, authentication),
+        response: this.#buildPaymentFailureResponse(authentication),
       };
     }
 
@@ -268,7 +193,7 @@ export class PaymentAuthorizer<
     const observation = await this.#observer(authenticated);
     if (!observation.ok) {
       return {
-        response: buildVerificationFailureResponse(this.#config, observation),
+        response: this.#buildPaymentFailureResponse(observation),
       };
     }
 
@@ -280,14 +205,14 @@ export class PaymentAuthorizer<
     const verification = await this.#verificationPolicy.verify(observed);
     if (!verification.ok) {
       return {
-        response: buildVerificationFailureResponse(this.#config, verification),
+        response: this.#buildPaymentFailureResponse(verification),
       };
     }
 
     const consumption = await this.#consumer.consume(observed);
     if (!consumption.ok) {
       return {
-        response: buildVerificationFailureResponse(this.#config, consumption),
+        response: this.#buildPaymentFailureResponse(consumption),
       };
     }
 
@@ -298,9 +223,160 @@ export class PaymentAuthorizer<
       },
     };
   }
+
+  #resolvePaymentProof(
+    request: Req,
+    terms: ResolvedPayableTerms,
+    proof: D402PaymentProof,
+  ):
+    | {
+        ok: true;
+        value: ResolvedPaymentProofContext<Req>;
+      }
+    | PaymentFailure {
+    const settlement = resolveProofSettlementTerms(
+      this.#config,
+      terms,
+      proof.settlementReference,
+    );
+
+    if (!settlement.ok) {
+      return settlement;
+    }
+
+    const paymentRequest = buildServerPaymentRequest({
+      request,
+      terms: settlement.terms,
+      ...(this.#config.payment.identifier !== undefined
+        ? { identifier: this.#config.payment.identifier }
+        : {}),
+    });
+
+    return {
+      ok: true,
+      value: {
+        request,
+        paymentRequest,
+        proof,
+        settlement,
+      },
+    };
+  }
+
+  async #buildPaymentChallenge(
+    request: Req,
+    terms: ResolvedPayableTerms,
+  ): Promise<Response> {
+    const challengeStartedAt = Date.now();
+    emitLog(this.#logger, {
+      level: "debug",
+      event: "settlement.challenge.started",
+      message: "Resolving settlement timing for a payment challenge.",
+      context: {
+        resource: terms.resource,
+        settlementWindow: this.#config.payment.settlementWindow,
+        cacheEnabled: this.#referenceCache !== null,
+      },
+    });
+    let challengeSettlement;
+    try {
+      challengeSettlement = await resolveChallengeSettlementTerms(
+        this.#config,
+        terms,
+        this.#referenceCache,
+      );
+    } catch (cause) {
+      emitLog(this.#logger, {
+        level: "error",
+        event: "settlement.challenge.failed",
+        message: "Failed to resolve settlement timing for a payment challenge.",
+        context: {
+          resource: terms.resource,
+          durationMs: Date.now() - challengeStartedAt,
+          error: describeError(cause),
+        },
+      });
+      if (cause instanceof SettlementTimingConfigurationError) {
+        throw cause;
+      }
+      return this.#buildPaymentFailureResponse(
+        {
+          ok: false,
+          reason: isTimeoutError(cause) ? "provider-timeout" : "provider-error",
+          cause,
+        },
+      );
+    }
+
+    emitLog(this.#logger, {
+      level: "debug",
+      event: "settlement.challenge.succeeded",
+      message: "Resolved settlement timing for a payment challenge.",
+      context: {
+        resource: terms.resource,
+        settlementTimeUnixSec: challengeSettlement.terms.settlementTimeUnixSec,
+        settlementReference: challengeSettlement.settlementReference,
+        durationMs: Date.now() - challengeStartedAt,
+      },
+    });
+
+    const paymentRequest = buildServerPaymentRequest({
+      request,
+      terms: challengeSettlement.terms,
+      ...(this.#config.payment.identifier !== undefined
+        ? { identifier: this.#config.payment.identifier }
+        : {}),
+    });
+
+    if (
+      paymentRequest.expiresAtUnixSec <=
+      Math.floor(Date.now() / 1000)
+    ) {
+      emitLog(this.#logger, {
+        level: "error",
+        event: "settlement.challenge.expired",
+        message: "Refusing to issue a payment challenge whose settlement time has already passed.",
+        context: {
+          resource: terms.resource,
+          expiresAtUnixSec: paymentRequest.expiresAtUnixSec,
+          nowUnixSec: Math.floor(Date.now() / 1000),
+          settlementReference: challengeSettlement.settlementReference,
+        },
+      });
+      throw new Error(
+        "Cannot issue a payment challenge with expired terms.",
+      );
+    }
+
+    return buildPaymentChallengeResponse(
+      this.#config,
+      paymentRequest,
+      challengeSettlement.settlementReference,
+      this.#refunds,
+    );
+  }
+
+  #buildPaymentFailureResponse(
+    failure: PaymentFailure,
+  ): Response {
+    const builder =
+      this.#config
+        .buildPaymentVerificationErrorResponse
+        ?? buildPaymentVerificationErrorResponse;
+
+    return builder({
+      status: statusForPaymentFailure(
+        failure.reason,
+      ),
+      reason: buildPaymentVerificationErrorReason(
+        failure.reason,
+      ),
+      failure,
+    });
+  }
 }
 
-function buildChallengeResponse<Req extends Request, Result>(
+function buildPaymentChallengeResponse<Req extends Request, Result>(
   config: PaymentAuthorizationConfig<Req, Result>,
   paymentRequest: D402PaymentRequest,
   settlementReference?: D402BlockReference,
@@ -313,19 +389,6 @@ function buildChallengeResponse<Req extends Request, Result>(
     ...(settlementReference !== undefined ? { settlementReference } : {}),
     ...(refunds !== undefined ? { refunds } : {}),
     reason: buildPaymentRequiredReason("missing-proof"),
-  });
-}
-
-function buildVerificationFailureResponse<Req extends Request, Result>(
-  config: PaymentAuthorizationConfig<Req, Result>,
-  failure: PaymentFailure,
-): Response {
-  const builder = config.buildPaymentVerificationErrorResponse
-    ?? buildPaymentVerificationErrorResponse;
-  return builder({
-    status: statusForPaymentFailure(failure.reason),
-    reason: buildPaymentVerificationErrorReason(failure.reason),
-    failure,
   });
 }
 
