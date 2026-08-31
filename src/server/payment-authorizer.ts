@@ -19,6 +19,7 @@ import type { ProofSettlementResult } from "./settlement.js";
 import { resolveSettlementReference } from "./settlement-reference.js";
 import type {
   D402BlockReference,
+  D402FacilitatorAdvertisements,
   D402PaymentProof,
   D402PaymentRequest,
   D402RefundRoute,
@@ -348,11 +349,36 @@ export class PaymentAuthorizer<
       );
     }
 
+    const facilitation = this.#buildFacilitatorAdvertisements(
+      paymentRequest,
+    );
+
     return buildPaymentChallengeResponse(
       this.#config,
       paymentRequest,
       challengeSettlement.settlementReference,
       this.#refunds,
+      facilitation,
+    );
+  }
+
+  #buildFacilitatorAdvertisements(
+    payment: D402PaymentRequest,
+  ): D402FacilitatorAdvertisements | undefined {
+    const facilitators = this.#config.facilitators;
+
+    if (
+      facilitators === undefined
+      || Object.keys(facilitators).length === 0
+    ) {
+      return undefined;
+    }
+
+    return Object.fromEntries(
+      Object.entries(facilitators).map(([name, facilitator]) => [
+        name,
+        facilitator.advertise(payment),
+      ]),
     );
   }
 
@@ -381,6 +407,7 @@ function buildPaymentChallengeResponse<Req extends Request, Result>(
   paymentRequest: D402PaymentRequest,
   settlementReference?: D402BlockReference,
   refunds?: D402RefundRoute,
+  facilitation?: D402FacilitatorAdvertisements,
 ): Response {
   const builder: PaymentRequiredResponseBuilder =
     config.buildPaymentRequiredResponse ?? buildPaymentRequiredResponse;
@@ -388,6 +415,7 @@ function buildPaymentChallengeResponse<Req extends Request, Result>(
     paymentRequest,
     ...(settlementReference !== undefined ? { settlementReference } : {}),
     ...(refunds !== undefined ? { refunds } : {}),
+    ...(facilitation !== undefined ? { facilitation } : {}),
     reason: buildPaymentRequiredReason("missing-proof"),
   });
 }

@@ -1,6 +1,7 @@
 import type {
   Address,
   D402Adapter,
+  D402Facilitator,
   D402PaymentActionResult,
   D402PaymentChallenge,
   D402RefundRoute,
@@ -273,6 +274,9 @@ export interface PayableRouteConfig<
 > extends PaymentConfig {
   terms: PayableTermsResolver<Req>;
   handler: PayableHandler<Req, Result, Res>;
+  facilitators?: Readonly<
+    Record<string, D402Facilitator<unknown>>
+  >;
   verificationPolicy?: VerificationPolicy;
   recovery?: PaymentRecovery;
   consumer?: PaymentConsumer<Result>;
