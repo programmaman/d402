@@ -93,6 +93,12 @@ export interface D402PaymentProof {
   settlementReference?: D402BlockReference;
 }
 
+export interface D402PaymentAuthorization {
+  facilitator: string;
+  authorization: unknown;
+  settlementReference?: D402BlockReference;
+}
+
 export interface D402PaymentActionResult {
   txHash: Hex32;
 }

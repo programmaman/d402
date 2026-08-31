@@ -5,6 +5,9 @@ export { createDPaymentsObserver } from "./payment-verifier.js";
 export {
   decodeD402PaymentProof,
 } from "./payment-proof.js";
+export {
+  readD402PaymentAuthorizationFromRequest,
+} from "./payment-authorization.js";
 export { paymentActions } from "./payment-actions.js";
 export {
   buildPaymentRequiredReason,

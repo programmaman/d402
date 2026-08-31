@@ -1,6 +1,6 @@
 import type {
+  D402PaymentProof,
   D402PaymentRequest,
-  DPaymentProof,
 } from "./types.js";
 
 export type D402FacilitatorAdvertisement = Readonly<
@@ -19,5 +19,5 @@ export interface D402Facilitator<PaymentAuthorization> {
   facilitate(
     payment: D402PaymentRequest,
     authorization: PaymentAuthorization,
-  ): Promise<DPaymentProof>;
+  ): Promise<D402PaymentProof>;
 }

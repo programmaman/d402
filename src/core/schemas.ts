@@ -9,6 +9,7 @@ import type {
   Address,
   D402Agreement,
   D402PaymentChallenge,
+  D402PaymentAuthorization,
   D402PaymentProof,
   D402PaymentRequest,
   D402RefundRequest,
@@ -158,6 +159,28 @@ export const d402PaymentProofSchema = z
     settlementReference: blockReferenceSchema.optional(),
   })
   .strict() as z.ZodType<D402PaymentProof>;
+
+export const d402PaymentAuthorizationSchema = z
+  .object({
+    facilitator: z.string().trim().min(1),
+    authorization: z.unknown(),
+    settlementReference: blockReferenceSchema.optional(),
+  })
+  .strict()
+  .refine(
+    (value) => Object.prototype.hasOwnProperty.call(value, "authorization"),
+    {
+      path: ["authorization"],
+      message: "authorization is required",
+    },
+  )
+  .transform((parsed): D402PaymentAuthorization => ({
+    facilitator: parsed.facilitator,
+    authorization: parsed.authorization,
+    ...(parsed.settlementReference !== undefined
+      ? { settlementReference: parsed.settlementReference }
+      : {}),
+  }));
 
 export const refundRequestSchema = z
   .object({

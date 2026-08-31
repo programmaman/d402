@@ -1,5 +1,9 @@
 import { D402_VERSION } from "../core/constants.js";
-import { parseD402PaymentProof, parseDPaymentProof } from "../core/index.js";
+import {
+  encodeBase64Url,
+  parseD402PaymentProof,
+  parseDPaymentProof,
+} from "../core/index.js";
 import type {
   Address,
   D402PaymentProof,
@@ -24,16 +28,9 @@ export function buildDPaymentProof(input: BuildPaymentProofInput): DPaymentProof
 
 export function encodeD402PaymentProof(proof: D402PaymentProof): string {
   const normalized = parseD402PaymentProof(proof);
-  return encodeBase64(new TextEncoder().encode(JSON.stringify(normalized)))
-    .replaceAll("+", "-")
-    .replaceAll("/", "_")
-    .replace(/=+$/, "");
-}
-
-function encodeBase64(bytes: Uint8Array): string {
-  let binary = "";
-  for (const byte of bytes) {
-    binary += String.fromCodePoint(byte);
-  }
-  return globalThis.btoa(binary);
+  return encodeBase64Url(
+    new TextEncoder().encode(
+      JSON.stringify(normalized),
+    ),
+  );
 }

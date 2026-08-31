@@ -18,6 +18,9 @@ export {
 } from "./payment-proof.js";
 export type { BuildPaymentProofInput } from "./payment-proof.js";
 export {
+  encodeD402PaymentAuthorization,
+} from "./payment-authorization.js";
+export {
   D402ClientError,
   D402ConfigurationError,
   D402PaymentError,

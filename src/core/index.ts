@@ -13,7 +13,15 @@ export {
   parseD402PaymentProof,
 } from "./payment-proof.js";
 export {
+  parseD402PaymentAuthorization,
+} from "./payment-authorization.js";
+export {
+  decodeBase64Url,
+  encodeBase64Url,
+} from "./base64.js";
+export {
   D402_CANONICAL_SALT,
+  D402_PAYMENT_AUTHORIZATION_HEADER,
   D402_PAYMENT_PROOF_HEADER,
   D402_PAYMENT_REQUEST_CONTENT_TYPE,
   D402_REFUND_REQUEST_CONTENT_TYPE,
@@ -40,6 +48,7 @@ export type {
   D402Agreement,
   D402BlockReference,
   D402PaymentActionResult,
+  D402PaymentAuthorization,
   D402PaymentChallenge,
   DPaymentProof,
   D402PaymentProof,

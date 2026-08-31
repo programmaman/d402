@@ -1,5 +1,6 @@
 export const D402_VERSION = 0.3;
 export const D402_PAYMENT_PROOF_HEADER = "D402-Payment-Proof";
+export const D402_PAYMENT_AUTHORIZATION_HEADER = "D402-Payment-Authorization";
 export const D402_PAYMENT_REQUEST_CONTENT_TYPE = "application/d402+json";
 export const D402_REFUND_REQUEST_CONTENT_TYPE =
   "application/d402-refund+json";
