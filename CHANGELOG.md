@@ -2,6 +2,17 @@
 
 All notable public changes to d402 are documented here.
 
+## 0.4.2 - 2026-10-25
+
+### Security
+
+- Raised the d402 runtime floor to a supported patched Node.js LTS release and
+  pinned local and CI builds to Node.js 24.22.1.
+- Raised the Zod minimum to 4.6.6 to address the constrained-collection memory
+  exhaustion vulnerability.
+- Updated the private Next.js example to a patched Next.js release and added
+  dependency audits to release workflows.
+
 ## 0.4.1 - 2026-08-28
 
 ### Runtime correctness
