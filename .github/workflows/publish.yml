@@ -18,7 +18,7 @@ jobs:
 
       - uses: actions/setup-node@v6
         with:
-          node-version: 24
+          node-version-file: .nvmrc
           registry-url: https://registry.npmjs.org
 
       - name: Install dependencies
@@ -28,6 +28,18 @@ jobs:
         run: |
           npm --prefix adapters/ethers ci
           npm --prefix adapters/viem ci
+
+      - name: Audit production dependencies
+        run: |
+          npm audit --omit=dev --audit-level=high
+          npm --prefix adapters/ethers audit --omit=dev --audit-level=high
+          npm --prefix adapters/viem audit --omit=dev --audit-level=high
+
+      - name: Audit all dependencies
+        run: |
+          npm audit --audit-level=high
+          npm --prefix adapters/ethers audit --audit-level=high
+          npm --prefix adapters/viem audit --audit-level=high
 
       - name: Typecheck
         run: npm run typecheck

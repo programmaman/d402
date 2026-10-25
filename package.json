@@ -1,6 +1,6 @@
 {
   "name": "d402",
-  "version": "0.4.1",
+  "version": "0.4.2",
   "description": "HTTP 402 payment agreement SDK backed by on-chain state.",
   "type": "module",
   "license": "Apache-2.0",
@@ -10,7 +10,7 @@
   },
   "sideEffects": false,
   "engines": {
-    "node": ">=20.19.0"
+    "node": ">=22.23.4"
   },
   "keywords": [
     "http-payments",
@@ -105,7 +105,7 @@
     "@noble/hashes": "^2.0.1",
     "@rakelabs/dpayments-sdk": "^0.2.1",
     "canonicalize": "^3.0.0",
-    "zod": "^4.4.3"
+    "zod": "^4.6.6"
   },
   "devDependencies": {
     "@emnapi/core": "1.11.1",
@@ -118,6 +118,6 @@
     "typescript": "^6.0.3",
     "typescript-eslint": "^8.62.0",
     "viem": "^2.55.19",
-    "vitest": "^4.1.9"
+    "vitest": "^4.1.12"
   }
 }
