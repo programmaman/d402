@@ -4,6 +4,14 @@ All notable public changes to d402 are documented here.
 
 ## 0.5.0 - Unreleased
 
+### Security
+
+- Raised the minimum supported Node.js version to patched LTS release lines and
+  pinned local and CI builds to Node.js 24.22.1.
+- Updated Zod and the test/build dependency tree to address current production
+  and development security advisories.
+- Added production and full dependency audits to CI and release validation.
+
 ### Payment facilitation
 
 - Payable routes can advertise available payment facilitators alongside their

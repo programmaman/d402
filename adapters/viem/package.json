@@ -21,7 +21,7 @@
   ],
   "sideEffects": false,
   "engines": {
-    "node": ">=20"
+    "node": ">=22.23.4"
   },
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -58,7 +58,7 @@
     "eslint": "^10.6.0",
     "typescript": "^6.0.3",
     "viem": "2.55.19",
-    "vitest": "^4.1.9"
+    "vitest": "^4.1.12"
   },
   "publishConfig": {
     "access": "public"
